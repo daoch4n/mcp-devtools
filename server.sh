@@ -13,6 +13,6 @@ echo "GITHUB_TOKEN=your_token_here" >> .env  # Optional for GitHub integration
 # Run server using UV's enhanced execution
 uv run uvicorn server:app \
    --host 127.0.0.1 \
-   --port 8000 \
+   --port 4754 \
    --reload \
    --log-level info
