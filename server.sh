@@ -11,6 +11,7 @@ echo "GITHUB_TOKEN=your_token_here" >> .env  # Optional for GitHub integration
 # uv run server.py
 
 # Run server using UV's enhanced execution
+echo "Git MCP server listening at http://localhost:4754/sse"
 uv run uvicorn server:app \
    --host 127.0.0.1 \
    --port 4754 \
