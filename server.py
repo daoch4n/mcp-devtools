@@ -186,7 +186,7 @@ def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         # Apply with more relaxed settings to handle potential issues
         repo.git.apply(
             '--check',
-            '--threeway',
+            '-3', # Changed from '--threeway' to '-3'
             '--whitespace=fix',
             '--allow-overlap',
             tmp_file_path
