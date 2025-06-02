@@ -20,6 +20,7 @@ import tempfile
 import os # Ensure os is imported
 import re
 import difflib # Import difflib
+import shlex # Import shlex for shell quoting
 
 # Import Starlette and Route
 from starlette.applications import Starlette
@@ -231,7 +232,7 @@ def git_stage_all(repo: git.Repo) -> str:
     except git.GitCommandError as e:
         return f"Error staging all files: {e.stderr}"
 
-def search_and_replace_in_file(
+async def _search_and_replace_python_logic(
     repo_path: str,
     search_string: str,
     replace_string: str,
@@ -307,6 +308,77 @@ def search_and_replace_in_file(
         return f"Error: Invalid regex pattern '{search_string}': {e}"
     except Exception as e:
         return f"An unexpected error occurred: {e}"
+
+async def search_and_replace_in_file(
+    repo_path: str,
+    search_string: str,
+    replace_string: str,
+    file_path: str,
+    ignore_case: bool,
+    start_line: Optional[int],
+    end_line: Optional[int]
+) -> str:
+    full_file_path = Path(repo_path) / file_path
+
+    # --- Attempt using sed first ---
+    sed_command_parts = ["flatpak-spawn", "--host", "sed", "-i"]
+
+    # Use '#' as a delimiter for sed to avoid issues with '/' in search/replace strings
+    # Escape '#' in search_string and replace_string if they exist
+    sed_pattern = search_string.replace('#', '\#')
+    sed_replacement = replace_string.replace('#', '\#').replace('&', '\&').replace('\\', '\\\\')
+
+    sed_flags = "g"
+    if ignore_case:
+        sed_flags += "i"
+
+    sed_sub_command = f"s#{sed_pattern}#{sed_replacement}#{sed_flags}"
+
+    # Add line range if specified
+    if start_line is not None and end_line is not None:
+        sed_sub_command = f"{start_line},{end_line}{sed_sub_command}"
+    elif start_line is not None:
+        sed_sub_command = f"{start_line},${sed_sub_command}"
+    elif end_line is not None:
+        sed_sub_command = f"1,{end_line}{sed_sub_command}"
+
+    # Enclose the sed substitution command in single quotes for the shell
+    # and quote the file path
+    sed_full_command = f"{' '.join(sed_command_parts)} '{sed_sub_command}' {shlex.quote(str(full_file_path))}"
+
+    try:
+        # Read original content to check for changes after sed
+        with open(full_file_path, 'r') as f:
+            original_content = f.read()
+
+        sed_result = await execute_custom_command(repo_path, sed_full_command)
+        logging.info(f"Sed command result: {sed_result}")
+
+        # Check if sed command itself failed (e.g., sed not found, syntax error)
+        if "Command failed with exit code" in sed_result or "Error executing command" in sed_result:
+            logging.warning(f"Sed command failed: {sed_result}. Falling back to Python logic.")
+            # Fallback to Python logic
+            return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
+        
+        # Read content after sed to check if changes were made
+        with open(full_file_path, 'r') as f:
+            modified_content_sed = f.read()
+
+        if original_content != modified_content_sed:
+            # Sed made changes, return success message
+            # We can't easily get the number of changes from sed -i, so just report success
+            return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using sed."
+        else:
+            logging.info(f"Sed command executed but made no changes. Falling back to Python logic.")
+            # Sed made no changes, fall back to Python logic to try literal/regex
+            return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
+
+    except FileNotFoundError:
+        return f"Error: File not found at {full_file_path}"
+    except Exception as e:
+        logging.error(f"An unexpected error occurred during sed attempt: {e}. Falling back to Python logic.")
+        # Fallback to Python logic for any other unexpected errors
+        return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     try:
@@ -612,7 +684,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
         
         case GitTools.SEARCH_AND_REPLACE:
-            result = search_and_replace_in_file(
+            result = await search_and_replace_in_file( # Add await here
                 repo_path=str(repo_path),
                 file_path=arguments["file_path"],
                 search_string=arguments["search_string"],
