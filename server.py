@@ -80,6 +80,7 @@ class GitStageAll(BaseModel):
     repo_path: str
 
 class SearchAndReplace(BaseModel):
+    repo_path: str # Added repo_path to the model
     file_path: str
     search_string: str
     replace_string: str
@@ -220,6 +221,7 @@ def git_stage_all(repo: git.Repo) -> str:
         return f"Error staging all files: {e.stderr}"
 
 def search_and_replace_in_file(
+    repo_path: str, # Added repo_path to the function signature
     file_path: str,
     search_string: str,
     replace_string: str,
@@ -229,7 +231,8 @@ def search_and_replace_in_file(
     end_line: Optional[int]
 ) -> str:
     try:
-        with open(file_path, 'r') as f:
+        full_file_path = Path(repo_path) / file_path # Construct full path
+        with open(full_file_path, 'r') as f:
             lines = f.readlines()
 
         flags = 0
@@ -257,7 +260,7 @@ def search_and_replace_in_file(
             else:
                 modified_lines.append(line)
 
-        with open(file_path, 'w') as f:
+        with open(full_file_path, 'w') as f:
             f.writelines(modified_lines)
 
         if changes_made > 0:
@@ -266,7 +269,7 @@ def search_and_replace_in_file(
             return f"No changes made. '{search_string}' not found in {file_path} within the specified range."
 
     except FileNotFoundError:
-        return f"Error: File not found at {file_path}"
+        return f"Error: File not found at {full_file_path}" # Updated error message
     except re.error as e:
         return f"Error: Invalid regex pattern '{search_string}': {e}"
     except Exception as e:
@@ -504,6 +507,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         case GitTools.SEARCH_AND_REPLACE:
             result = search_and_replace_in_file(
+                repo_path=str(repo_path), # Pass repo_path as string
                 file_path=arguments["file_path"],
                 search_string=arguments["search_string"],
                 replace_string=arguments["replace_string"],
