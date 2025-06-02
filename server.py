@@ -84,10 +84,14 @@ class SearchAndReplace(BaseModel):
     file_path: str
     search_string: str
     replace_string: str
-    use_regex: bool = False
     ignore_case: bool = False
     start_line: Optional[int] = None
     end_line: Optional[int] = None
+
+class WriteToFile(BaseModel):
+    repo_path: str
+    file_path: str
+    content: str
 
 class GitTools(str, Enum):
     STATUS = "git_status"
@@ -105,6 +109,7 @@ class GitTools(str, Enum):
     READ_FILE = "git_read_file"
     STAGE_ALL = "git_stage_all"
     SEARCH_AND_REPLACE = "search_and_replace"
+    WRITE_TO_FILE = "write_to_file"
 
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
@@ -225,7 +230,6 @@ def search_and_replace_in_file(
     search_string: str,
     replace_string: str,
     file_path: str,
-    use_regex: bool,
     ignore_case: bool,
     start_line: Optional[int],
     end_line: Optional[int]
@@ -239,37 +243,57 @@ def search_and_replace_in_file(
         if ignore_case:
             flags |= re.IGNORECASE
 
-        effective_search_string = search_string
-        if not use_regex:
-            effective_search_string = re.escape(search_string)
-            logging.info(f"Escaped search string for literal search: {effective_search_string}")
-        
-        logging.info(f"Search string: {search_string}, Effective search string: {effective_search_string}, Use regex: {use_regex}, Ignore case: {ignore_case}, Flags: {flags}")
+        # Attempt literal search first
+        literal_search_string = re.escape(search_string)
+        logging.info(f"Attempting literal search with: {literal_search_string}")
 
-        modified_lines = []
-        changes_made = 0
+        modified_lines_literal = []
+        changes_made_literal = 0
 
         for i, line in enumerate(lines):
             line_num = i + 1
             if (start_line is None or line_num >= start_line) and \
                (end_line is None or line_num <= end_line):
-                new_line, num_subs = re.subn(effective_search_string, replace_string, line, flags=flags)
+                new_line, num_subs = re.subn(literal_search_string, replace_string, line, flags=flags)
                 
                 if new_line != line:
-                    changes_made += num_subs
-                    modified_lines.append(new_line)
+                    changes_made_literal += num_subs
+                    modified_lines_literal.append(new_line)
                 else:
-                    modified_lines.append(line)
+                    modified_lines_literal.append(line)
             else:
-                modified_lines.append(line)
+                modified_lines_literal.append(line)
 
-        with open(full_file_path, 'w') as f:
-            f.writelines(modified_lines)
-
-        if changes_made > 0:
-            return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path}. Total changes: {changes_made}."
+        if changes_made_literal > 0:
+            with open(full_file_path, 'w') as f:
+                f.writelines(modified_lines_literal)
+            return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using literal search. Total changes: {changes_made_literal}."
         else:
-            return f"No changes made. '{search_string}' not found in {file_path} within the specified range."
+            # If literal search yields no changes, attempt regex search
+            logging.info(f"Literal search failed. Attempting regex search with: {search_string}")
+            modified_lines_regex = []
+            changes_made_regex = 0
+            
+            for i, line in enumerate(lines):
+                line_num = i + 1
+                if (start_line is None or line_num >= start_line) and \
+                   (end_line is None or line_num <= end_line):
+                    new_line, num_subs = re.subn(search_string, replace_string, line, flags=flags)
+                    
+                    if new_line != line:
+                        changes_made_regex += num_subs
+                        modified_lines_regex.append(new_line)
+                    else:
+                        modified_lines_regex.append(line)
+                else:
+                    modified_lines_regex.append(line)
+
+            if changes_made_regex > 0:
+                with open(full_file_path, 'w') as f:
+                    f.writelines(modified_lines_regex)
+                return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using regex search. Total changes: {changes_made_regex}."
+            else:
+                return f"No changes made. '{search_string}' not found in {file_path} within the specified range using either literal or regex search."
 
     except FileNotFoundError:
         return f"Error: File not found at {full_file_path}"
@@ -277,6 +301,16 @@ def search_and_replace_in_file(
         return f"Error: Invalid regex pattern '{search_string}': {e}"
     except Exception as e:
         return f"An unexpected error occurred: {e}"
+
+def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
+    try:
+        full_file_path = Path(repo_path) / file_path
+        full_file_path.parent.mkdir(parents=True, exist_ok=True) # Create parent directories if they don't exist
+        with open(full_file_path, 'w') as f:
+            f.write(content)
+        return f"Successfully wrote content to {file_path}"
+    except Exception as e:
+        return f"Error writing to file {file_path}: {e}"
 
 # Global MCP Server instance
 mcp_server = Server("mcp-git")
@@ -358,6 +392,11 @@ async def list_tools() -> list[Tool]:
             name=GitTools.SEARCH_AND_REPLACE,
             description="Searches for a string or regex pattern in a file and replaces it with another string.",
             inputSchema=SearchAndReplace.schema(),
+        ),
+        Tool(
+            name=GitTools.WRITE_TO_FILE,
+            description="Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.",
+            inputSchema=WriteToFile.schema(),
         )
     ]
 
@@ -514,10 +553,20 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 file_path=arguments["file_path"],
                 search_string=arguments["search_string"],
                 replace_string=arguments["replace_string"],
-                use_regex=arguments.get("use_regex", False),
                 ignore_case=arguments.get("ignore_case", False),
                 start_line=arguments.get("start_line"),
                 end_line=arguments.get("end_line")
+            )
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+
+        case GitTools.WRITE_TO_FILE:
+            result = write_to_file_content(
+                repo_path=str(repo_path),
+                file_path=arguments["file_path"],
+                content=arguments["content"]
             )
             return [TextContent(
                 type="text",
