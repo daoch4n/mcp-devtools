@@ -19,6 +19,7 @@ import asyncio
 import tempfile
 import os
 import re
+import difflib # Import difflib
 
 # Import Starlette and Route
 from starlette.applications import Starlette
@@ -305,10 +306,31 @@ def search_and_replace_in_file(
 def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     try:
         full_file_path = Path(repo_path) / file_path
+        
+        # Read original content if file exists
+        original_content = ""
+        if full_file_path.exists():
+            with open(full_file_path, 'r') as f:
+                original_content = f.read()
+
         full_file_path.parent.mkdir(parents=True, exist_ok=True) # Create parent directories if they don't exist
         with open(full_file_path, 'w') as f:
             f.write(content)
-        return f"Successfully wrote content to {file_path}"
+        
+        # Generate diff
+        diff = difflib.unified_diff(
+            original_content.splitlines(keepends=True),
+            content.splitlines(keepends=True),
+            fromfile=f"a/{file_path}",
+            tofile=f"b/{file_path}",
+            lineterm="" # Avoid adding extra newlines
+        )
+        diff_output = "".join(diff)
+
+        if diff_output:
+            return f"Successfully wrote content to {file_path}. Diff:\n{diff_output}"
+        else:
+            return f"Successfully wrote content to {file_path}. No changes detected (file content was identical)."
     except Exception as e:
         return f"Error writing to file {file_path}: {e}"
 
