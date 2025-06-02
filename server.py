@@ -17,7 +17,7 @@ from git.exc import GitCommandError
 from pydantic import BaseModel
 import asyncio
 import tempfile
-import os
+import os # Ensure os is imported
 import re
 import difflib # Import difflib
 
@@ -308,7 +308,7 @@ def search_and_replace_in_file(
     except Exception as e:
         return f"An unexpected error occurred: {e}"
 
-def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
+async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     try:
         full_file_path = Path(repo_path) / file_path
         
@@ -332,10 +332,20 @@ def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
         )
         diff_output = "".join(diff)
 
+        result_message = ""
         if diff_output:
-            return f"Successfully wrote content to {file_path}. Diff:\n{diff_output}"
+            result_message = f"Successfully wrote content to {file_path}. Diff:\n{diff_output}"
         else:
-            return f"Successfully wrote content to {file_path}. No changes detected (file content was identical)."
+            result_message = f"Successfully wrote content to {file_path}. No changes detected (file content was identical)."
+
+        # Check file extension and run tsc if applicable
+        file_extension = os.path.splitext(file_path)[1]
+        if file_extension in ['.ts', '.js', '.mjs']:
+            tsc_command = f" tsc --noEmit --allowJs {file_path}"
+            tsc_output = await execute_custom_command(repo_path, tsc_command)
+            result_message += f"\n\nTSC Output for {file_path}:\n{tsc_output}"
+
+        return result_message
     except Exception as e:
         return f"Error writing to file {file_path}: {e}"
 
@@ -617,7 +627,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.WRITE_TO_FILE:
-            result = write_to_file_content(
+            result = await write_to_file_content( # Await this call
                 repo_path=str(repo_path),
                 file_path=arguments["file_path"],
                 content=arguments["content"]
