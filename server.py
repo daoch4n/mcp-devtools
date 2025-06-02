@@ -72,6 +72,9 @@ class GitReadFile(BaseModel):
     repo_path: str
     file_path: str
 
+class GitStageAll(BaseModel):
+    repo_path: str
+
 class GitTools(str, Enum):
     STATUS = "git_status"
     DIFF_UNSTAGED = "git_diff_unstaged"
@@ -86,6 +89,7 @@ class GitTools(str, Enum):
     SHOW = "git_show"
     APPLY_DIFF = "git_apply_diff"
     READ_FILE = "git_read_file"
+    STAGE_ALL = "git_stage_all"
 
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
@@ -176,6 +180,13 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
     except Exception as e:
         return f"Error reading file {file_path}: {e}"
 
+def git_stage_all(repo: git.Repo) -> str:
+    try:
+        repo.git.add(A=True)
+        return "All files staged successfully."
+    except git.GitCommandError as e:
+        return f"Error staging all files: {e.stderr}"
+
 # Global MCP Server instance
 mcp_server = Server("mcp-git")
 
@@ -246,6 +257,11 @@ async def list_tools() -> list[Tool]:
             name=GitTools.READ_FILE,
             description="Reads the content of a file in the repository",
             inputSchema=GitReadFile.schema(),
+        ),
+        Tool(
+            name=GitTools.STAGE_ALL,
+            description="Stages all changes in the working directory",
+            inputSchema=GitStageAll.schema(),
         )
     ]
 
@@ -369,6 +385,13 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         case GitTools.READ_FILE:
             result = git_read_file(repo, arguments["file_path"])
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+
+        case GitTools.STAGE_ALL:
+            result = git_stage_all(repo)
             return [TextContent(
                 type="text",
                 text=result
