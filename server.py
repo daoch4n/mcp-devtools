@@ -16,6 +16,8 @@ import git
 from git.exc import GitCommandError
 from pydantic import BaseModel
 import asyncio
+import tempfile
+import os
 
 # Import Starlette and Route
 from starlette.applications import Starlette
@@ -164,16 +166,24 @@ def git_show(repo: git.Repo, revision: str) -> str:
     return "".join(output)
 
 def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
+    tmp_file_path = None
     try:
-        # Dry-run validation before actual application
-        repo.git.apply(_input=diff_content, check=True)
-        # Apply with three-way merge for conflict resolution
-        repo.git.apply(_input=diff_content, threeway=True)
-        return "Diff applied successfully."
+        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
+            tmp.write(diff_content)
+            tmp_file_path = tmp.name
+        
+        # Validate then apply
+        repo.git.apply('--check', tmp_file_path)
+        repo.git.apply('--threeway', tmp_file_path)
+            
+        return "Diff applied successfully"
     except GitCommandError as gce:
         return f"Error applying diff: {gce.stderr}"
     except Exception as e:
         return f"An unexpected error occurred: {e}"
+    finally:
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            os.unlink(tmp_file_path)
 
 def git_read_file(repo: git.Repo, file_path: str) -> str:
     try:
