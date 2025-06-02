@@ -13,6 +13,7 @@ from mcp.types import (
 )
 from enum import Enum
 import git
+from git.exc import GitCommandError
 from pydantic import BaseModel
 import asyncio
 
@@ -164,10 +165,15 @@ def git_show(repo: git.Repo, revision: str) -> str:
 
 def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
     try:
-        repo.git.apply(_input=diff_content)
+        # Dry-run validation before actual application
+        repo.git.apply(_input=diff_content, check=True)
+        # Apply with three-way merge for conflict resolution
+        repo.git.apply(_input=diff_content, threeway=True)
         return "Diff applied successfully."
-    except git.GitCommandError as e:
-        return f"Error applying diff: {e.stderr}"
+    except GitCommandError as gce:
+        return f"Error applying diff: {gce.stderr}"
+    except Exception as e:
+        return f"An unexpected error occurred: {e}"
 
 def git_read_file(repo: git.Repo, file_path: str) -> str:
     try:
