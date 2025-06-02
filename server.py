@@ -64,6 +64,14 @@ class GitShow(BaseModel):
     repo_path: str
     revision: str
 
+class GitApplyDiff(BaseModel):
+    repo_path: str
+    diff_content: str
+
+class GitReadFile(BaseModel):
+    repo_path: str
+    file_path: str
+
 class GitTools(str, Enum):
     STATUS = "git_status"
     DIFF_UNSTAGED = "git_diff_unstaged"
@@ -76,6 +84,8 @@ class GitTools(str, Enum):
     CREATE_BRANCH = "git_create_branch"
     CHECKOUT = "git_checkout"
     SHOW = "git_show"
+    APPLY_DIFF = "git_apply_diff"
+    READ_FILE = "git_read_file"
 
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
@@ -148,6 +158,24 @@ def git_show(repo: git.Repo, revision: str) -> str:
                 output.append(str(d.diff)) # Fallback for unexpected string type
     return "".join(output)
 
+def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
+    try:
+        repo.git.apply(diff_content)
+        return "Diff applied successfully."
+    except git.GitCommandError as e:
+        return f"Error applying diff: {e.stderr}"
+
+def git_read_file(repo: git.Repo, file_path: str) -> str:
+    try:
+        full_path = Path(repo.working_dir) / file_path
+        with open(full_path, 'r') as f:
+            content = f.read()
+        return f"Content of {file_path}:\n{content}"
+    except FileNotFoundError:
+        return f"Error: File not found at {file_path}"
+    except Exception as e:
+        return f"Error reading file {file_path}: {e}"
+
 # Global MCP Server instance
 mcp_server = Server("mcp-git")
 
@@ -208,6 +236,16 @@ async def list_tools() -> list[Tool]:
             name=GitTools.SHOW,
             description="Shows the contents of a commit",
             inputSchema=GitShow.schema(),
+        ),
+        Tool(
+            name=GitTools.APPLY_DIFF,
+            description="Applies a diff to the working directory",
+            inputSchema=GitApplyDiff.schema(),
+        ),
+        Tool(
+            name=GitTools.READ_FILE,
+            description="Reads the content of a file in the repository",
+            inputSchema=GitReadFile.schema(),
         )
     ]
 
@@ -317,6 +355,20 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         case GitTools.SHOW:
             result = git_show(repo, arguments["revision"])
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+
+        case GitTools.APPLY_DIFF:
+            result = git_apply_diff(repo, arguments["diff_content"])
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+
+        case GitTools.READ_FILE:
+            result = git_read_file(repo, arguments["file_path"])
             return [TextContent(
                 type="text",
                 text=result
