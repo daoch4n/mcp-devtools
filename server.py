@@ -221,23 +221,30 @@ def git_stage_all(repo: git.Repo) -> str:
         return f"Error staging all files: {e.stderr}"
 
 def search_and_replace_in_file(
-    repo_path: str, # Added repo_path to the function signature
-    file_path: str,
+    repo_path: str,
     search_string: str,
     replace_string: str,
+    file_path: str,
     use_regex: bool,
     ignore_case: bool,
     start_line: Optional[int],
     end_line: Optional[int]
 ) -> str:
     try:
-        full_file_path = Path(repo_path) / file_path # Construct full path
+        full_file_path = Path(repo_path) / file_path
         with open(full_file_path, 'r') as f:
             lines = f.readlines()
 
         flags = 0
         if ignore_case:
             flags |= re.IGNORECASE
+
+        effective_search_string = search_string
+        if not use_regex:
+            effective_search_string = re.escape(search_string)
+            logging.info(f"Escaped search string for literal search: {effective_search_string}")
+        
+        logging.info(f"Search string: {search_string}, Effective search string: {effective_search_string}, Use regex: {use_regex}, Ignore case: {ignore_case}, Flags: {flags}")
 
         modified_lines = []
         changes_made = 0
@@ -246,14 +253,10 @@ def search_and_replace_in_file(
             line_num = i + 1
             if (start_line is None or line_num >= start_line) and \
                (end_line is None or line_num <= end_line):
-                if use_regex:
-                    new_line, num_subs = re.subn(search_string, replace_string, line, flags=flags)
-                else:
-                    new_line = line.replace(search_string, replace_string)
-                    num_subs = (len(line) - len(new_line)) // max(1, len(search_string)) # Simple count for non-regex
+                new_line, num_subs = re.subn(effective_search_string, replace_string, line, flags=flags)
                 
                 if new_line != line:
-                    changes_made += (num_subs if use_regex else 1) # Count actual replacements
+                    changes_made += num_subs
                     modified_lines.append(new_line)
                 else:
                     modified_lines.append(line)
@@ -269,7 +272,7 @@ def search_and_replace_in_file(
             return f"No changes made. '{search_string}' not found in {file_path} within the specified range."
 
     except FileNotFoundError:
-        return f"Error: File not found at {full_file_path}" # Updated error message
+        return f"Error: File not found at {full_file_path}"
     except re.error as e:
         return f"Error: Invalid regex pattern '{search_string}': {e}"
     except Exception as e:
@@ -507,7 +510,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         
         case GitTools.SEARCH_AND_REPLACE:
             result = search_and_replace_in_file(
-                repo_path=str(repo_path), # Pass repo_path as string
+                repo_path=str(repo_path),
                 file_path=arguments["file_path"],
                 search_string=arguments["search_string"],
                 replace_string=arguments["replace_string"],
