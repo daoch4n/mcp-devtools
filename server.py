@@ -164,7 +164,7 @@ def git_show(repo: git.Repo, revision: str) -> str:
 
 def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
     try:
-        repo.git.apply(diff_content)
+        repo.git.apply(_input=diff_content)
         return "Diff applied successfully."
     except git.GitCommandError as e:
         return f"Error applying diff: {e.stderr}"
