@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Optional
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 import asyncio
 import tempfile
 import os
+import re
 
 # Import Starlette and Route
 from starlette.applications import Starlette
@@ -78,6 +79,15 @@ class GitReadFile(BaseModel):
 class GitStageAll(BaseModel):
     repo_path: str
 
+class SearchAndReplace(BaseModel):
+    file_path: str
+    search_string: str
+    replace_string: str
+    use_regex: bool = False
+    ignore_case: bool = False
+    start_line: Optional[int] = None
+    end_line: Optional[int] = None
+
 class GitTools(str, Enum):
     STATUS = "git_status"
     DIFF_UNSTAGED = "git_diff_unstaged"
@@ -93,6 +103,7 @@ class GitTools(str, Enum):
     APPLY_DIFF = "git_apply_diff"
     READ_FILE = "git_read_file"
     STAGE_ALL = "git_stage_all"
+    SEARCH_AND_REPLACE = "search_and_replace"
 
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
@@ -172,9 +183,14 @@ def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
             tmp.write(diff_content)
             tmp_file_path = tmp.name
         
-        # Validate then apply
-        repo.git.apply('--check', tmp_file_path)
-        repo.git.apply('--threeway', tmp_file_path)
+        # Apply with more relaxed settings to handle potential issues
+        repo.git.apply(
+            '--check',
+            '--threeway',
+            '--whitespace=fix',
+            '--allow-overlap',
+            tmp_file_path
+        )
             
         return "Diff applied successfully"
     except GitCommandError as gce:
@@ -202,6 +218,59 @@ def git_stage_all(repo: git.Repo) -> str:
         return "All files staged successfully."
     except git.GitCommandError as e:
         return f"Error staging all files: {e.stderr}"
+
+def search_and_replace_in_file(
+    file_path: str,
+    search_string: str,
+    replace_string: str,
+    use_regex: bool,
+    ignore_case: bool,
+    start_line: Optional[int],
+    end_line: Optional[int]
+) -> str:
+    try:
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+
+        flags = 0
+        if ignore_case:
+            flags |= re.IGNORECASE
+
+        modified_lines = []
+        changes_made = 0
+
+        for i, line in enumerate(lines):
+            line_num = i + 1
+            if (start_line is None or line_num >= start_line) and \
+               (end_line is None or line_num <= end_line):
+                if use_regex:
+                    new_line, num_subs = re.subn(search_string, replace_string, line, flags=flags)
+                else:
+                    new_line = line.replace(search_string, replace_string)
+                    num_subs = (len(line) - len(new_line)) // max(1, len(search_string)) # Simple count for non-regex
+                
+                if new_line != line:
+                    changes_made += (num_subs if use_regex else 1) # Count actual replacements
+                    modified_lines.append(new_line)
+                else:
+                    modified_lines.append(line)
+            else:
+                modified_lines.append(line)
+
+        with open(file_path, 'w') as f:
+            f.writelines(modified_lines)
+
+        if changes_made > 0:
+            return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path}. Total changes: {changes_made}."
+        else:
+            return f"No changes made. '{search_string}' not found in {file_path} within the specified range."
+
+    except FileNotFoundError:
+        return f"Error: File not found at {file_path}"
+    except re.error as e:
+        return f"Error: Invalid regex pattern '{search_string}': {e}"
+    except Exception as e:
+        return f"An unexpected error occurred: {e}"
 
 # Global MCP Server instance
 mcp_server = Server("mcp-git")
@@ -278,6 +347,11 @@ async def list_tools() -> list[Tool]:
             name=GitTools.STAGE_ALL,
             description="Stages all changes in the working directory",
             inputSchema=GitStageAll.schema(),
+        ),
+        Tool(
+            name=GitTools.SEARCH_AND_REPLACE,
+            description="Searches for a string or regex pattern in a file and replaces it with another string.",
+            inputSchema=SearchAndReplace.schema(),
         )
     ]
 
@@ -307,11 +381,13 @@ async def list_repos() -> Sequence[str]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    repo_path = Path(arguments["repo_path"])
-    repo = git.Repo(repo_path)
-
+    repo_path = Path(arguments.get("repo_path", ".")) # Default to current directory if repo_path is not provided
+    
+    repo = None # Initialize repo to None
+    
     match name:
         case GitTools.STATUS:
+            repo = git.Repo(repo_path)
             status = git_status(repo)
             return [TextContent(
                 type="text",
@@ -319,6 +395,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.DIFF_UNSTAGED:
+            repo = git.Repo(repo_path)
             diff = git_diff_unstaged(repo)
             return [TextContent(
                 type="text",
@@ -326,6 +403,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.DIFF_STAGED:
+            repo = git.Repo(repo_path)
             diff = git_diff_staged(repo)
             return [TextContent(
                 type="text",
@@ -333,6 +411,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.DIFF:
+            repo = git.Repo(repo_path)
             diff = git_diff(repo, arguments["target"])
             return [TextContent(
                 type="text",
@@ -340,6 +419,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.COMMIT:
+            repo = git.Repo(repo_path)
             result = git_commit(repo, arguments["message"])
             return [TextContent(
                 type="text",
@@ -347,6 +427,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.ADD:
+            repo = git.Repo(repo_path)
             result = git_add(repo, arguments["files"])
             return [TextContent(
                 type="text",
@@ -354,6 +435,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.RESET:
+            repo = git.Repo(repo_path)
             result = git_reset(repo)
             return [TextContent(
                 type="text",
@@ -361,6 +443,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.LOG:
+            repo = git.Repo(repo_path)
             log = git_log(repo, arguments.get("max_count", 10))
             return [TextContent(
                 type="text",
@@ -368,6 +451,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.CREATE_BRANCH:
+            repo = git.Repo(repo_path)
             result = git_create_branch(
                 repo,
                 arguments["branch_name"],
@@ -379,6 +463,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.CHECKOUT:
+            repo = git.Repo(repo_path)
             result = git_checkout(repo, arguments["branch_name"])
             return [TextContent(
                 type="text",
@@ -386,6 +471,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.SHOW:
+            repo = git.Repo(repo_path)
             result = git_show(repo, arguments["revision"])
             return [TextContent(
                 type="text",
@@ -393,6 +479,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.APPLY_DIFF:
+            repo = git.Repo(repo_path)
             result = git_apply_diff(repo, arguments["diff_content"])
             return [TextContent(
                 type="text",
@@ -400,6 +487,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.READ_FILE:
+            repo = git.Repo(repo_path)
             result = git_read_file(repo, arguments["file_path"])
             return [TextContent(
                 type="text",
@@ -407,7 +495,23 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.STAGE_ALL:
+            repo = git.Repo(repo_path)
             result = git_stage_all(repo)
+            return [TextContent(
+                type="text",
+                text=result
+            )]
+        
+        case GitTools.SEARCH_AND_REPLACE:
+            result = search_and_replace_in_file(
+                file_path=arguments["file_path"],
+                search_string=arguments["search_string"],
+                replace_string=arguments["replace_string"],
+                use_regex=arguments.get("use_regex", False),
+                ignore_case=arguments.get("ignore_case", False),
+                start_line=arguments.get("start_line"),
+                end_line=arguments.get("end_line")
+            )
             return [TextContent(
                 type="text",
                 text=result
