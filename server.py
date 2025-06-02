@@ -94,6 +94,10 @@ class WriteToFile(BaseModel):
     file_path: str
     content: str
 
+class ExecuteCommand(BaseModel):
+    repo_path: str
+    command: str
+
 class GitTools(str, Enum):
     STATUS = "git_status"
     DIFF_UNSTAGED = "git_diff_unstaged"
@@ -111,6 +115,7 @@ class GitTools(str, Enum):
     STAGE_ALL = "git_stage_all"
     SEARCH_AND_REPLACE = "search_and_replace"
     WRITE_TO_FILE = "write_to_file"
+    EXECUTE_COMMAND = "execute_command"
 
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
@@ -334,6 +339,28 @@ def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     except Exception as e:
         return f"Error writing to file {file_path}: {e}"
 
+async def execute_custom_command(repo_path: str, command: str) -> str:
+    try:
+        process = await asyncio.create_subprocess_shell(
+            command,
+            cwd=repo_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        output = ""
+        if stdout:
+            output += f"STDOUT:\n{stdout.decode().strip()}\n"
+        if stderr:
+            output += f"STDERR:\n{stderr.decode().strip()}\n"
+        if process.returncode != 0:
+            output += f"Command failed with exit code {process.returncode}"
+        
+        return output if output else "Command executed successfully with no output."
+    except Exception as e:
+        return f"Error executing command: {e}"
+
 # Global MCP Server instance
 mcp_server = Server("mcp-git")
 
@@ -419,6 +446,11 @@ async def list_tools() -> list[Tool]:
             name=GitTools.WRITE_TO_FILE,
             description="Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.",
             inputSchema=WriteToFile.schema(),
+        ),
+        Tool(
+            name=GitTools.EXECUTE_COMMAND,
+            description="Executes a custom shell command within the specified repository path.",
+            inputSchema=ExecuteCommand.schema(),
         )
     ]
 
@@ -594,6 +626,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=result
             )]
+        
+        case GitTools.EXECUTE_COMMAND:
+            result = await execute_custom_command(
+                repo_path=str(repo_path),
+                command=arguments["command"]
+            )
+            return [TextContent(
+                type="text",
+                text=result
+            )]
 
         case _:
             raise ValueError(f"Unknown tool: {name}")
@@ -628,6 +670,6 @@ if __name__ == "__main__":
     # This block will be executed when the script is run directly.
     # Uvicorn will typically run the 'app' object.
     # For local testing, you might run uvicorn directly:
-    # uvicorn server:app --host 127.0.0.1 --port 8000 --reload
+    # uvicorn server:app --host 127.00.1 --port 8000 --reload
     # However, the server.sh script will handle this.
     pass # Uvicorn will run the 'app'
