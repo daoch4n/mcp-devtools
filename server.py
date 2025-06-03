@@ -671,7 +671,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = git_apply_diff(repo, arguments["diff_content"])
             return [TextContent(
                 type="text",
-                text=result
+                text=f"<![CDATA[{result}]]>"
             )]
 
         case GitTools.READ_FILE:
