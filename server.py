@@ -22,6 +22,9 @@ import re
 import difflib # Import difflib
 import shlex # Import shlex for shell quoting
 
+# Configure logging to show DEBUG messages
+logging.basicConfig(level=logging.DEBUG)
+
 # Import Starlette and Route
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
@@ -392,9 +395,21 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
                 original_content = f.read()
 
         full_file_path.parent.mkdir(parents=True, exist_ok=True) # Create parent directories if they don't exist
-        with open(full_file_path, 'w') as f:
+        with open(full_file_path, 'w', encoding='utf-8') as f: # Explicitly set encoding to utf-8
             f.write(content)
         
+        # --- Debugging: Read back raw bytes and compare ---
+        with open(full_file_path, 'rb') as f_read_back:
+            written_bytes = f_read_back.read()
+        
+        logging.debug(f"Content input to write_to_file (repr): {content!r}")
+        logging.debug(f"Raw bytes written to file: {written_bytes!r}")
+        logging.debug(f"Input content encoded (UTF-8): {content.encode('utf-8')!r}")
+
+        if written_bytes != content.encode('utf-8'):
+            logging.error("Mismatch between input content and written bytes! File corruption detected during write.")
+        # --- End Debugging ---
+
         result_message = ""
         if not file_existed: # If it's a new file
             result_message = f"Successfully created new file: {file_path}."
@@ -760,6 +775,6 @@ if __name__ == "__main__":
     # This block will be executed when the script is run directly.
     # Uvicorn will typically run the 'app' object.
     # For local testing, you might run uvicorn directly:
-    # uvicorn server:app --host 127.00.1 --port 8000 --reload
+    # uvicorn server:app --host 127.0.0.1 --port 8000 --reload
     # However, the server.sh script will handle this.
     pass # Uvicorn will run the 'app'
