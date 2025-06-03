@@ -221,7 +221,7 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
             content = f.read()
         return f"Content of {file_path}:\n{content}"
     except FileNotFoundError:
-        return f"Error: File not found at {file_path}"
+        return f"Error: file wasn't found or out of cwd: {file_path}"
     except Exception as e:
         return f"Error reading file {file_path}: {e}"
 
@@ -681,7 +681,6 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 type="text",
                 text=result
             )]
-
         case GitTools.STAGE_ALL:
             repo = git.Repo(repo_path)
             result = git_stage_all(repo)
