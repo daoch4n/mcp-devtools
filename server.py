@@ -705,6 +705,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
 
         case GitTools.WRITE_TO_FILE:
+            logging.debug(f"Content input to write_to_file: {arguments['content']}")
             result = await write_to_file_content( # Await this call
                 repo_path=str(repo_path),
                 file_path=arguments["file_path"],
