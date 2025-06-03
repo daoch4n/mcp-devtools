@@ -679,7 +679,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             result = git_read_file(repo, arguments["file_path"])
             return [TextContent(
                 type="text",
-                text=result
+                text=f"<![CDATA[{result}]]>"
             )]
         case GitTools.STAGE_ALL:
             repo = git.Repo(repo_path)
@@ -710,6 +710,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                 file_path=arguments["file_path"],
                 content=arguments["content"]
             )
+            logging.debug(f"Content before TextContent: {result}")
             return [TextContent(
                 type="text",
                 text=result
