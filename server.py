@@ -713,7 +713,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             logging.debug(f"Content before TextContent: {result}")
             return [TextContent(
                 type="text",
-                text=result
+                text=f"<![CDATA[{result}]]>"
             )]
         
         case GitTools.EXECUTE_COMMAND:
