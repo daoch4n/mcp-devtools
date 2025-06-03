@@ -701,7 +701,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )
             return [TextContent(
                 type="text",
-                text=result
+                text=f"<![CDATA[{result}]]>"
             )]
 
         case GitTools.WRITE_TO_FILE:
