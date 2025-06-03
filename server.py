@@ -400,19 +400,22 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
             result_message = f"Successfully created new file: {file_path}."
         else: # If file existed, generate diff
             # Generate diff
-            diff = difflib.unified_diff(
+            diff_lines = list(difflib.unified_diff(
                 original_content.splitlines(keepends=True),
                 content.splitlines(keepends=True),
                 fromfile=f"a/{file_path}",
                 tofile=f"b/{file_path}",
                 lineterm="" # Avoid adding extra newlines
-            )
-            diff_output = "".join(diff)
-
-            if diff_output:
-                result_message = f"Successfully wrote content to {file_path}. Diff:\n{diff_output}"
+            ))
+            
+            if len(diff_lines) > 1000: # Check if diff exceeds 1000 lines
+                result_message = f"Successfully wrote content to {file_path}. Diff was too large (over 1000 lines)."
             else:
-                result_message = f"Successfully wrote content to {file_path}. No changes detected (file content was identical)."
+                diff_output = "".join(diff_lines)
+                if diff_output:
+                    result_message = f"Successfully wrote content to {file_path}. Diff:\n{diff_output}"
+                else:
+                    result_message = f"Successfully wrote content to {file_path}. No changes detected (file content was identical)."
 
         # Check file extension and run tsc if applicable
         file_extension = os.path.splitext(file_path)[1]
