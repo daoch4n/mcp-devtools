@@ -234,6 +234,28 @@ def git_stage_all(repo: git.Repo) -> str:
         return "All files staged successfully."
     except git.GitCommandError as e:
         return f"Error staging all files: {e.stderr}"
+async def _generate_diff_output(original_content: str, new_content: str, file_path: str) -> str:
+    diff_lines = list(difflib.unified_diff(
+        original_content.splitlines(keepends=True),
+        new_content.splitlines(keepends=True),
+        fromfile=f"a/{file_path}",
+        tofile=f"b/{file_path}",
+        lineterm="" # Avoid adding extra newlines
+    ))
+    
+    if len(diff_lines) > 1000:
+        return f"\nDiff was too large (over 1000 lines)."
+    else:
+        diff_output = "".join(diff_lines)
+        return f"\nDiff:\n{diff_output}" if diff_output else "\nNo changes detected (file content was identical)."
+
+async def _run_tsc_if_applicable(repo_path: str, file_path: str) -> str:
+    file_extension = os.path.splitext(file_path)[1]
+    if file_extension in ['.ts', '.js', '.mjs']:
+        tsc_command = f" tsc --noEmit --allowJs {file_path}"
+        tsc_output = await execute_custom_command(repo_path, tsc_command)
+        return f"\n\nTSC Output for {file_path}:\n{tsc_output}"
+    return ""
 
 async def _search_and_replace_python_logic(
     repo_path: str,
@@ -275,9 +297,15 @@ async def _search_and_replace_python_logic(
                 modified_lines_literal.append(line)
 
         if changes_made_literal > 0:
+            # Read original content for diff generation
+            original_content = "".join(lines)
             with open(full_file_path, 'w') as f:
                 f.writelines(modified_lines_literal)
-            return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using literal search. Total changes: {changes_made_literal}."
+            
+            result_message = f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using literal search. Total changes: {changes_made_literal}."
+            result_message += await _generate_diff_output(original_content, "".join(modified_lines_literal), file_path)
+            result_message += await _run_tsc_if_applicable(repo_path, file_path)
+            return result_message
         else:
             # If literal search yields no changes, attempt regex search
             logging.info(f"Literal search failed. Attempting regex search with: {search_string}")
@@ -299,9 +327,15 @@ async def _search_and_replace_python_logic(
                     modified_lines_regex.append(line)
 
             if changes_made_regex > 0:
+                # Read original content for diff generation
+                original_content = "".join(lines)
                 with open(full_file_path, 'w') as f:
                     f.writelines(modified_lines_regex)
-                return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using regex search. Total changes: {changes_made_regex}."
+                
+                result_message = f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using regex search. Total changes: {changes_made_regex}."
+                result_message += await _generate_diff_output(original_content, "".join(modified_lines_regex), file_path)
+                result_message += await _run_tsc_if_applicable(repo_path, file_path)
+                return result_message
             else:
                 return f"No changes made. '{search_string}' not found in {file_path} within the specified range using either literal or regex search."
 
@@ -368,9 +402,10 @@ async def search_and_replace_in_file(
             modified_content_sed = f.read()
 
         if original_content != modified_content_sed:
-            # Sed made changes, return success message
-            # We can't easily get the number of changes from sed -i, so just report success
-            return f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using sed."
+            result_message = f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using sed."
+            result_message += await _generate_diff_output(original_content, modified_content_sed, file_path)
+            result_message += await _run_tsc_if_applicable(repo_path, file_path)
+            return result_message
         else:
             logging.info(f"Sed command executed but made no changes. Falling back to Python logic.")
             # Sed made no changes, fall back to Python logic to try literal/regex
@@ -415,29 +450,9 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
             result_message = f"Successfully created new file: {file_path}."
         else: # If file existed, generate diff
             # Generate diff
-            diff_lines = list(difflib.unified_diff(
-                original_content.splitlines(keepends=True),
-                content.splitlines(keepends=True),
-                fromfile=f"a/{file_path}",
-                tofile=f"b/{file_path}",
-                lineterm="" # Avoid adding extra newlines
-            ))
-            
-            if len(diff_lines) > 1000: # Check if diff exceeds 1000 lines
-                result_message = f"Successfully wrote content to {file_path}. Diff was too large (over 1000 lines)."
-            else:
-                diff_output = "".join(diff_lines)
-                if diff_output:
-                    result_message = f"Successfully wrote content to {file_path}. Diff:\n{diff_output}"
-                else:
-                    result_message = f"Successfully wrote content to {file_path}. No changes detected (file content was identical)."
+            result_message += await _generate_diff_output(original_content, content, file_path)
 
-        # Check file extension and run tsc if applicable
-        file_extension = os.path.splitext(file_path)[1]
-        if file_extension in ['.ts', '.js', '.mjs']:
-            tsc_command = f" tsc --noEmit --allowJs {file_path}"
-            tsc_output = await execute_custom_command(repo_path, tsc_command)
-            result_message += f"\n\nTSC Output for {file_path}:\n{tsc_output}"
+        result_message += await _run_tsc_if_applicable(repo_path, file_path)
 
         return result_message
     except Exception as e:
