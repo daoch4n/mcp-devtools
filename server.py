@@ -192,8 +192,26 @@ def git_show(repo: git.Repo, revision: str) -> str:
                 output.append(str(d.diff)) # Fallback for unexpected string type
     return "".join(output)
 
-def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
+async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
     tmp_file_path = None
+    affected_file_path = None
+    original_content = ""
+
+    # Try to extract the file path from the diff content
+    match = re.search(r"--- a/(.+)", diff_content)
+    if match:
+        affected_file_path = match.group(1).strip()
+    else:
+        match = re.search(r"\+\+\+ b/(.+)", diff_content)
+        if match:
+            affected_file_path = match.group(1).strip()
+
+    if affected_file_path:
+        full_affected_path = Path(repo.working_dir) / affected_file_path
+        if full_affected_path.exists():
+            with open(full_affected_path, 'r') as f:
+                original_content = f.read()
+
     try:
         with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
             tmp.write(diff_content)
@@ -208,7 +226,17 @@ def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
             tmp_file_path
         )
             
-        return "Diff applied successfully"
+        result_message = "Diff applied successfully"
+
+        if affected_file_path:
+            # Read new content after applying diff
+            with open(full_affected_path, 'r') as f:
+                new_content = f.read()
+
+            result_message += await _generate_diff_output(original_content, new_content, affected_file_path)
+            result_message += await _run_tsc_if_applicable(str(repo.working_dir), affected_file_path)
+
+        return result_message
     except GitCommandError as gce:
         return f"Error applying diff: {gce.stderr}"
     except Exception as e:
