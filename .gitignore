@@ -5,3 +5,5 @@ __pycache__/
 dist/
 
 mcp_devtools.egg-info/
+uv.lock
+build/
