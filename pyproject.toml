@@ -23,8 +23,10 @@ dependencies = [
     "httpx",
     "python-dotenv",
 ]
-py-modules = ["server"] # Explicitly include server.py
+
 
 [project.urls]
 "Homepage" = "https://github.com/daoch4n/mcp-devtools"
 "Bug Tracker" = "https://github.com/daoch4n/mcp-devtools/issues"
+[tool.setuptools]
+py-modules = ["server"]
