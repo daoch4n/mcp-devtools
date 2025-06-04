@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-devtools"
+version = "0.0.1" # This will be updated by the CI/CD pipeline based on tags
+authors = [
+  { name="daoch4n", email="daoch4n@gmail.com" },
+]
+description = "A short description of your project."
+readme = "README.md"
+requires-python = ">=3.13"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "mcp-server-git",
+    "httpx",
+    "python-dotenv",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/daoch4n/mcp-devtools"
+"Bug Tracker" = "https://github.com/daoch4n/mcp-devtools/issues"
