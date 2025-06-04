@@ -28,5 +28,7 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/daoch4n/mcp-devtools"
 "Bug Tracker" = "https://github.com/daoch4n/mcp-devtools/issues"
+[project.scripts]
+mcp-devtools = "mcp_devtools_cli:main"
 [tool.setuptools]
 py-modules = ["server"]
