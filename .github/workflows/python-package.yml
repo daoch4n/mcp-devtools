@@ -14,6 +14,10 @@ jobs:
       matrix:
         python-version: ["3.11"]
 
+    outputs:
+      package_name: ${{ steps.get_package_info.outputs.package_name }}
+      package_version: ${{ steps.get_package_info.outputs.package_version }}
+
     steps:
     - uses: actions/checkout@v4
     - name: Set up Python ${{ matrix.python-version }}
@@ -31,6 +35,14 @@ jobs:
     - name: Test with pytest
       run: |
         pytest
+    - name: Get package info
+      id: get_package_info
+      run: |
+        PACKAGE_NAME=$(grep 'name =' pyproject.toml | cut -d '"' -f 2)
+        PACKAGE_VERSION=$(grep 'version =' pyproject.toml | cut -d '"' -f 2)
+        echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+        echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
+      shell: bash
     - name: Build distribution packages
       run: |
         python -m build
@@ -58,8 +70,8 @@ jobs:
     - name: Check if version already exists on PyPI
       id: check_version
       run: |
-        PACKAGE_NAME=$(grep 'name =' pyproject.toml | cut -d '"' -f 2)
-        PACKAGE_VERSION=$(grep 'version =' pyproject.toml | cut -d '"' -f 2)
+        PACKAGE_NAME="${{ needs.build.outputs.package_name }}"
+        PACKAGE_VERSION="${{ needs.build.outputs.package_version }}"
         echo "Checking if $PACKAGE_NAME version $PACKAGE_VERSION exists on PyPI..."
 
         # Query PyPI API
