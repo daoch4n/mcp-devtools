@@ -32,6 +32,13 @@ jobs:
     - name: Test with pytest
       run: |
         pytest
+    - name: Update version in pyproject.toml
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        PACKAGE_VERSION=$(echo "${{ github.ref }}" | sed 's/refs\/tags\/v//')
+        echo "Updating pyproject.toml with version: $PACKAGE_VERSION"
+        sed -i "s/^version = \".*\"/version = \"$PACKAGE_VERSION\"/" pyproject.toml
+        cat pyproject.toml # For debugging, to see the updated file
     - name: Build distribution packages
       run: |
         python -m build
