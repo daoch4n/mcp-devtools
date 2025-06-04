@@ -31,4 +31,4 @@ dependencies = [
 [project.scripts]
 mcp-devtools = "mcp_devtools_cli:main"
 [tool.setuptools]
-py-modules = ["server"]
+py-modules = ["server", "mcp_devtools_cli"]
