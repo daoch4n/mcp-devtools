@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-devtools"
-version = "0.0.1" # This will be updated by the CI/CD pipeline based on tags
+version = "1.0.5"
 authors = [
   { name="daoch4n", email="daoch4n@gmail.com" },
 ]
