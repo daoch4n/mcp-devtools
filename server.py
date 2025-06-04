@@ -1,16 +1,21 @@
 import logging
 from pathlib import Path
-from typing import Sequence, Optional
+from typing import Sequence, Optional, TypeAlias # Added TypeAlias
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.types import (
     ClientCapabilities,
     TextContent,
+    ImageContent, # Added ImageContent
+    EmbeddedResource, # Added EmbeddedResource
     Tool,
     ListRootsResult,
     RootsCapability,
 )
+# Define Content as a TypeAlias
+Content: TypeAlias = TextContent | ImageContent | EmbeddedResource
+
 from enum import Enum
 import git
 from git.exc import GitCommandError
@@ -77,7 +82,7 @@ class GitApplyDiff(BaseModel):
     repo_path: str
     diff_content: str
 
-class GitReadFile(BaseModel):
+class GitReadFile(BaseModel): # Corrected typo from BaseBaseModel to BaseModel
     repo_path: str
     file_path: str
 
@@ -390,8 +395,8 @@ async def search_and_replace_in_file(
 
     # Use '#' as a delimiter for sed to avoid issues with '/' in search/replace strings
     # Escape '#' in search_string and replace_string if they exist
-    sed_pattern = search_string.replace('#', '\#')
-    sed_replacement = replace_string.replace('#', '\#').replace('&', '\&').replace('\\', '\\\\')
+    sed_pattern = search_string.replace('#', r'\#')
+    sed_replacement = replace_string.replace('#', r'\#').replace('&', r'\&').replace('\\', r'\\\\')
 
     sed_flags = "g"
     if ignore_case:
@@ -517,87 +522,87 @@ async def list_tools() -> list[Tool]:
         Tool(
             name=GitTools.STATUS,
             description="Shows the working tree status",
-            inputSchema=GitStatus.schema(),
+            inputSchema=GitStatus.model_json_schema(),
         ),
         Tool(
             name=GitTools.DIFF_UNSTAGED,
             description="Shows changes in the working directory that are not yet staged",
-            inputSchema=GitDiffUnstaged.schema(),
+            inputSchema=GitDiffUnstaged.model_json_schema(),
         ),
         Tool(
             name=GitTools.DIFF_STAGED,
             description="Shows changes that are staged for commit",
-            inputSchema=GitDiffStaged.schema(),
+            inputSchema=GitDiffStaged.model_json_schema(),
         ),
         Tool(
             name=GitTools.DIFF,
             description="Shows differences between branches or commits",
-            inputSchema=GitDiff.schema(),
+            inputSchema=GitDiff.model_json_schema(),
         ),
         Tool(
             name=GitTools.COMMIT,
             description="Records changes to the repository",
-            inputSchema=GitCommit.schema(),
+            inputSchema=GitCommit.model_json_schema(),
         ),
         Tool(
             name=GitTools.ADD,
             description="Adds file contents to the staging area",
-            inputSchema=GitAdd.schema(),
+            inputSchema=GitAdd.model_json_schema(),
         ),
         Tool(
             name=GitTools.RESET,
             description="Unstages all staged changes",
-            inputSchema=GitReset.schema(),
+            inputSchema=GitReset.model_json_schema(),
         ),
         Tool(
             name=GitTools.LOG,
             description="Shows the commit logs",
-            inputSchema=GitLog.schema(),
+            inputSchema=GitLog.model_json_schema(),
         ),
         Tool(
             name=GitTools.CREATE_BRANCH,
             description="Creates a new branch from an optional base branch",
-            inputSchema=GitCreateBranch.schema(),
+            inputSchema=GitCreateBranch.model_json_schema(),
         ),
         Tool(
             name=GitTools.CHECKOUT,
             description="Switches branches",
-            inputSchema=GitCheckout.schema(),
+            inputSchema=GitCheckout.model_json_schema(),
         ),
         Tool(
             name=GitTools.SHOW,
             description="Shows the contents of a commit",
-            inputSchema=GitShow.schema(),
+            inputSchema=GitShow.model_json_schema(),
         ),
         Tool(
             name=GitTools.APPLY_DIFF,
             description="Applies a diff to the working directory",
-            inputSchema=GitApplyDiff.schema(),
+            inputSchema=GitApplyDiff.model_json_schema(),
         ),
         Tool(
             name=GitTools.READ_FILE,
             description="Reads the content of a file in the repository",
-            inputSchema=GitReadFile.schema(),
+            inputSchema=GitReadFile.model_json_schema(),
         ),
         Tool(
             name=GitTools.STAGE_ALL,
             description="Stages all changes in the working directory",
-            inputSchema=GitStageAll.schema(),
+            inputSchema=GitStageAll.model_json_schema(),
         ),
         Tool(
             name=GitTools.SEARCH_AND_REPLACE,
             description="Searches for a string or regex pattern in a file and replaces it with another string.",
-            inputSchema=SearchAndReplace.schema(),
+            inputSchema=SearchAndReplace.model_json_schema(),
         ),
         Tool(
             name=GitTools.WRITE_TO_FILE,
             description="Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.",
-            inputSchema=WriteToFile.schema(),
+            inputSchema=WriteToFile.model_json_schema(),
         ),
         Tool(
             name=GitTools.EXECUTE_COMMAND,
             description="Executes a custom shell command within the specified repository path.",
-            inputSchema=ExecuteCommand.schema(),
+            inputSchema=ExecuteCommand.model_json_schema(),
         )
     ]
 
@@ -626,7 +631,7 @@ async def list_repos() -> Sequence[str]:
     return await by_roots()
 
 @mcp_server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+async def call_tool(name: str, arguments: dict) -> list[Content]:
     repo_path = Path(arguments.get("repo_path", ".")) # Default to current directory if repo_path is not provided
     
     repo = None # Initialize repo to None
@@ -726,7 +731,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         case GitTools.APPLY_DIFF:
             repo = git.Repo(repo_path)
-            result = git_apply_diff(repo, arguments["diff_content"])
+            result = await git_apply_diff(repo, arguments["diff_content"])
             return [TextContent(
                 type="text",
                 text=f"<![CDATA[{result}]]>"
@@ -748,7 +753,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             )]
         
         case GitTools.SEARCH_AND_REPLACE:
-            result = await search_and_replace_in_file( # Add await here
+            result = await search_and_replace_in_file(
                 repo_path=str(repo_path),
                 file_path=arguments["file_path"],
                 search_string=arguments["search_string"],
@@ -764,7 +769,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
         case GitTools.WRITE_TO_FILE:
             logging.debug(f"Content input to write_to_file: {arguments['content']}")
-            result = await write_to_file_content( # Await this call
+            result = await write_to_file_content(
                 repo_path=str(repo_path),
                 file_path=arguments["file_path"],
                 content=arguments["content"]
