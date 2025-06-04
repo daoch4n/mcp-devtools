@@ -158,7 +158,7 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
             f"Commit: {commit.hexsha}\n"
             f"Author: {commit.author}\n"
             f"Date: {commit.authored_datetime}\n"
-            f"Message: {commit.message}\n"
+            f"Message: {str(commit.message)}\n"
         )
     return log
 
@@ -181,7 +181,7 @@ def git_show(repo: git.Repo, revision: str) -> str:
         f"Commit: {commit.hexsha}\n"
         f"Author: {commit.author}\n"
         f"Date: {commit.authored_datetime}\n"
-        f"Message: {commit.message}\n"
+        f"Message: {str(commit.message)}\n"
     ]
     if commit.parents:
         parent = commit.parents[0]
@@ -514,7 +514,7 @@ async def execute_custom_command(repo_path: str, command: str) -> str:
         return f"Error executing command: {e}"
 
 # Global MCP Server instance
-mcp_server = Server("mcp-git")
+mcp_server: Server = Server("mcp-git")
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
