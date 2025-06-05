@@ -690,7 +690,7 @@ async def ai_edit_files(
                     elif value_str.lower() == "false":
                         value = False
                     else:
-                        value = value_str
+                        value: str | bool = value_str
                     additional_opts[key.replace("-", "_")] = value
                 else:
                     additional_opts[opt[2:].replace("-", "_")] = True
