@@ -1053,6 +1053,8 @@ async def ai_edit_files(
         original_dir = os.getcwd()
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
+        import json
+        logger.info(f"Aider subprocess environment: {json.dumps(dict(os.environ), indent=2)}")
 
         base_command = [aider_path]
         command = prepare_aider_command(
