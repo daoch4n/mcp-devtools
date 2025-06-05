@@ -23,15 +23,12 @@ Here's the order of precedence for configuration sources, from lowest to highest
     *   **Files**: `.aider.conf.yml` and `.env`
     *   **Purpose**: The directory where the Aider command is executed (or the `repo_path` specified to the MCP server) is the primary location for local, project-specific configuration and environment variables. Settings defined here take precedence over those found in the Git root or home directory.
 
-4.  **Custom Configuration/Environment Files (Explicitly Provided)**:
-    *   **Mechanism**: The server's configuration loader can accept `config_file` and `env_file` parameters during initialization.
+4.  **Custom Configuration (Explicitly Provided)**:
+    *   **Mechanism**: The server's configuration loader can accept `config_file` parameter during initialization.
     *   **Purpose**: If provided, these custom files will be loaded, and their settings will take the highest precedence among file-based configurations. This allows for specific configurations to be applied without modifying existing project files.
 
-5.  **Environment Variables (Set by MCP or System)**:
-    *   **Mechanism**: Environment variables can be set directly in the system or through the `claude_desktop_config.json` file (managed by `mcp/cli/claude.py`). The server explicitly sets environment variables from loaded `.env` files and `aider_config` (e.g., `OPENAI_API_BASE`) into the process environment.
-    *   **Purpose**: These environment variables can override values sourced from `.aider.conf.yml` or `.env` files. For example, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `AIDER_MODEL` are commonly set via environment variables.
 
-6.  **Command-Line Options**:
+5.  **Command-Line Options**:
     *   **Mechanism**: When tools like `edit_files` are invoked, additional options can be passed directly as command-line arguments to the `aider` executable.
     *   **Purpose**: These options provide the most immediate and highest-precedence way to configure Aider's behavior for a specific operation, overriding all other configuration sources.
 

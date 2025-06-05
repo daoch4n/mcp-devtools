@@ -678,10 +678,6 @@ async def ai_edit_files(
     aider_options: Dict[str, Any] = {}
     aider_options["yes_always"] = True
     
-    # Load model name from environment variable, defaulting if unset
-    aider_model = os.environ.get("AIDER_MODEL", "gemini-2.5-flash-preview-05-20-refined-high")
-    aider_options["model"] = aider_model
-
     additional_opts: Dict[str, Any] = {}
     if options:
         for opt in options:
@@ -814,11 +810,6 @@ async def aider_status_tool(
                 logger.warning(f"Error getting git details: {e}")
         
         if check_environment:
-            env_vars = {}
-            for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AIDER_MODEL"]:
-                env_vars[key] = key in os.environ
-            
-            result["environment"] = env_vars
             
             config = load_aider_config(directory_path, config_file)
             if config:
