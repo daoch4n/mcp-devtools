@@ -1019,6 +1019,10 @@ async def list_repos() -> Sequence[str]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[Content]:
+    # Explicitly check if the tool name is valid
+    if name not in set(item.value for item in GitTools):
+        raise ValueError(f"Unknown tool: {name}")
+
     repo_path_arg = arguments.get("repo_path", ".")
     if repo_path_arg == ".":
         return [
