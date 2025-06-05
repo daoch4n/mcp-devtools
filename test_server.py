@@ -546,7 +546,8 @@ async def test_search_and_replace_in_file_fallback_on_exception(tmp_path, monkey
         "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: sed open error. AI_HINT: Check your search/replace patterns, file permissions, and review server logs for more details."
         in result
     )
-    assert (file_path).read_text() == "qux bar baz"
+    # The file should remain unchanged due to the error
+    assert (file_path).read_text() == "foo bar baz"
 
 # Test cases for MCP server integration (list_tools, call_tool)
 
@@ -1092,7 +1093,10 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
     # Case 5: Other Exception
     repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(Exception("fail"))
     result = await git_apply_diff(repo, diff_content)
-    assert "An unexpected error occurred: fail" in result
+    assert (
+        "UNEXPECTED_ERROR: An unexpected error occurred while applying diff: fail. AI_HINT: Check the server logs for more details or review your input."
+        in result
+    )
 def test_git_read_file_error_cases(monkeypatch):
     from server import git_read_file
     import types
