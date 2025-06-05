@@ -3,3 +3,5 @@ uvicorn
 mcp-server-git
 httpx
 python-dotenv
+
+PyYAML
