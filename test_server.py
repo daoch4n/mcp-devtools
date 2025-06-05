@@ -1,3 +1,28 @@
+import os
+import tempfile
+import shutil
+import pytest
+
+from server import find_git_root
+
+def test_find_git_root_various_cases():
+    # Case 1: Path is the root of a Git repository
+    with tempfile.TemporaryDirectory() as repo_root:
+        os.mkdir(os.path.join(repo_root, ".git"))
+        assert find_git_root(repo_root) == os.path.abspath(repo_root)
+
+        # Case 2: Path is a subdirectory within a Git repository
+        subdir = os.path.join(repo_root, "subdir")
+        os.mkdir(subdir)
+        assert find_git_root(subdir) == os.path.abspath(repo_root)
+
+    # Case 3: Path is not part of any Git repository
+    with tempfile.TemporaryDirectory() as non_repo:
+        assert find_git_root(non_repo) is None
+
+    # Case 4: Empty/invalid path
+    assert find_git_root("") is None
+    assert find_git_root("/nonexistent/path/shouldnotexist") is None
 import pytest
 import asyncio
 import os
