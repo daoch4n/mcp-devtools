@@ -1,19 +1,18 @@
 import logging
 from pathlib import Path
-from typing import Sequence, Optional, TypeAlias # Added TypeAlias
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
 from mcp.types import (
     ClientCapabilities,
     TextContent,
-    ImageContent, # Added ImageContent
-    EmbeddedResource, # Added EmbeddedResource
+    ImageContent,
+    EmbeddedResource,
     Tool,
     ListRootsResult,
     RootsCapability,
 )
-# Define Content as a TypeAlias
 Content: TypeAlias = TextContent | ImageContent | EmbeddedResource
 
 from enum import Enum
@@ -22,20 +21,168 @@ from git.exc import GitCommandError
 from pydantic import BaseModel
 import asyncio
 import tempfile
-import os # Ensure os is imported
+import os
 import re
-import difflib # Import difflib
-import shlex # Import shlex for shell quoting
+import difflib
+import shlex
+import json
+import subprocess
+import yaml
 
-# Configure logging to show DEBUG messages
 logging.basicConfig(level=logging.DEBUG)
 
-# Import Starlette and Route
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
+
+def find_git_root(path: str) -> Optional[str]:
+    current = os.path.abspath(path)
+    while current != os.path.dirname(current):
+        if os.path.isdir(os.path.join(current, ".git")):
+            return current
+        current = os.path.dirname(current)
+    return None
+
+def load_aider_config(repo_path: Optional[str] = None, config_file: Optional[str] = None) -> Dict[str, Any]:
+    config = {}
+    search_paths = []
+    repo_path = os.path.abspath(repo_path or os.getcwd())
+    
+    logger.debug(f"Searching for Aider configuration in and around: {repo_path}")
+    
+    workdir_config = os.path.join(repo_path, ".aider.conf.yml")
+    if os.path.exists(workdir_config):
+        logger.debug(f"Found Aider config in working directory: {workdir_config}")
+        search_paths.append(workdir_config)
+    
+    git_root = find_git_root(repo_path)
+    if git_root and git_root != repo_path:
+        git_config = os.path.join(git_root, ".aider.conf.yml")
+        if os.path.exists(git_config) and git_config != workdir_config:
+            logger.debug(f"Found Aider config in git root: {git_config}")
+            search_paths.append(git_config)
+    
+    if config_file and os.path.exists(config_file):
+        logger.debug(f"Using specified config file: {config_file}")
+        if config_file not in search_paths:
+            search_paths.append(config_file)
+    
+    home_config = os.path.expanduser("~/.aider.conf.yml")
+    if os.path.exists(home_config) and home_config not in search_paths:
+        logger.debug(f"Found Aider config in home directory: {home_config}")
+        search_paths.append(home_config)
+    
+    for path in reversed(search_paths):
+        try:
+            with open(path, 'r') as f:
+                logger.info(f"Loading Aider config from {path}")
+                yaml_config = yaml.safe_load(f)
+                if yaml_config:
+                    logger.debug(f"Config from {path}: {yaml_config}")
+                    config.update(yaml_config)
+        except Exception as e:
+            logger.warning(f"Error loading config from {path}: {e}")
+    
+    logger.debug(f"Final merged Aider configuration: {config}")
+    return config
+
+def load_dotenv_file(repo_path: Optional[str] = None, env_file: Optional[str] = None) -> Dict[str, str]:
+    env_vars = {}
+    search_paths = []
+    repo_path = os.path.abspath(repo_path or os.getcwd())
+    
+    logger.debug(f"Searching for .env files in and around: {repo_path}")
+    
+    workdir_env = os.path.join(repo_path, ".env")
+    if os.path.exists(workdir_env):
+        logger.debug(f"Found .env in working directory: {workdir_env}")
+        search_paths.append(workdir_env)
+    
+    git_root = find_git_root(repo_path)
+    if git_root and git_root != repo_path:
+        git_env = os.path.join(git_root, ".env")
+        if os.path.exists(git_env) and git_env != workdir_env:
+            logger.debug(f"Found .env in git root: {git_env}")
+            search_paths.append(git_env)
+    
+    if env_file and os.path.exists(env_file):
+        logger.debug(f"Using specified .env file: {env_file}")
+        if env_file not in search_paths:
+            search_paths.append(env_file)
+    
+    home_env = os.path.expanduser("~/.env")
+    if os.path.exists(home_env) and home_env not in search_paths:
+        logger.debug(f"Found .env in home directory: {home_env}")
+        search_paths.append(home_env)
+    
+    for path in reversed(search_paths):
+        try:
+            with open(path, 'r') as f:
+                logger.info(f"Loading .env from {path}")
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    try:
+                        key, value = line.split('=', 1)
+                        env_vars[key.strip()] = value.strip()
+                    except ValueError:
+                        logger.warning(f"Invalid line in .env file {path}: {line}")
+        except Exception as e:
+            logger.warning(f"Error loading .env from {path}: {e}")
+    
+    logger.debug(f"Loaded environment variables: {list(env_vars.keys())}")
+    return env_vars
+
+async def run_command(command: List[str], input_data: Optional[str] = None) -> Tuple[str, str]:
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdin=asyncio.subprocess.PIPE if input_data else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    
+    if input_data:
+        stdout, stderr = await process.communicate(input_data.encode())
+    else:
+        stdout, stderr = await process.communicate()
+    
+    return stdout.decode(), stderr.decode()
+
+def prepare_aider_command(
+    base_command: List[str], 
+    files: Optional[List[str]] = None,
+    options: Optional[Dict[str, Any]] = None
+) -> List[str]:
+    command = base_command.copy()
+    
+    if options:
+        for key, value in options.items():
+            arg_key = key.replace('_', '-')
+            
+            if isinstance(value, bool):
+                if value:
+                    command.append(f"--{arg_key}")
+                else:
+                    command.append(f"--no-{arg_key}")
+            
+            elif isinstance(value, list):
+                for item in value:
+                    command.append(f"--{arg_key}")
+                    command.append(str(item))
+            
+            elif value is not None:
+                command.append(f"--{arg_key}")
+                command.append(str(value))
+    
+    if files:
+        command.extend(files)
+    
+    command = [c for c in command if c]
+    
+    return command
 
 class GitStatus(BaseModel):
     repo_path: str
@@ -56,6 +203,7 @@ class GitCommit(BaseModel):
 
 class GitAdd(BaseModel):
     repo_path: str
+
     files: list[str]
 
 class GitReset(BaseModel):
@@ -82,7 +230,7 @@ class GitApplyDiff(BaseModel):
     repo_path: str
     diff_content: str
 
-class GitReadFile(BaseModel): # Corrected typo from BaseBaseModel to BaseModel
+class GitReadFile(BaseModel):
     repo_path: str
     file_path: str
 
@@ -90,7 +238,7 @@ class GitStageAll(BaseModel):
     repo_path: str
 
 class SearchAndReplace(BaseModel):
-    repo_path: str # Added repo_path to the model
+    repo_path: str
     file_path: str
     search_string: str
     replace_string: str
@@ -106,6 +254,15 @@ class WriteToFile(BaseModel):
 class ExecuteCommand(BaseModel):
     repo_path: str
     command: str
+
+class AiEdit(BaseModel):
+    repo_path: str
+    message: str
+    options: Optional[list[str]] = None
+
+class AiderStatus(BaseModel):
+    repo_path: str
+    check_environment: bool = True
 
 class GitTools(str, Enum):
     STATUS = "git_status"
@@ -125,6 +282,8 @@ class GitTools(str, Enum):
     SEARCH_AND_REPLACE = "search_and_replace"
     WRITE_TO_FILE = "write_to_file"
     EXECUTE_COMMAND = "execute_command"
+    AI_EDIT = "ai_edit"
+    AIDER_STATUS = "aider_status"
 
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
@@ -194,7 +353,7 @@ def git_show(repo: git.Repo, revision: str) -> str:
             if isinstance(d.diff, bytes):
                 output.append(d.diff.decode('utf-8'))
             else:
-                output.append(str(d.diff)) # Fallback for unexpected string type
+                output.append(str(d.diff))
     return "".join(output)
 
 async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
@@ -202,7 +361,6 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
     affected_file_path = None
     original_content = ""
 
-    # Try to extract the file path from the diff content
     match = re.search(r"--- a/(.+)", diff_content)
     if match:
         affected_file_path = match.group(1).strip()
@@ -222,10 +380,9 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
             tmp.write(diff_content)
             tmp_file_path = tmp.name
         
-        # Apply with more relaxed settings to handle potential issues
         repo.git.apply(
             '--check',
-            '-3', # Changed from '--threeway' to '-3'
+            '-3',
             '--whitespace=fix',
             '--allow-overlap',
             tmp_file_path
@@ -234,7 +391,6 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         result_message = "Diff applied successfully"
 
         if affected_file_path:
-            # Read new content after applying diff
             with open(full_affected_path, 'r') as f:
                 new_content = f.read()
 
@@ -273,7 +429,7 @@ async def _generate_diff_output(original_content: str, new_content: str, file_pa
         new_content.splitlines(keepends=True),
         fromfile=f"a/{file_path}",
         tofile=f"b/{file_path}",
-        lineterm="" # Avoid adding extra newlines
+        lineterm=""
     ))
     
     if len(diff_lines) > 1000:
@@ -308,7 +464,6 @@ async def _search_and_replace_python_logic(
         if ignore_case:
             flags |= re.IGNORECASE
 
-        # Attempt literal search first
         literal_search_string = re.escape(search_string)
         logging.info(f"Attempting literal search with: {literal_search_string}")
 
@@ -330,7 +485,6 @@ async def _search_and_replace_python_logic(
                 modified_lines_literal.append(line)
 
         if changes_made_literal > 0:
-            # Read original content for diff generation
             original_content = "".join(lines)
             with open(full_file_path, 'w') as f:
                 f.writelines(modified_lines_literal)
@@ -340,7 +494,6 @@ async def _search_and_replace_python_logic(
             result_message += await _run_tsc_if_applicable(repo_path, file_path)
             return result_message
         else:
-            # If literal search yields no changes, attempt regex search
             logging.info(f"Literal search failed. Attempting regex search with: {search_string}")
             modified_lines_regex = []
             changes_made_regex = 0
@@ -360,7 +513,6 @@ async def _search_and_replace_python_logic(
                     modified_lines_regex.append(line)
 
             if changes_made_regex > 0:
-                # Read original content for diff generation
                 original_content = "".join(lines)
                 with open(full_file_path, 'w') as f:
                     f.writelines(modified_lines_regex)
@@ -390,11 +542,8 @@ async def search_and_replace_in_file(
 ) -> str:
     full_file_path = Path(repo_path) / file_path
 
-    # --- Attempt using sed first ---
     sed_command_parts = ["flatpak-spawn", "--host", "sed", "-i"]
 
-    # Use '#' as a delimiter for sed to avoid issues with '/' in search/replace strings
-    # Escape '#' in search_string and replace_string if they exist
     sed_pattern = search_string.replace('#', r'\#')
     sed_replacement = replace_string.replace('#', r'\#').replace('&', r'\&').replace('\\', r'\\\\')
 
@@ -404,7 +553,6 @@ async def search_and_replace_in_file(
 
     sed_sub_command = f"s#{sed_pattern}#{sed_replacement}#{sed_flags}"
 
-    # Add line range if specified
     if start_line is not None and end_line is not None:
         sed_sub_command = f"{start_line},{end_line}{sed_sub_command}"
     elif start_line is not None:
@@ -412,25 +560,19 @@ async def search_and_replace_in_file(
     elif end_line is not None:
         sed_sub_command = f"1,{end_line}{sed_sub_command}"
 
-    # Enclose the sed substitution command in single quotes for the shell
-    # and quote the file path
     sed_full_command = f"{' '.join(sed_command_parts)} '{sed_sub_command}' {shlex.quote(str(full_file_path))}"
 
     try:
-        # Read original content to check for changes after sed
         with open(full_file_path, 'r') as f:
             original_content = f.read()
 
         sed_result = await execute_custom_command(repo_path, sed_full_command)
         logging.info(f"Sed command result: {sed_result}")
 
-        # Check if sed command itself failed (e.g., sed not found, syntax error)
         if "Command failed with exit code" in sed_result or "Error executing command" in sed_result:
             logging.warning(f"Sed command failed: {sed_result}. Falling back to Python logic.")
-            # Fallback to Python logic
             return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
         
-        # Read content after sed to check if changes were made
         with open(full_file_path, 'r') as f:
             modified_content_sed = f.read()
 
@@ -441,32 +583,28 @@ async def search_and_replace_in_file(
             return result_message
         else:
             logging.info(f"Sed command executed but made no changes. Falling back to Python logic.")
-            # Sed made no changes, fall back to Python logic to try literal/regex
             return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
 
     except FileNotFoundError:
         return f"Error: File not found at {full_file_path}"
     except Exception as e:
         logging.error(f"An unexpected error occurred during sed attempt: {e}. Falling back to Python logic.")
-        # Fallback to Python logic for any other unexpected errors
         return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     try:
         full_file_path = Path(repo_path) / file_path
         
-        # Read original content if file exists
         original_content = ""
-        file_existed = full_file_path.exists() # Check if file existed before writing
+        file_existed = full_file_path.exists()
         if file_existed:
             with open(full_file_path, 'r') as f:
                 original_content = f.read()
 
-        full_file_path.parent.mkdir(parents=True, exist_ok=True) # Create parent directories if they don't exist
-        with open(full_file_path, 'w', encoding='utf-8') as f: # Explicitly set encoding to utf-8
+        full_file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(full_file_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
-        # --- Debugging: Read back raw bytes and compare ---
         with open(full_file_path, 'rb') as f_read_back:
             written_bytes = f_read_back.read()
         
@@ -476,13 +614,11 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
 
         if written_bytes != content.encode('utf-8'):
             logging.error("Mismatch between input content and written bytes! File corruption detected during write.")
-        # --- End Debugging ---
 
         result_message = ""
-        if not file_existed: # If it's a new file
+        if not file_existed:
             result_message = f"Successfully created new file: {file_path}."
-        else: # If file existed, generate diff
-            # Generate diff
+        else:
             result_message += await _generate_diff_output(original_content, content, file_path)
 
         result_message += await _run_tsc_if_applicable(repo_path, file_path)
@@ -513,7 +649,181 @@ async def execute_custom_command(repo_path: str, command: str) -> str:
     except Exception as e:
         return f"Error executing command: {e}"
 
-# Global MCP Server instance
+async def ai_edit_files(
+    repo_path: str,
+    message: str,
+    options: Optional[list[str]],
+    openai_api_key: Optional[str] = None,
+    openai_api_base: Optional[str] = None,
+) -> str:
+    """
+    AI pair programming tool for making targeted code changes using Aider.
+    This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
+    """
+    aider_path = "aider"
+    
+    logger.info(f"Running aider in directory: {repo_path}")
+    logger.debug(f"Message length: {len(message)} characters")
+    logger.debug(f"Additional options: {options}")
+    
+    directory_path = os.path.abspath(repo_path)
+    if not os.path.exists(directory_path):
+        logger.error(f"Directory does not exist: {directory_path}")
+        return f"Error: Directory does not exist: {directory_path}"
+    
+    aider_config = load_aider_config(directory_path)
+    load_dotenv_file(directory_path)
+    
+    aider_options = {}
+    aider_options["yes_always"] = True
+    
+    # Load model name from environment variable, defaulting if unset
+    aider_model = os.environ.get("AIDER_MODEL", "gemini-2.5-flash-preview-05-20-refined-high")
+    aider_options["model"] = aider_model
+
+    additional_opts = {}
+    if options:
+        for opt in options:
+            if opt.startswith("--"):
+                if "=" in opt:
+                    key, value = opt[2:].split("=", 1)
+                    additional_opts[key.replace("-", "_")] = value
+                else:
+                    additional_opts[opt[2:].replace("-", "_")] = True
+            elif opt.startswith("--no-"):
+                key = opt[5:].replace("-", "_")
+                additional_opts[key] = False
+    
+    aider_options.update(additional_opts)
+
+    if openai_api_key:
+        aider_options["api_key"] = openai_api_key
+    if openai_api_base:
+        aider_options["base_url"] = openai_api_base
+    
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
+        f.write(message)
+        instructions_file = f.name
+        logger.debug(f"Instructions written to temporary file: {instructions_file}")
+    
+    try:
+        original_dir = os.getcwd()
+        
+        os.chdir(directory_path)
+        logger.debug(f"Changed working directory to: {directory_path}")
+        
+        base_command = ["flatpak-spawn", "--host", aider_path]
+        command = prepare_aider_command(
+            base_command,
+            [],
+            aider_options
+        )
+        
+        logger.info(f"Running aider command: {' '.join(command)}")
+        
+        with open(instructions_file, 'r') as f:
+            instructions_content = f.read()
+            
+        logger.debug("Executing Aider with the instructions...")
+        stdout, stderr = await run_command(command, instructions_content)
+        
+        os.chdir(original_dir)
+        
+        if stderr and ("error" in stderr.lower() or "exception" in stderr.lower()):
+            logger.error(f"Aider reported an error: {stderr}")
+            return f"Error making code changes:\n{stderr}\n\nOutput:\n{stdout}"
+        
+        logger.info("Code changes completed successfully")
+        return f"Code changes completed successfully:\n\n{stdout}"
+    finally:
+        logger.debug(f"Cleaning up temporary file: {instructions_file}")
+        os.unlink(instructions_file)
+        
+        if os.getcwd() != original_dir:
+            os.chdir(original_dir)
+            logger.debug(f"Restored working directory to: {original_dir}")
+
+async def aider_status_tool(repo_path: str, check_environment: bool = True) -> str:
+    """
+    Check the status of Aider and its environment.
+    This function encapsulates the logic from aider_mcp/server.py's aider_status tool.
+    """
+    aider_path = "aider"
+
+    logger.info("Checking Aider status")
+    
+    result = {}
+    
+    try:
+        command = ["flatpak-spawn", "--host", aider_path, "--version"]
+        stdout, stderr = await run_command(command)
+        
+        version_info = stdout.strip() if stdout else "Unknown version"
+        logger.info(f"Detected Aider version: {version_info}")
+        
+        result["aider"] = {
+            "installed": bool(stdout and not stderr),
+            "version": version_info,
+            "executable_path": aider_path,
+        }
+        
+        directory_path = os.path.abspath(repo_path)
+        result["directory"] = {
+            "path": directory_path,
+            "exists": os.path.exists(directory_path),
+        }
+        
+        git_root = find_git_root(directory_path)
+        result["git"] = {
+            "is_git_repo": bool(git_root),
+            "git_root": git_root,
+        }
+        
+        if git_root:
+            try:
+                original_dir = os.getcwd()
+                
+                os.chdir(directory_path)
+                
+                name_cmd = ["flatpak-spawn", "--host", "git", "config", "--get", "remote.origin.url"]
+                name_stdout, _ = await run_command(name_cmd)
+                result["git"]["remote_url"] = name_stdout.strip() if name_stdout else None
+                
+                branch_cmd = ["flatpak-spawn", "--host", "git", "branch", "--show-current"]
+                branch_stdout, _ = await run_command(branch_cmd)
+                result["git"]["current_branch"] = branch_stdout.strip() if branch_stdout else None
+                
+                os.chdir(original_dir)
+            except Exception as e:
+                logger.warning(f"Error getting git details: {e}")
+        
+        if check_environment:
+            env_vars = {}
+            for key in ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AIDER_MODEL"]:
+                env_vars[key] = key in os.environ
+            
+            result["environment"] = env_vars
+            
+            config = load_aider_config(directory_path)
+            if config:
+                result["config"] = config
+            
+            result["config_files"] = {
+                "searched": [
+                    os.path.expanduser("~/.aider.conf.yml"),
+                    os.path.join(git_root, ".aider.conf.yml") if git_root else None,
+                    os.path.join(directory_path, ".aider.conf.yml"),
+                ],
+                "used": os.path.join(directory_path, ".aider.conf.yml") 
+                if os.path.exists(os.path.join(directory_path, ".aider.conf.yml")) else None
+            }
+        
+        return json.dumps(result, indent=2, default=str)
+        
+    except Exception as e:
+        logger.error(f"Error checking Aider status: {e}")
+        return f"Error checking Aider status: {str(e)}"
+
 mcp_server: Server = Server("mcp-git")
 
 @mcp_server.list_tools()
@@ -603,6 +913,39 @@ async def list_tools() -> list[Tool]:
             name=GitTools.EXECUTE_COMMAND,
             description="Executes a custom shell command within the specified repository path.",
             inputSchema=ExecuteCommand.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.AI_EDIT,
+            description="AI pair programming tool for making targeted code changes using Aider. Use this tool to:\n\n"
+                        "1. Implement new features or functionality in existing code\n"
+                        "2. Add tests to an existing codebase\n"
+                        "3. Fix bugs in code\n"
+                        "4. Refactor or improve existing code\n"
+                        "5. Make structural changes across multiple files\n\n"
+                        "The tool requires:\n"
+                        "- A repository path where the code exists\n"
+                        "- A detailed message describing what changes to make. Please only describe one change per message. "
+                        "If you need to make multiple changes, please submit multiple requests.\n\n"
+                        "Best practices for messages:\n"
+                        "- Be specific about what files or components to modify\n"
+                        "- Describe the desired behavior or functionality clearly\n"
+                        "- Provide context about the existing codebase structure\n"
+                        "- Include any constraints or requirements to follow\n\n"
+                        "Examples of good messages:\n"
+                        "- \"Add unit tests for the Customer class in src/models/customer.rb testing the validation logic\"\n"
+                        "- \"Implement pagination for the user listing API in the controllers/users_controller.js file\"\n"
+                        "- \"Fix the bug in utils/date_formatter.py where dates before 1970 aren't handled correctly\"\n"
+                        "- \"Refactor the authentication middleware in middleware/auth.js to use async/await instead of callbacks\"",
+            inputSchema=AiEdit.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.AIDER_STATUS,
+            description="Check the status of Aider and its environment. Use this to:\n\n"
+                        "1. Verify Aider is correctly installed\n"
+                        "2. Check API keys for OpenAI/Anthropic are set up\n"
+                        "3. View the current configuration\n"
+                        "4. Diagnose connection or setup issues",
+            inputSchema=AiderStatus.model_json_schema(),
         )
     ]
 
@@ -632,9 +975,9 @@ async def list_repos() -> Sequence[str]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[Content]:
-    repo_path = Path(arguments.get("repo_path", ".")) # Default to current directory if repo_path is not provided
+    repo_path = Path(arguments.get("repo_path", "."))
     
-    repo = None # Initialize repo to None
+    repo = None
     
     match name:
         case GitTools.STATUS:
@@ -790,39 +1133,60 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 text=result
             )]
 
+        case GitTools.AI_EDIT:
+            message = arguments.get("message", "")
+            options = arguments.get("options", [])
+            
+            # Retrieve OpenAI API key and base from environment variables
+            openai_api_key = os.environ.get("OPENAI_API_KEY")
+            openai_api_base = os.environ.get("OPENAI_API_BASE")
+
+            result = await ai_edit_files(
+                repo_path=str(repo_path),
+                message=message,
+                options=options,
+                openai_api_key=openai_api_key,
+                openai_api_base=openai_api_base,
+            )
+            return [TextContent(
+                type="text",
+                text=f"<![CDATA[{result}]]>"
+            )]
+
+        case GitTools.AIDER_STATUS:
+            check_environment = arguments.get("check_environment", True)
+            
+            result = await aider_status_tool(
+                repo_path=str(repo_path),
+                check_environment=check_environment
+            )
+            return [TextContent(
+                type="text",
+                text=f"<![CDATA[{result}]]>"
+            )]
+
         case _:
             raise ValueError(f"Unknown tool: {name}")
 
-# Define the endpoint for POST messages
 POST_MESSAGE_ENDPOINT = "/messages/"
 
-# Create an SSE transport instance
 sse_transport = SseServerTransport(POST_MESSAGE_ENDPOINT)
 
-# Define handler for SSE GET requests
 async def handle_sse(request):
     async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
-    return Response() # Return empty response to avoid NoneType error
+    return Response()
 
-# Define handler for client POST messages
 async def handle_post_message(scope, receive, send):
     await sse_transport.handle_post_message(scope, receive, send)
 
-# Create Starlette routes
 routes = [
     Route("/sse", endpoint=handle_sse, methods=["GET"]),
     Mount(POST_MESSAGE_ENDPOINT, app=handle_post_message),
 ]
 
-# Create the Starlette application
 app = Starlette(routes=routes)
 
 if __name__ == "__main__":
-    # This block will be executed when the script is run directly.
-    # Uvicorn will typically run the 'app' object.
-    # For local testing, you might run uvicorn directly:
-    # uvicorn server:app --host 127.0.0.1 --port 8000 --reload
-    # However, the server.sh script will handle this.
-    pass # Uvicorn will run the 'app'
+    pass
