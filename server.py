@@ -189,10 +189,7 @@ def prepare_aider_command(
 class GitStatus(BaseModel):
     repo_path: str
 
-class GitDiffUnstaged(BaseModel):
-    repo_path: str
-
-class GitDiffStaged(BaseModel):
+class GitDiffAll(BaseModel):
     repo_path: str
 
 class GitDiff(BaseModel):
@@ -261,8 +258,7 @@ class AiderStatus(BaseModel):
 
 class GitTools(str, Enum):
     STATUS = "git_status"
-    DIFF_UNSTAGED = "git_diff_unstaged"
-    DIFF_STAGED = "git_diff_staged"
+    DIFF_ALL = "git_diff_all"
     DIFF = "git_diff"
     COMMIT = "git_commit"
     RESET = "git_reset"
@@ -281,11 +277,8 @@ class GitTools(str, Enum):
 def git_status(repo: git.Repo) -> str:
     return repo.git.status()
 
-def git_diff_unstaged(repo: git.Repo) -> str:
-    return repo.git.diff()
-
-def git_diff_staged(repo: git.Repo) -> str:
-    return repo.git.diff("--cached")
+def git_diff_all(repo: git.Repo) -> str:
+    return repo.git.diff("HEAD")
 
 def git_diff(repo: git.Repo, target: str) -> str:
     return repo.git.diff(target)
@@ -867,14 +860,9 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitStatus.model_json_schema(),
         ),
         Tool(
-            name=GitTools.DIFF_UNSTAGED,
-            description="Shows changes in the working directory that are not yet staged",
-            inputSchema=GitDiffUnstaged.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.DIFF_STAGED,
-            description="Shows changes that are staged for commit",
-            inputSchema=GitDiffStaged.model_json_schema(),
+            name=GitTools.DIFF_ALL,
+            description="Shows all changes in the working directory (staged and unstaged, compared to HEAD)",
+            inputSchema=GitDiffAll.model_json_schema(),
         ),
         Tool(
             name=GitTools.DIFF,
@@ -1025,20 +1013,12 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 text=f"Repository status:\n{status}"
             )]
 
-        case GitTools.DIFF_UNSTAGED:
+        case GitTools.DIFF_ALL:
             repo = git.Repo(repo_path)
-            diff = git_diff_unstaged(repo)
+            diff = git_diff_all(repo)
             return [TextContent(
                 type="text",
-                text=f"Unstaged changes:\n{diff}"
-            )]
-
-        case GitTools.DIFF_STAGED:
-            repo = git.Repo(repo_path)
-            diff = git_diff_staged(repo)
-            return [TextContent(
-                type="text",
-                text=f"Staged changes:\n{diff}"
+                text=f"All changes (staged and unstaged):\n{diff}"
             )]
 
         case GitTools.DIFF:

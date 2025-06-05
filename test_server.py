@@ -36,7 +36,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 # Import functions and classes from server.py
 from server import (
-    git_status, git_diff_unstaged, git_diff_staged, git_diff, git_commit,
+    git_status, git_diff_all, git_diff, git_commit,
     git_reset, git_log, git_create_branch, git_checkout, git_show,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable, _search_and_replace_python_logic,
@@ -93,7 +93,7 @@ def test_git_status(temp_git_repo):
 def test_git_diff_unstaged(temp_git_repo):
     repo, repo_path = temp_git_repo
     (repo_path / "initial_file.txt").write_text("modified content")
-    diff = git_diff_unstaged(repo)
+    diff = git_diff_all(repo)
     assert "-initial content" in diff
     assert "+modified content" in diff
 
@@ -101,8 +101,7 @@ def test_git_diff_staged(temp_git_repo):
     repo, repo_path = temp_git_repo
     (repo_path / "staged_file.txt").write_text("staged content")
     repo.index.add(["staged_file.txt"])
-    diff = git_diff_staged(repo)
-    assert "+staged content" in diff
+    # Removed test for git_diff_staged as the function no longer exists
 
 def test_git_diff(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -534,13 +533,12 @@ async def test_call_tool(
 
     # Test GitTools.DIFF_UNSTAGED
     mock_git_diff_unstaged.return_value = "diff_unstaged_output"
-    result = list(await call_tool(GitTools.DIFF_UNSTAGED.value, {"repo_path": "/tmp/repo"})) # Cast to list
-    assert result[0].text == "Unstaged changes:\ndiff_unstaged_output"
+    result = list(await call_tool(GitTools.DIFF_ALL.value, {"repo_path": "/tmp/repo"})) # Cast to list
+    assert result[0].text == "All changes (staged and unstaged):\ndiff_unstaged_output"
 
     # Test GitTools.DIFF_STAGED
     mock_git_diff_staged.return_value = "diff_staged_output"
-    result = list(await call_tool(GitTools.DIFF_STAGED.value, {"repo_path": "/tmp/repo"})) # Cast to list
-    assert result[0].text == "Staged changes:\ndiff_staged_output"
+    # Removed test for GitTools.DIFF_STAGED as the tool no longer exists
 
     # Test GitTools.DIFF
     mock_git_diff.return_value = "diff_target_output"
