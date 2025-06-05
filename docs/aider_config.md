@@ -42,12 +42,12 @@ The `load_aider_config` and `load_dotenv_file` functions in `mcp_devtools/aider_
 graph TD
     A[User Request/Tool Call] --> B(mcp_devtools/aider_mcp_server/server.py)
     B --> C{Load Configuration}
-    C --> D["1. Home Directory (~/.aider.conf.yml, ~/.env)"]
-    C --> E["2. Git Repository Root (.aider.conf.yml, .env)"]
-    C --> F["3. Working Directory (.aider.conf.yml, .env)"]
-    C --> G["4. Custom Config/Env Files (if specified)"]
-    C --> H["5. Environment Variables (from claude_desktop_config.json or system)"]
-    C --> I["6. Command-Line Options (passed to aider executable)"]
+    C --> D[Home Directory]
+    C --> E[Git Repo Root]
+    C --> F[Working Directory]
+    C --> G[Custom Files]
+    C --> H[Environment Variables]
+    C --> I[Command-Line Options]
     D -- Overridden by --> E
     E -- Overridden by --> F
     F -- Overridden by --> G
