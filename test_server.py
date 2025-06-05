@@ -118,7 +118,7 @@ def test_git_diff(temp_git_repo):
     diff = git_diff(repo, "main" if "main" in repo.heads else "master")
     assert "+feature content" in diff
 
-def test_git_commit(temp_git_repo):
+def test_git_stage_and_commit(temp_git_repo):
     repo, repo_path = temp_git_repo
     (repo_path / "commit_file.txt").write_text("content to commit")
     repo.index.add(["commit_file.txt"])
@@ -199,7 +199,7 @@ def test_git_read_file(temp_git_repo):
     result_not_found = git_read_file(repo, "non_existent_file.txt")
     assert "Error: file wasn't found or out of cwd" in result_not_found
 
-# Removed test_git_stage_all since git_stage_all no longer exists and staging is now handled via git_commit
+# Removed test_git_stage_all since git_stage_all no longer exists and staging is now handled via git_stage_and_commit
 
 # Removed test_git_stage_all_git_command_error since git_stage_all no longer exists
 
