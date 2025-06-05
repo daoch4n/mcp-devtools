@@ -12,6 +12,7 @@ Here's the order of precedence for configuration sources, from lowest to highest
 
 1.  **Home Directory Configuration**:
     *   **Files**: `~/.aider.conf.yml` and `~/.env`
+    *   See a [sample.aider.conf.yml](https://github.com/Aider-AI/aider/blob/main/aider/website/assets/sample.aider.conf.yml) for reference.
     *   **Purpose**: These files provide global default settings for Aider and environment variables that apply across all projects.
 
 2.  **Git Repository Root Configuration**:
