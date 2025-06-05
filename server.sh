@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # Default port
-PORT=4754
+PORT=1337
 
 # Parse command-line arguments
 while [ "$#" -gt 0 ]; do
