@@ -8,3 +8,4 @@ mcp_devtools.egg-info/
 uv.lock
 build/
 .aider*
+.coverage
