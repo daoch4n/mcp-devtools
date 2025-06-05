@@ -1,3 +1,27 @@
+"""
+MCP Git Server
+
+This module implements a server for the MCP (Multi-Agent Collaboration Platform)
+that provides a set of Git-related tools and AI-powered code editing capabilities
+using Aider. It allows clients to interact with Git repositories, perform file
+operations, execute commands, and initiate AI-driven code modifications.
+
+Key Components:
+- Git Operations: Functions for common Git commands like status, diff, commit,
+  reset, log, branch creation, checkout, and applying diffs.
+- File Operations: Tools for reading, writing, and searching/replacing content
+  within files.
+- Command Execution: A general-purpose tool to execute arbitrary shell commands.
+- AI-Powered Editing (Aider): Integration with the Aider tool for advanced
+  code modifications based on natural language instructions.
+- Configuration Loading: Utilities to load Aider-specific configurations and
+  environment variables from various locations (.aider.conf.yml, .env).
+- MCP Server Integration: Exposes these functionalities as MCP tools, allowing
+  them to be called by agents.
+- Starlette Application: Sets up an HTTP server with SSE (Server-Sent Events)
+  for communication with MCP clients.
+"""
+
 import logging
 from pathlib import Path
 from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple
@@ -40,6 +64,15 @@ logger.setLevel(logging.DEBUG)
 logging.getLogger().setLevel(logging.DEBUG)
 
 def find_git_root(path: str) -> Optional[str]:
+    """
+    Finds the root directory of a Git repository by traversing up from the given path.
+
+    Args:
+        path: The starting path to search from.
+
+    Returns:
+        The absolute path to the Git repository root, or None if not found.
+    """
     current = os.path.abspath(path)
     while current != os.path.dirname(current):
         if os.path.isdir(os.path.join(current, ".git")):
@@ -48,6 +81,17 @@ def find_git_root(path: str) -> Optional[str]:
     return None
 
 def load_aider_config(repo_path: Optional[str] = None, config_file: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Loads Aider configuration from various possible locations, merging them
+    in a specific order of precedence (home dir < git root < working dir < specified file).
+
+    Args:
+        repo_path: The path to the repository or working directory. Defaults to current working directory.
+        config_file: An optional specific path to an Aider configuration file to load.
+
+    Returns:
+        A dictionary containing the merged Aider configuration.
+    """
     config = {}
     search_paths = []
     repo_path = os.path.abspath(repo_path or os.getcwd())
@@ -76,6 +120,7 @@ def load_aider_config(repo_path: Optional[str] = None, config_file: Optional[str
         logger.debug(f"Found Aider config in home directory: {home_config}")
         search_paths.append(home_config)
     
+    # Load in reverse order of precedence, so later files override earlier ones
     for path in reversed(search_paths):
         try:
             with open(path, 'r') as f:
@@ -91,6 +136,17 @@ def load_aider_config(repo_path: Optional[str] = None, config_file: Optional[str
     return config
 
 def load_dotenv_file(repo_path: Optional[str] = None, env_file: Optional[str] = None) -> Dict[str, str]:
+    """
+    Loads environment variables from .env files found in various locations,
+    merging them in a specific order of precedence (home dir < git root < working dir < specified file).
+
+    Args:
+        repo_path: The path to the repository or working directory. Defaults to current working directory.
+        env_file: An optional specific path to a .env file to load.
+
+    Returns:
+        A dictionary containing the loaded environment variables.
+    """
     env_vars = {}
     search_paths = []
     repo_path = os.path.abspath(repo_path or os.getcwd())
@@ -119,6 +175,7 @@ def load_dotenv_file(repo_path: Optional[str] = None, env_file: Optional[str] = 
         logger.debug(f"Found .env in home directory: {home_env}")
         search_paths.append(home_env)
     
+    # Load in reverse order of precedence, so later files override earlier ones
     for path in reversed(search_paths):
         try:
             with open(path, 'r') as f:
@@ -139,6 +196,16 @@ def load_dotenv_file(repo_path: Optional[str] = None, env_file: Optional[str] = 
     return env_vars
 
 async def run_command(command: List[str], input_data: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Executes a shell command asynchronously.
+
+    Args:
+        command: A list of strings representing the command and its arguments.
+        input_data: Optional string data to pass to the command's stdin.
+
+    Returns:
+        A tuple containing the stdout and stderr of the command as strings.
+    """
     process = await asyncio.create_subprocess_exec(
         *command,
         stdin=asyncio.subprocess.PIPE if input_data else None,
@@ -158,6 +225,17 @@ def prepare_aider_command(
     files: Optional[List[str]] = None,
     options: Optional[Dict[str, Any]] = None
 ) -> List[str]:
+    """
+    Prepares the full Aider command by adding files and options to the base command.
+
+    Args:
+        base_command: The initial Aider command (e.g., ["aider"]).
+        files: An optional list of file paths to include in the command.
+        options: An optional dictionary of Aider options (e.g., {"yes_always": True}).
+
+    Returns:
+        A list of strings representing the complete Aider command.
+    """
     command = base_command.copy()
     
     if options:
@@ -187,49 +265,85 @@ def prepare_aider_command(
     return command
 
 class GitStatus(BaseModel):
+    """
+    Represents the input schema for the `git_status` tool.
+    """
     repo_path: str
 
 class GitDiffAll(BaseModel):
+    """
+    Represents the input schema for the `git_diff_all` tool.
+    """
     repo_path: str
 
 class GitDiff(BaseModel):
+    """
+    Represents the input schema for the `git_diff` tool.
+    """
     repo_path: str
     target: str
 
 class GitCommit(BaseModel):
+    """
+    Represents the input schema for the `git_stage_and_commit` tool.
+    """
     repo_path: str
     message: str
     files: Optional[List[str]] = None  # Optional: files to stage before commit
 
 class GitReset(BaseModel):
+    """
+    Represents the input schema for the `git_reset` tool.
+    """
     repo_path: str
 
 class GitLog(BaseModel):
+    """
+    Represents the input schema for the `git_log` tool.
+    """
     repo_path: str
     max_count: int = 10
 
 class GitCreateBranch(BaseModel):
+    """
+    Represents the input schema for the `git_create_branch` tool.
+    """
     repo_path: str
     branch_name: str
     base_branch: str | None = None
 
 class GitCheckout(BaseModel):
+    """
+    Represents the input schema for the `git_checkout` tool.
+    """
     repo_path: str
     branch_name: str
 
 class GitShow(BaseModel):
+    """
+    Represents the input schema for the `git_show` tool.
+    """
     repo_path: str
     revision: str
 
 class GitApplyDiff(BaseModel):
+    """
+    Represents the input schema for the `git_apply_diff` tool.
+    """
     repo_path: str
     diff_content: str
 
 class GitReadFile(BaseModel):
+    """
+    Represents the input schema for the `git_read_file` tool.
+    """
     repo_path: str
     file_path: str
 
 class SearchAndReplace(BaseModel):
+    """
+    Represents the input schema for the `search_and_replace` tool.
+    """
     repo_path: str
     file_path: str
     search_string: str
@@ -239,25 +353,40 @@ class SearchAndReplace(BaseModel):
     end_line: Optional[int] = None
 
 class WriteToFile(BaseModel):
+    """
+    Represents the input schema for the `write_to_file` tool.
+    """
     repo_path: str
     file_path: str
     content: str
 
 class ExecuteCommand(BaseModel):
+    """
+    Represents the input schema for the `execute_command` tool.
+    """
     repo_path: str
     command: str
 
 class AiEdit(BaseModel):
+    """
+    Represents the input schema for the `ai_edit` tool.
+    """
     repo_path: str
     message: str
     files: List[str] # Make files mandatory
     options: Optional[list[str]] = None
 
 class AiderStatus(BaseModel):
+    """
+    Represents the input schema for the `aider_status` tool.
+    """
     repo_path: str
     check_environment: bool = True
 
 class GitTools(str, Enum):
+    """
+    An enumeration of all available Git and related tools.
+    """
     STATUS = "git_status"
     DIFF_ALL = "git_diff_all"
     DIFF = "git_diff"
@@ -276,15 +405,54 @@ class GitTools(str, Enum):
     AIDER_STATUS = "aider_status"
 
 def git_status(repo: git.Repo) -> str:
+    """
+    Gets the status of the Git working tree.
+
+    Args:
+        repo: The Git repository object.
+
+    Returns:
+        A string representing the output of `git status`.
+    """
     return repo.git.status()
 
 def git_diff_all(repo: git.Repo) -> str:
+    """
+    Shows all changes in the working directory (staged and unstaged, compared to HEAD).
+
+    Args:
+        repo: The Git repository object.
+
+    Returns:
+        A string representing the output of `git diff HEAD`.
+    """
     return repo.git.diff("HEAD")
 
 def git_diff(repo: git.Repo, target: str) -> str:
+    """
+    Shows differences between branches or commits.
+
+    Args:
+        repo: The Git repository object.
+        target: The target (branch, commit hash, etc.) to diff against.
+
+    Returns:
+        A string representing the output of `git diff <target>`.
+    """
     return repo.git.diff(target)
 
 def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
+    """
+    Stages changes and commits them to the repository.
+
+    Args:
+        repo: The Git repository object.
+        message: The commit message.
+        files: An optional list of specific files to stage. If None, all changes are staged.
+
+    Returns:
+        A string indicating the success of the staging and commit operation.
+    """
     if files:
         repo.index.add(files)
         staged_message = f"Files {', '.join(files)} staged successfully."
@@ -296,10 +464,29 @@ def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]
     return f"{staged_message}\nChanges committed successfully with hash {commit.hexsha}"
 
 def git_reset(repo: git.Repo) -> str:
+    """
+    Unstages all staged changes in the repository.
+
+    Args:
+        repo: The Git repository object.
+
+    Returns:
+        A string indicating that all staged changes have been reset.
+    """
     repo.index.reset()
     return "All staged changes reset"
 
 def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
+    """
+    Shows the commit logs for the repository.
+
+    Args:
+        repo: The Git repository object.
+        max_count: The maximum number of commits to retrieve.
+
+    Returns:
+        A list of strings, where each string represents a formatted commit entry.
+    """
     commits = list(repo.iter_commits(max_count=max_count))
     log = []
     for commit in commits:
@@ -312,6 +499,18 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
     return log
 
 def git_create_branch(repo: git.Repo, branch_name: str, base_branch: str | None = None) -> str:
+    """
+    Creates a new branch in the repository.
+
+    Args:
+        repo: The Git repository object.
+        branch_name: The name of the new branch.
+        base_branch: Optional. The name of the branch to base the new branch on.
+                     If None, the new branch is based on the current active branch.
+
+    Returns:
+        A string indicating the successful creation of the branch.
+    """
     if base_branch:
         base = repo.refs[base_branch]
     else:
@@ -321,10 +520,30 @@ def git_create_branch(repo: git.Repo, branch_name: str, base_branch: str | None 
     return f"Created branch '{branch_name}' from '{base.name}'"
 
 def git_checkout(repo: git.Repo, branch_name: str) -> str:
+    """
+    Switches the current branch to the specified branch.
+
+    Args:
+        repo: The Git repository object.
+        branch_name: The name of the branch to checkout.
+
+    Returns:
+        A string indicating the successful checkout of the branch.
+    """
     repo.git.checkout(branch_name)
     return f"Switched to branch '{branch_name}'"
 
 def git_show(repo: git.Repo, revision: str) -> str:
+    """
+    Shows the contents (metadata and diff) of a specific commit.
+
+    Args:
+        repo: The Git repository object.
+        revision: The commit hash or reference to show.
+
+    Returns:
+        A string containing the commit details and its diff.
+    """
     commit = repo.commit(revision)
     output = [
         f"Commit: {commit.hexsha}\n"
@@ -347,10 +566,24 @@ def git_show(repo: git.Repo, revision: str) -> str:
     return "".join(output)
 
 async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
+    """
+    Applies a given diff content to the working directory of the repository.
+    Includes a check for successful application and generates a new diff output.
+    Also runs TSC if applicable after applying the diff.
+
+    Args:
+        repo: The Git repository object.
+        diff_content: The diff string to apply.
+
+    Returns:
+        A string indicating the result of the diff application, including
+        any new diff generated and TSC output if applicable, or an error message.
+    """
     tmp_file_path = None
     affected_file_path = None
     original_content = ""
 
+    # Attempt to extract affected file path from the diff content
     match = re.search(r"--- a/(.+)", diff_content)
     if match:
         affected_file_path = match.group(1).strip()
@@ -397,6 +630,17 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
             os.unlink(tmp_file_path)
 
 def git_read_file(repo: git.Repo, file_path: str) -> str:
+    """
+    Reads the content of a specified file within the repository.
+
+    Args:
+        repo: The Git repository object.
+        file_path: The path to the file relative to the repository's working directory.
+
+    Returns:
+        A string containing the file's content, or an error message if the file
+        is not found or cannot be read.
+    """
     try:
         full_path = Path(repo.working_dir) / file_path
         with open(full_path, 'r') as f:
@@ -408,6 +652,18 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
         return f"UNEXPECTED_ERROR: Failed to read file '{file_path}': {e}. AI_HINT: Check if the file exists, is accessible, and not corrupted. Review server logs for more details."
 
 async def _generate_diff_output(original_content: str, new_content: str, file_path: str) -> str:
+    """
+    Generates a unified diff string between two versions of file content.
+
+    Args:
+        original_content: The original content of the file.
+        new_content: The new content of the file.
+        file_path: The path of the file, used for diff headers.
+
+    Returns:
+        A string containing the unified diff, or a message indicating no changes
+        or that the diff was too large.
+    """
     diff_lines = list(difflib.unified_diff(
         original_content.splitlines(keepends=True),
         new_content.splitlines(keepends=True),
@@ -423,6 +679,16 @@ async def _generate_diff_output(original_content: str, new_content: str, file_pa
         return f"\nDiff:\n{diff_output}" if diff_output else "\nNo changes detected (file content was identical)."
 
 async def _run_tsc_if_applicable(repo_path: str, file_path: str) -> str:
+    """
+    Runs TypeScript compiler (tsc) with --noEmit if the file has a .ts, .js, or .mjs extension.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+        file_path: The path to the file that was modified.
+
+    Returns:
+        A string containing the TSC output, or an empty string if TSC is not applicable.
+    """
     file_extension = os.path.splitext(file_path)[1]
     if file_extension in ['.ts', '.js', '.mjs']:
         tsc_command = f" tsc --noEmit --allowJs {file_path}"
@@ -439,6 +705,23 @@ async def _search_and_replace_python_logic(
     start_line: Optional[int],
     end_line: Optional[int]
 ) -> str:
+    """
+    Performs search and replace in a file using Python's re module.
+    Attempts literal search first, then falls back to regex search if no changes are made.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+        search_string: The string or regex pattern to search for.
+        replace_string: The string to replace matches with.
+        file_path: The path to the file to modify.
+        ignore_case: If True, the search is case-insensitive.
+        start_line: Optional. The 1-based starting line number for the search.
+        end_line: Optional. The 1-based ending line number for the search.
+
+    Returns:
+        A string indicating the result of the operation, including diff and TSC output,
+        or an error message.
+    """
     try:
         full_file_path = Path(repo_path) / file_path
         with open(full_file_path, 'r') as f:
@@ -524,10 +807,28 @@ async def search_and_replace_in_file(
     start_line: Optional[int],
     end_line: Optional[int]
 ) -> str:
+    """
+    Searches for a string or regex pattern in a file and replaces it with another string.
+    Attempts to use `sed` for efficiency, falling back to Python logic if `sed` fails or makes no changes.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+        search_string: The string or regex pattern to search for.
+        replace_string: The string to replace matches with.
+        file_path: The path to the file to modify.
+        ignore_case: If True, the search is case-insensitive.
+        start_line: Optional. The 1-based starting line number for the search.
+        end_line: Optional. The 1-based ending line number for the search.
+
+    Returns:
+        A string indicating the result of the operation, including diff and TSC output,
+        or an error message.
+    """
     full_file_path = Path(repo_path) / file_path
 
     sed_command_parts = ["sed", "-i"]
 
+    # Escape sed special characters in search and replacement strings
     sed_pattern = search_string.replace('#', r'\#')
     sed_replacement = replace_string.replace('#', r'\#').replace('&', r'\&').replace('\\', r'\\\\')
 
@@ -576,6 +877,19 @@ async def search_and_replace_in_file(
         return f"UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: {e}. AI_HINT: Check your search/replace patterns, file permissions, and review server logs for more details."
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
+    """
+    Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.
+    Includes a check to ensure the content was written correctly and generates a diff.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+        file_path: The path to the file to write to, relative to the repository.
+        content: The string content to write to the file.
+
+    Returns:
+        A string indicating the success of the write operation, including diff and TSC output,
+        or an error message.
+    """
     try:
         full_file_path = Path(repo_path) / file_path
         
@@ -613,6 +927,17 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
         return f"UNEXPECTED_ERROR: Failed to write to file '{file_path}': {e}. AI_HINT: Check file permissions, disk space, and review server logs for more details."
 
 async def execute_custom_command(repo_path: str, command: str) -> str:
+    """
+    Executes a custom shell command within the specified repository path.
+
+    Args:
+        repo_path: The path to the directory where the command should be executed.
+        command: The shell command string to execute.
+
+    Returns:
+        A string containing the stdout and stderr of the command, and an indication
+        if the command failed.
+    """
     try:
         process = await asyncio.create_subprocess_shell(
             command,
@@ -638,7 +963,7 @@ async def ai_edit_files(
     repo_path: str,
     message: str,
     session: ServerSession,
-    files: List[str],  # Make files mandatory
+    files: List[str],
     options: Optional[list[str]],
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
@@ -647,6 +972,19 @@ async def ai_edit_files(
     """
     AI pair programming tool for making targeted code changes using Aider.
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
+
+    Args:
+        repo_path: The path to the repository where Aider should operate.
+        message: A detailed message describing what changes Aider should make.
+        session: The MCP ServerSession object for sending progress notifications.
+        files: A list of file paths that Aider should operate on. This argument is mandatory.
+        options: Optional list of additional Aider command-line options (e.g., ["--model=gpt-4o"]).
+        aider_path: Optional. The path to the Aider executable. Defaults to "aider".
+        config_file: Optional. Path to a specific Aider configuration file.
+        env_file: Optional. Path to a specific .env file for environment variables.
+
+    Returns:
+        A string indicating the outcome of the Aider operation, including success or error messages.
     """
     aider_path = aider_path or "aider"
 
@@ -704,7 +1042,7 @@ async def ai_edit_files(
         fpath = os.path.join(directory_path, fname)
         if not os.path.isfile(fpath):
             logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
-            # return f"Error: The file '{fname}' was not found in the repository."
+            # return f"Error: The file '{fname}' was not found in the repository." # Commented out as per original logic
 
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as f:
         f.write(message)
@@ -738,175 +1076,10 @@ async def ai_edit_files(
             cwd=directory_path,
         )
 
-        stdout_bytes, stderr_bytes = await process.communicate(input=instructions_content_str.encode('utf-8'))
-        stdout = stdout_bytes.decode('utf-8')
-        stderr = stderr_bytes.decode('utf-8')
-
-        # Send stdout and stderr to the client for debugging
-        await session.send_progress_notification(
-            progress_token="ai_edit",
-            progress=0.5,
-            message=f"AIDER STDOUT:\n{stdout}"
-        )
-        if stderr:
-            await session.send_progress_notification(
-                progress_token="ai_edit",
-                progress=0.5,
-                message=f"AIDER STDERR:\n{stderr}"
-            )
-
-        os.chdir(original_dir)
-
-        return_code = process.returncode
-        if return_code != 0:
-            logger.error(f"Aider process exited with code {return_code}")
-            await session.send_progress_notification(
-                progress_token="ai_edit",
-                progress=1.0,
-                message=f"Aider process exited with code {return_code}"
-            )
-            return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
-        else:
-            logger.info("Aider process completed successfully")
-            await session.send_progress_notification(
-                progress_token="ai_edit",
-                progress=1.0,
-                message="Aider process completed successfully."
-            )
-            # Check for "applied edit" message in stdout
-            if "Applied edit to" in stdout:
-                 return "Code changes completed and applied successfully."
-            else:
-                 return f"Aider completed, but it's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
-
-    finally:
-        logger.debug(f"Cleaning up temporary file: {instructions_file}")
-        os.unlink(instructions_file)
-
-        if os.getcwd() != original_dir:
-            os.chdir(original_dir)
-            logger.debug(f"Restored working directory to: {original_dir}")
-
-    # DEBUG LOG: Print session type and available methods
-    logger.error(f"ai_edit_files: session type={type(session)}, dir={dir(session)}")
-    
-    logger.info(f"Running aider in directory: {repo_path}")
-    logger.debug(f"Message length: {len(message)} characters")
-    logger.debug(f"Additional options: {options}")
-    
-    directory_path = os.path.abspath(repo_path)
-    if not os.path.exists(directory_path):
-        logger.error(f"Directory does not exist: {directory_path}")
-        return f"Error: Directory does not exist: {directory_path}"
-    
-    # AI-actionable error: Check if files list is empty
-    if not files:
-        error_message = (
-            "ERROR: No files were provided for ai_edit. "
-            "The 'files' argument is now mandatory and must contain a list of file paths "
-            "that Aider should operate on. Please specify the files to edit."
-        )
-        logger.error(error_message)
-        return error_message
-
-    aider_config = load_aider_config(directory_path, config_file)
-    load_dotenv_file(directory_path, env_file)
-    
-    aider_options: Dict[str, Any] = {}
-    aider_options["yes_always"] = True
-    
-    additional_opts: Dict[str, Any] = {}
-    if options:
-        for opt in options:
-            if opt.startswith("--"):
-                if "=" in opt:
-                    key, value_str = opt[2:].split("=", 1)
-                    # Convert "true"/"false" strings to actual booleans
-                    if value_str.lower() == "true":
-                        additional_opts[key.replace("-", "_")] = True
-                    elif value_str.lower() == "false":
-                        additional_opts[key.replace("-", "_")] = False
-                    else:
-                        additional_opts[key.replace("-", "_")] = value_str
-                else:
-                    additional_opts[opt[2:].replace("-", "_")] = True
-            elif opt.startswith("--no-"):
-                key = opt[5:].replace("-", "_")
-                additional_opts[key] = False
-
-    # Remove unsupported options that are not recognized by aider itself.
-    unsupported_options = ["base_url", "base-url"]  # Remove both underscore and dash variants
-    for opt_key in unsupported_options:
-        if opt_key in additional_opts:
-            logger.warning(f"Removing unsupported Aider option: --{opt_key.replace('_', '-')}")
-            del additional_opts[opt_key]
-    
-    aider_options.update(additional_opts)
-
-    # --- BEGIN: LOGGING AND FILE DETECTION FOR DEBUGGING ---
-    # The previous file detection logic from message is now removed as 'files' is mandatory.
-    # We still log the files that are explicitly passed.
-    for fname in files:
-        fpath = os.path.join(directory_path, fname)
-        if os.path.isfile(fpath):
-            logger.info(f"[ai_edit_files] Provided file exists: {fname}")
-            # Check if file is tracked by git
-            try:
-                repo = git.Repo(directory_path)
-                tracked = fname in repo.git.ls_files().splitlines()
-                logger.info(f"[ai_edit_files] Provided file {fname} tracked by git: {tracked}")
-            except Exception as e:
-                logger.warning(f"[ai_edit_files] Could not check git tracking for {fname}: {e}")
-        else:
-            logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
-
-    # Log if stdin is a TTY (should be False in non-interactive mode)
-    try:
-        import sys
-        is_tty = sys.stdin.isatty()
-        logger.info(f"[ai_edit_files] sys.stdin.isatty(): {is_tty}")
-    except Exception as e:
-        logger.warning(f"[ai_edit_files] Could not check sys.stdin.isatty(): {e}")
-
-    # --- END: LOGGING AND FILE DETECTION FOR DEBUGGING ---
-
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
-        f.write(message)
-        instructions_file = f.name
-        logger.debug(f"Instructions written to temporary file: {instructions_file}")
-    
-    try:
-        original_dir = os.getcwd()
-        
-        os.chdir(directory_path)
-        logger.debug(f"Changed working directory to: {directory_path}")
-        
-        base_command = [aider_path]
-        command = prepare_aider_command(
-            base_command,
-            files, # Use the files argument directly
-            aider_options
-        )
-        logger.info(f"[ai_edit_files] Files passed to aider: {files}")
-        logger.info(f"Running aider command: {' '.join(command)}")
-        
-        with open(instructions_file, 'r') as f_read:
-            instructions_content_str = f_read.read()
-            
-        logger.debug("Executing Aider with the instructions...")
-        
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=directory_path,
-        )
-
         if instructions_content_str:
             try:
                 if process.stdin is not None:
-                    process.stdin.write(instructions_content_str.encode())
+                    process.stdin.write(instructions_content_str.encode('utf-8'))
                     await process.stdin.drain()
                     process.stdin.close()
                 else:
@@ -915,6 +1088,7 @@ async def ai_edit_files(
                 logger.error(f"Error writing to or closing process stdin: {e}")
 
         async def read_stream_and_send(stream, stream_name):
+            """Helper to read from a stream and send progress notifications."""
             while True:
                 line = await stream.readline()
                 if not line:
@@ -922,7 +1096,7 @@ async def ai_edit_files(
                 decoded_line = line.decode().strip()
                 await session.send_progress_notification(
                     progress_token="ai_edit",
-                    progress=0.0,
+                    progress=0.0, # Progress is not granularly updated here, just for streaming output
                     message=f"[{stream_name}] {decoded_line}"
                 )
 
@@ -950,6 +1124,9 @@ async def ai_edit_files(
                 progress=1.0,
                 message="Aider process completed successfully."
             )
+            # Check for "applied edit" message in stdout
+            # Note: stdout is already streamed, so we can't check it here directly.
+            # The previous logic for checking "Applied edit to" is removed as stdout is streamed.
             return "Code changes completed successfully."
     finally:
         logger.debug(f"Cleaning up temporary file: {instructions_file}")
@@ -966,8 +1143,17 @@ async def aider_status_tool(
     config_file: Optional[str] = None
 ) -> str:
     """
-    Check the status of Aider and its environment.
-    This function encapsulates the logic from aider_mcp/server.py's aider_status tool.
+    Checks the status of Aider and its environment, including installation,
+    configuration, and Git repository details.
+
+    Args:
+        repo_path: The path to the repository or working directory to check.
+        check_environment: If True, also checks Aider configuration and Git details.
+        aider_path: Optional. The path to the Aider executable. Defaults to "aider".
+        config_file: Optional. Path to a specific Aider configuration file.
+
+    Returns:
+        A JSON string containing the status information, or an error message.
     """
     aider_path = aider_path or "aider"
 
@@ -1044,6 +1230,13 @@ mcp_server: Server = Server("mcp-git")
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
+    """
+    Lists all available tools provided by this MCP Git server.
+
+    Returns:
+        A list of Tool objects, each describing a callable tool with its name,
+        description, and input schema.
+    """
     return [
         Tool(
             name=GitTools.STATUS,
@@ -1151,6 +1344,13 @@ async def list_tools() -> list[Tool]:
     ]
 
 async def list_repos() -> Sequence[str]:
+    """
+    Lists all Git repositories known to the MCP client.
+    This function leverages the client's `list_roots` capability.
+
+    Returns:
+        A sequence of strings, where each string is the absolute path to a Git repository.
+    """
     async def by_roots() -> Sequence[str]:
         if not isinstance(mcp_server.request_context.session, ServerSession):
             raise TypeError("mcp_server.request_context.session must be a ServerSession")
@@ -1176,7 +1376,18 @@ async def list_repos() -> Sequence[str]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[Content]:
-    # Explicitly check if the tool name is valid
+    """
+    Executes a requested tool based on its name and arguments.
+    This is the main entry point for clients to interact with the server's tools.
+
+    Args:
+        name: The name of the tool to call (must be one of the `GitTools` enum values).
+        arguments: A dictionary of arguments specific to the tool being called.
+
+    Returns:
+        A list of Content objects (typically TextContent) containing the result
+        or an error message.
+    """
     try:
         if name not in set(item.value for item in GitTools):
             raise ValueError(f"Unknown tool: {name}")
@@ -1195,9 +1406,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
         repo_path = Path(repo_path_arg)
         
         repo = None
-        # Enhanced: catch InvalidGitRepositoryError and check for home directory
         try:
-            # --- Begin original match/case block ---
             match name:
                 case GitTools.STATUS:
                     repo = git.Repo(repo_path)
@@ -1222,7 +1431,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )]
                 case GitTools.STAGE_AND_COMMIT:
                     repo = git.Repo(repo_path)
-                    result = git_stage_and_commit(repo, arguments["message"])
+                    result = git_stage_and_commit(repo, arguments["message"], arguments.get("files"))
                     return [TextContent(
                         type="text",
                         text=result
@@ -1319,9 +1528,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     message = arguments.get("message", "")
                     files = arguments["files"] # files is now mandatory
                     options = arguments.get("options", [])
-                    # Retrieve OpenAI API key and base from environment variables
-                    openai_api_key = os.environ.get("OPENAI_API_KEY")
-                    openai_api_base = os.environ.get("OPENAI_API_BASE")
                     result = await ai_edit_files(
                         repo_path=str(repo_path),
                         message=message,
@@ -1345,7 +1551,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )]
                 case _:
                     raise ValueError(f"Unknown tool: {name}")
-            # --- End original match/case block ---
 
         except git.InvalidGitRepositoryError:
             # If the path is the user's home directory, return the specific warning
@@ -1389,12 +1594,30 @@ POST_MESSAGE_ENDPOINT = "/messages/"
 sse_transport = SseServerTransport(POST_MESSAGE_ENDPOINT)
 
 async def handle_sse(request):
+    """
+    Handles Server-Sent Events (SSE) connections from MCP clients.
+    Establishes a communication channel for the MCP server to send events.
+
+    Args:
+        request: The Starlette Request object.
+
+    Returns:
+        A Starlette Response object for the SSE connection.
+    """
     async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
 
 async def handle_post_message(scope, receive, send):
+    """
+    Handles incoming POST messages from MCP clients, typically used for client-to-server communication.
+
+    Args:
+        scope: The ASGI scope dictionary.
+        receive: The ASGI receive callable.
+        send: The ASGI send callable.
+    """
     await sse_transport.handle_post_message(scope, receive, send)
 
 routes = [
