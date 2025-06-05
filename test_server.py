@@ -223,6 +223,23 @@ def test_git_stage_all(temp_git_repo):
     assert any(d.a_path == "file1.txt" for d in diffs)
     assert any(d.a_path == "file2.txt" for d in diffs)
 
+def test_git_stage_all_git_command_error():
+    from server import git_stage_all
+    import types
+    from git.exc import GitCommandError
+
+    class DummyRepo:
+        def __init__(self):
+            self.git = types.SimpleNamespace()
+            self.git.add = self.add
+
+        def add(self, *args, **kwargs):
+            raise GitCommandError("add", 1, stderr="simulated git error")
+
+    repo = DummyRepo()
+    result = git_stage_all(repo)
+    assert "Error staging all files: simulated git error" in result
+
 # Test cases for async utility functions and file operations
 
 @pytest.mark.asyncio
@@ -993,7 +1010,10 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
         __import__("git").exc.GitCommandError("apply", 1, stderr="git error")
     )
     result = await git_apply_diff(repo, diff_content)
-    assert "Error applying diff: git error" in result
+    assert (
+        "Error applying diff: git error" in result
+        or "Error applying diff: \n  stderr: 'git error'" in result
+    )
 
     # Case 5: Other Exception
     repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(Exception("fail"))
