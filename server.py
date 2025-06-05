@@ -674,14 +674,14 @@ async def ai_edit_files(
     aider_config = load_aider_config(directory_path)
     load_dotenv_file(directory_path)
     
-    aider_options = {}
+    aider_options: Dict[str, Any] = {}
     aider_options["yes_always"] = True
     
     # Load model name from environment variable, defaulting if unset
     aider_model = os.environ.get("AIDER_MODEL", "gemini-2.5-flash-preview-05-20-refined-high")
     aider_options["model"] = aider_model
 
-    additional_opts = {}
+    additional_opts: Dict[str, Any] = {}
     if options:
         for opt in options:
             if opt.startswith("--"):
@@ -752,7 +752,7 @@ async def aider_status_tool(repo_path: str, check_environment: bool = True) -> s
 
     logger.info("Checking Aider status")
     
-    result = {}
+    result: Dict[str, Any] = {}
     
     try:
         command = [aider_path, "--version"]
