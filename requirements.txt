@@ -3,4 +3,3 @@ uvicorn
 mcp-server-git
 httpx
 python-dotenv
-aider-mcp
