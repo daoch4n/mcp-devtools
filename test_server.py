@@ -439,6 +439,20 @@ async def test_search_and_replace_python_regex(
     )
     assert "Error: Invalid regex pattern" in result_invalid_regex
 
+    # Test generic Exception branch
+    import builtins
+    real_open = builtins.open
+    def raise_exception(*a, **kw):
+        raise Exception("unexpected error")
+    builtins.open = raise_exception
+    try:
+        result_exception = await _search_and_replace_python_logic(
+            str(repo_path), "foo", "bar", file_path, False, None, None
+        )
+        assert "An unexpected error occurred: unexpected error" in result_exception
+    finally:
+        builtins.open = real_open
+
 @pytest.mark.asyncio
 @patch('server._generate_diff_output', new_callable=AsyncMock)
 @patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
