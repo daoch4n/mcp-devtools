@@ -647,6 +647,9 @@ async def ai_edit_files(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
     aider_path = aider_path or "aider"
+
+    # DEBUG LOG: Print session type and available methods
+    logger.error(f"ai_edit_files: session type={type(session)}, dir={dir(session)}")
     
     logger.info(f"Running aider in directory: {repo_path}")
     logger.debug(f"Message length: {len(message)} characters")
@@ -742,7 +745,11 @@ async def ai_edit_files(
                 if not line:
                     break
                 decoded_line = line.decode().strip()
-                await session.send_text_content(f"[{stream_name}] {decoded_line}")  # type: ignore
+                await session.send_progress_notification(
+                    progress_token="ai_edit",
+                    progress=0.0,
+                    message=f"[{stream_name}] {decoded_line}"
+                )
 
         stdout_task = asyncio.create_task(read_stream_and_send(process.stdout, "AIDER_STDOUT"))
         stderr_task = asyncio.create_task(read_stream_and_send(process.stderr, "AIDER_STDERR"))
@@ -755,11 +762,19 @@ async def ai_edit_files(
         return_code = process.returncode
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
-            await session.send_text_content(f"Aider process exited with code {return_code}")  # type: ignore
+            await session.send_progress_notification(
+                progress_token="ai_edit",
+                progress=1.0,
+                message=f"Aider process exited with code {return_code}"
+            )
             return f"Error: Aider process exited with code {return_code}"
         else:
             logger.info("Aider process completed successfully")
-            await session.send_text_content("Aider process completed successfully.")  # type: ignore
+            await session.send_progress_notification(
+                progress_token="ai_edit",
+                progress=1.0,
+                message="Aider process completed successfully."
+            )
             return "Code changes completed successfully."
     finally:
         logger.debug(f"Cleaning up temporary file: {instructions_file}")
