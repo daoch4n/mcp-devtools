@@ -745,7 +745,7 @@ def test_load_aider_config_various_cases(tmp_path, monkeypatch):
     assert result["c"] == 3
 
     # Case 4: Config in home directory
-    home_config = tmp_path / "home_aider.yml"
+    home_config = tmp_path / ".aider.conf.yml"
     config4 = {"d": 4}
     write_yaml(home_config, config4)
     monkeypatch.setenv("HOME", str(tmp_path))
@@ -828,7 +828,7 @@ def test_load_dotenv_file_various_cases(tmp_path, monkeypatch):
     assert result["D"] == "4"
 
     # Case 4: .env in home directory
-    home_env = tmp_path / "home.env"
+    home_env = tmp_path / ".env"
     env4 = ["E=5"]
     write_env(home_env, env4)
     monkeypatch.setenv("HOME", str(tmp_path))
