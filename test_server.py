@@ -858,3 +858,39 @@ async def test_run_command_success_and_failure(monkeypatch):
     out, err = await run_command(["fail"])
     assert out == ""
     assert err == "fail"
+def test_prepare_aider_command_various_cases():
+    from server import prepare_aider_command
+
+    # Boolean options
+    cmd = prepare_aider_command(["aider"], options={"foo": True, "bar": False})
+    assert "--foo" in cmd and "--no-bar" in cmd
+
+    # List options
+    cmd = prepare_aider_command(["aider"], options={"baz": [1, 2]})
+    assert cmd.count("--baz") == 2
+    assert "1" in cmd and "2" in cmd
+
+    # String/integer options
+    cmd = prepare_aider_command(["aider"], options={"opt": "val", "num": 5})
+    assert "--opt" in cmd and "val" in cmd and "--num" in cmd and "5" in cmd
+
+    # None options
+    cmd = prepare_aider_command(["aider"], options={"skip": None})
+    assert "--skip" not in cmd
+
+    # Files argument
+    cmd = prepare_aider_command(["aider"], files=["file1", "file2"])
+    assert "file1" in cmd and "file2" in cmd
+
+    # Combination of all types
+    cmd = prepare_aider_command(
+        ["aider"],
+        files=["f1"],
+        options={"a": True, "b": [3, 4], "c": "x", "d": None}
+    )
+    assert "--a" in cmd and "--b" in cmd and "3" in cmd and "4" in cmd and "--c" in cmd and "x" in cmd and "f1" in cmd
+    assert "--d" not in cmd
+
+    # Empty base command, no files, no options
+    cmd = prepare_aider_command([])
+    assert cmd == []
