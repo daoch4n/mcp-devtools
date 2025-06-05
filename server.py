@@ -260,7 +260,7 @@ class GitTools(str, Enum):
     STATUS = "git_status"
     DIFF_ALL = "git_diff_all"
     DIFF = "git_diff"
-    COMMIT = "git_commit"
+    STAGE_AND_COMMIT = "git_stage_and_commit"
     RESET = "git_reset"
     LOG = "git_log"
     CREATE_BRANCH = "git_create_branch"
@@ -283,7 +283,7 @@ def git_diff_all(repo: git.Repo) -> str:
 def git_diff(repo: git.Repo, target: str) -> str:
     return repo.git.diff(target)
 
-def git_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
+def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
     if files:
         repo.index.add(files)
         staged_message = f"Files {', '.join(files)} staged successfully."
@@ -871,7 +871,7 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitDiff.model_json_schema(),
         ),
         Tool(
-            name=GitTools.COMMIT,
+            name=GitTools.STAGE_AND_COMMIT,
             description="Records changes to the repository",
             inputSchema=GitCommit.model_json_schema(),
         ),
@@ -1029,9 +1029,9 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     type="text",
                     text=f"Diff with {arguments['target']}:\n{diff}"
                 )]
-            case GitTools.COMMIT:
+            case GitTools.STAGE_AND_COMMIT:
                 repo = git.Repo(repo_path)
-                result = git_commit(repo, arguments["message"])
+                result = git_stage_and_commit(repo, arguments["message"])
                 return [TextContent(
                     type="text",
                     text=result

@@ -38,7 +38,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 # Import functions and classes from server.py
 from server import (
-    git_status, git_diff_all, git_diff, git_commit,
+    git_status, git_diff_all, git_diff, git_stage_and_commit,
     git_reset, git_log, git_create_branch, git_checkout, git_show,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable, _search_and_replace_python_logic,
@@ -122,7 +122,7 @@ def test_git_commit(temp_git_repo):
     repo, repo_path = temp_git_repo
     (repo_path / "commit_file.txt").write_text("content to commit")
     repo.index.add(["commit_file.txt"])
-    result = git_commit(repo, "Test commit message")
+    result = git_stage_and_commit(repo, "Test commit message")
     assert "Changes committed successfully" in result
     assert "Test commit message" in repo.head.commit.message
 
@@ -551,7 +551,7 @@ async def test_list_tools():
 @patch('server.git_status')
 @patch('server.git_diff_all')
 @patch('server.git_diff')
-@patch('server.git_commit')
+@patch('server.git_stage_and_commit')
 @patch('server.git_reset')
 @patch('server.git_log')
 @patch('server.git_create_branch')
@@ -566,7 +566,7 @@ async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content, mock_search_and_replace_in_file,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
     mock_git_checkout, mock_git_create_branch, mock_git_log, mock_git_reset,
-    mock_git_commit, mock_git_diff, mock_git_diff_all, mock_git_status, mock_git_repo
+    mock_git_stage_and_commit, mock_git_diff, mock_git_diff_all, mock_git_status, mock_git_repo
 ):
     mock_repo_instance = MagicMock()
     mock_git_repo.return_value = mock_repo_instance
@@ -590,15 +590,15 @@ async def test_call_tool(
     assert result[0].text == "Diff with main:\ndiff_target_output"
 
     # Test GitTools.COMMIT
-    mock_git_commit.return_value = "Commit successful"
-    result = list(await call_tool(GitTools.COMMIT.value, {"repo_path": "/tmp/repo", "message": "test commit"})) # Cast to list
+    mock_git_stage_and_commit.return_value = "Commit successful"
+    result = list(await call_tool(GitTools.STAGE_AND_COMMIT.value, {"repo_path": "/tmp/repo", "message": "test commit"})) # Cast to list
     # Accept both string and TextContent result for compatibility
     if hasattr(result[0], "text"):
         assert result[0].text == "Commit successful"
     elif isinstance(result[0], str):
         assert result[0] == "Commit successful"
     else:
-        raise AssertionError("Unexpected result type for GitTools.COMMIT")
+        raise AssertionError("Unexpected result type for GitTools.STAGE_AND_COMMIT")
 
     # Removed test for GitTools.ADD as the tool no longer exists
 
