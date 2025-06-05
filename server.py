@@ -1040,179 +1040,12 @@ async def list_repos() -> Sequence[str]:
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[Content]:
     # Explicitly check if the tool name is valid
-    if name not in set(item.value for item in GitTools):
-        raise ValueError(f"Unknown tool: {name}")
-
-    repo_path_arg = arguments.get("repo_path", ".")
-    if repo_path_arg == ".":
-        return [
-            TextContent(
-                type="text",
-                text=(
-                    "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
-                    "You must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
-                )
-            )
-        ]
-    repo_path = Path(repo_path_arg)
-    
-    repo = None
-    # Enhanced: catch InvalidGitRepositoryError and check for home directory
     try:
-        # --- Begin original match/case block ---
-        match name:
-            case GitTools.STATUS:
-                repo = git.Repo(repo_path)
-                status = git_status(repo)
-                return [TextContent(
-                    type="text",
-                    text=f"Repository status:\n{status}"
-                )]
-            case GitTools.DIFF_ALL:
-                repo = git.Repo(repo_path)
-                diff = git_diff_all(repo)
-                return [TextContent(
-                    type="text",
-                    text=f"All changes (staged and unstaged):\n{diff}"
-                )]
-            case GitTools.DIFF:
-                repo = git.Repo(repo_path)
-                diff = git_diff(repo, arguments["target"])
-                return [TextContent(
-                    type="text",
-                    text=f"Diff with {arguments['target']}:\n{diff}"
-                )]
-            case GitTools.STAGE_AND_COMMIT:
-                repo = git.Repo(repo_path)
-                result = git_stage_and_commit(repo, arguments["message"])
-                return [TextContent(
-                    type="text",
-                    text=result
-                )]
-            case GitTools.RESET:
-                repo = git.Repo(repo_path)
-                result = git_reset(repo)
-                return [TextContent(
-                    type="text",
-                    text=result
-                )]
-            case GitTools.LOG:
-                repo = git.Repo(repo_path)
-                log = git_log(repo, arguments.get("max_count", 10))
-                return [TextContent(
-                    type="text",
-                    text="Commit history:\n" + "\n".join(log)
-                )]
-            case GitTools.CREATE_BRANCH:
-                repo = git.Repo(repo_path)
-                result = git_create_branch(
-                    repo,
-                    arguments["branch_name"],
-                    arguments.get("base_branch")
-                )
-                return [TextContent(
-                    type="text",
-                    text=result
-                )]
-            case GitTools.CHECKOUT:
-                repo = git.Repo(repo_path)
-                result = git_checkout(repo, arguments["branch_name"])
-                return [TextContent(
-                    type="text",
-                    text=result
-                )]
-            case GitTools.SHOW:
-                repo = git.Repo(repo_path)
-                result = git_show(repo, arguments["revision"])
-                return [TextContent(
-                    type="text",
-                    text=result
-                )]
-            case GitTools.APPLY_DIFF:
-                repo = git.Repo(repo_path)
-                result = await git_apply_diff(repo, arguments["diff_content"])
-                return [TextContent(
-                    type="text",
-                    text=f"<![CDATA[{result}]]>"
-                )]
-            case GitTools.READ_FILE:
-                repo = git.Repo(repo_path)
-                result = git_read_file(repo, arguments["file_path"])
-                return [TextContent(
-                    type="text",
-                    text=f"<![CDATA[{result}]]>"
-                )]
-            case GitTools.SEARCH_AND_REPLACE:
-                result = await search_and_replace_in_file(
-                    repo_path=str(repo_path),
-                    file_path=arguments["file_path"],
-                    search_string=arguments["search_string"],
-                    replace_string=arguments["replace_string"],
-                    ignore_case=arguments.get("ignore_case", False),
-                    start_line=arguments.get("start_line"),
-                    end_line=arguments.get("end_line")
-                )
-                return [TextContent(
-                    type="text",
-                    text=f"<![CDATA[{result}]]>"
-                )]
-            case GitTools.WRITE_TO_FILE:
-                logging.debug(f"Content input to write_to_file: {arguments['content']}")
-                result = await write_to_file_content(
-                    repo_path=str(repo_path),
-                    file_path=arguments["file_path"],
-                    content=arguments["content"]
-                )
-                logging.debug(f"Content before TextContent: {result}")
-                return [TextContent(
-                    type="text",
-                    text=f"<![CDATA[{result}]]>"
-                )]
-            case GitTools.EXECUTE_COMMAND:
-                result = await execute_custom_command(
-                    repo_path=str(repo_path),
-                    command=arguments["command"]
-                )
-                return [TextContent(
-                    type="text",
-                    text=result
-                )]
-            case GitTools.AI_EDIT:
-                message = arguments.get("message", "")
-                files = arguments["files"] # files is now mandatory
-                options = arguments.get("options", [])
-                # Retrieve OpenAI API key and base from environment variables
-                openai_api_key = os.environ.get("OPENAI_API_KEY")
-                openai_api_base = os.environ.get("OPENAI_API_BASE")
-                result = await ai_edit_files(
-                    repo_path=str(repo_path),
-                    message=message,
-                    session=mcp_server.request_context.session,
-                    files=files, # Pass files to ai_edit_files
-                    options=options,
-                )
-                return [TextContent(
-                    type="text",
-                    text=f"<![CDATA[{result}]]>"
-                )]
-            case GitTools.AIDER_STATUS:
-                check_environment = arguments.get("check_environment", True)
-                result = await aider_status_tool(
-                    repo_path=str(repo_path),
-                    check_environment=check_environment
-                )
-                return [TextContent(
-                    type="text",
-                    text=f"<![CDATA[{result}]]>"
-                )]
-            case _:
-                raise ValueError(f"Unknown tool: {name}")
-        # --- End original match/case block ---
+        if name not in set(item.value for item in GitTools):
+            raise ValueError(f"Unknown tool: {name}")
 
-    except git.InvalidGitRepositoryError:
-        # If the path is the user's home directory, return the specific warning
-        home_dir = Path(os.path.expanduser("~"))
-        if repo_path.resolve() == home_dir.resolve():
+        repo_path_arg = arguments.get("repo_path", ".")
+        if repo_path_arg == ".":
             return [
                 TextContent(
                     type="text",
@@ -1222,19 +1055,194 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )
                 )
             ]
-        else:
+        repo_path = Path(repo_path_arg)
+        
+        repo = None
+        # Enhanced: catch InvalidGitRepositoryError and check for home directory
+        try:
+            # --- Begin original match/case block ---
+            match name:
+                case GitTools.STATUS:
+                    repo = git.Repo(repo_path)
+                    status = git_status(repo)
+                    return [TextContent(
+                        type="text",
+                        text=f"Repository status:\n{status}"
+                    )]
+                case GitTools.DIFF_ALL:
+                    repo = git.Repo(repo_path)
+                    diff = git_diff_all(repo)
+                    return [TextContent(
+                        type="text",
+                        text=f"All changes (staged and unstaged):\n{diff}"
+                    )]
+                case GitTools.DIFF:
+                    repo = git.Repo(repo_path)
+                    diff = git_diff(repo, arguments["target"])
+                    return [TextContent(
+                        type="text",
+                        text=f"Diff with {arguments['target']}:\n{diff}"
+                    )]
+                case GitTools.STAGE_AND_COMMIT:
+                    repo = git.Repo(repo_path)
+                    result = git_stage_and_commit(repo, arguments["message"])
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.RESET:
+                    repo = git.Repo(repo_path)
+                    result = git_reset(repo)
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.LOG:
+                    repo = git.Repo(repo_path)
+                    log = git_log(repo, arguments.get("max_count", 10))
+                    return [TextContent(
+                        type="text",
+                        text="Commit history:\n" + "\n".join(log)
+                    )]
+                case GitTools.CREATE_BRANCH:
+                    repo = git.Repo(repo_path)
+                    result = git_create_branch(
+                        repo,
+                        arguments["branch_name"],
+                        arguments.get("base_branch")
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.CHECKOUT:
+                    repo = git.Repo(repo_path)
+                    result = git_checkout(repo, arguments["branch_name"])
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.SHOW:
+                    repo = git.Repo(repo_path)
+                    result = git_show(repo, arguments["revision"])
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.APPLY_DIFF:
+                    repo = git.Repo(repo_path)
+                    result = await git_apply_diff(repo, arguments["diff_content"])
+                    return [TextContent(
+                        type="text",
+                        text=f"<![CDATA[{result}]]>"
+                    )]
+                case GitTools.READ_FILE:
+                    repo = git.Repo(repo_path)
+                    result = git_read_file(repo, arguments["file_path"])
+                    return [TextContent(
+                        type="text",
+                        text=f"<![CDATA[{result}]]>"
+                    )]
+                case GitTools.SEARCH_AND_REPLACE:
+                    result = await search_and_replace_in_file(
+                        repo_path=str(repo_path),
+                        file_path=arguments["file_path"],
+                        search_string=arguments["search_string"],
+                        replace_string=arguments["replace_string"],
+                        ignore_case=arguments.get("ignore_case", False),
+                        start_line=arguments.get("start_line"),
+                        end_line=arguments.get("end_line")
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=f"<![CDATA[{result}]]>"
+                    )]
+                case GitTools.WRITE_TO_FILE:
+                    logging.debug(f"Content input to write_to_file: {arguments['content']}")
+                    result = await write_to_file_content(
+                        repo_path=str(repo_path),
+                        file_path=arguments["file_path"],
+                        content=arguments["content"]
+                    )
+                    logging.debug(f"Content before TextContent: {result}")
+                    return [TextContent(
+                        type="text",
+                        text=f"<![CDATA[{result}]]>"
+                    )]
+                case GitTools.EXECUTE_COMMAND:
+                    result = await execute_custom_command(
+                        repo_path=str(repo_path),
+                        command=arguments["command"]
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.AI_EDIT:
+                    message = arguments.get("message", "")
+                    files = arguments["files"] # files is now mandatory
+                    options = arguments.get("options", [])
+                    # Retrieve OpenAI API key and base from environment variables
+                    openai_api_key = os.environ.get("OPENAI_API_KEY")
+                    openai_api_base = os.environ.get("OPENAI_API_BASE")
+                    result = await ai_edit_files(
+                        repo_path=str(repo_path),
+                        message=message,
+                        session=mcp_server.request_context.session,
+                        files=files, # Pass files to ai_edit_files
+                        options=options,
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=f"<![CDATA[{result}]]>"
+                    )]
+                case GitTools.AIDER_STATUS:
+                    check_environment = arguments.get("check_environment", True)
+                    result = await aider_status_tool(
+                        repo_path=str(repo_path),
+                        check_environment=check_environment
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=f"<![CDATA[{result}]]>"
+                    )]
+                case _:
+                    raise ValueError(f"Unknown tool: {name}")
+            # --- End original match/case block ---
+
+        except git.InvalidGitRepositoryError:
+            # If the path is the user's home directory, return the specific warning
+            home_dir = Path(os.path.expanduser("~"))
+            if repo_path.resolve() == home_dir.resolve():
+                return [
+                    TextContent(
+                        type="text",
+                        text=(
+                            "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
+                            "You must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
+                        )
+                    )
+                ]
+            else:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"ERROR: Not a valid Git repository: {repo_path}"
+                    )
+                ]
+
+        except Exception as e:
             return [
                 TextContent(
                     type="text",
-                    text=f"ERROR: Not a valid Git repository: {repo_path}"
+                    text=f"UNEXPECTED_ERROR: An unexpected exception occurred: {e}. AI_HINT: Check the server logs for more details or review your input for possible mistakes."
                 )
             ]
-
-    except Exception as e:
+    except ValueError as ve:
         return [
             TextContent(
                 type="text",
-                text=f"UNEXPECTED_ERROR: An unexpected exception occurred: {e}. AI_HINT: Check the server logs for more details or review your input for possible mistakes."
+                text=f"INVALID_TOOL_NAME: {ve}. AI_HINT: Check the tool name and ensure it matches one of the supported tools."
             )
         ]
 
