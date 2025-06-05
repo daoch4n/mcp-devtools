@@ -353,6 +353,7 @@ async def test_execute_custom_command_exception(monkeypatch, tmp_path):
 @patch('server._generate_diff_output', new_callable=AsyncMock)
 @patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
+@pytest.mark.asyncio
 async def test_search_and_replace_in_file_sed_success(
     mock_execute_custom_command, mock_run_tsc_if_applicable, mock_generate_diff_output, temp_git_repo
 ):
