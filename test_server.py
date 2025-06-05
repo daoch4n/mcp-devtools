@@ -681,3 +681,70 @@ async def test_handle_post_message(mock_sse_transport):
 
     await handle_post_message(mock_scope, mock_receive, mock_send)
     mock_sse_transport.handle_post_message.assert_called_once_with(mock_scope, mock_receive, mock_send)
+import yaml
+from unittest import mock
+
+def test_load_aider_config_various_cases(tmp_path, monkeypatch):
+    from server import load_aider_config
+
+    # Helper to write a config file
+    def write_yaml(path, data):
+        with open(path, "w") as f:
+            yaml.dump(data, f)
+
+    # Case 1: Config in working directory
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    config1 = {"a": 1}
+    config_path1 = workdir / ".aider.conf.yml"
+    write_yaml(config_path1, config1)
+    monkeypatch.chdir(workdir)
+    assert load_aider_config(str(workdir)) == config1
+
+    # Case 2: Config in git root (different from workdir)
+    gitroot = tmp_path / "gitroot"
+    gitroot.mkdir()
+    (gitroot / ".git").mkdir()
+    config2 = {"b": 2}
+    config_path2 = gitroot / ".aider.conf.yml"
+    write_yaml(config_path2, config2)
+    # Patch find_git_root to return gitroot for workdir
+    with mock.patch("server.find_git_root", return_value=str(gitroot)):
+        result = load_aider_config(str(workdir))
+        assert result["a"] == 1
+        assert result["b"] == 2
+
+    # Case 3: Config specified directly
+    config3 = {"c": 3}
+    config_path3 = tmp_path / "direct.yml"
+    write_yaml(config_path3, config3)
+    result = load_aider_config(str(workdir), str(config_path3))
+    assert result["c"] == 3
+
+    # Case 4: Config in home directory
+    home_config = tmp_path / "home_aider.yml"
+    config4 = {"d": 4}
+    write_yaml(home_config, config4)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = load_aider_config(str(workdir))
+    assert result["d"] == 4
+
+    # Case 5: No config files found
+    emptydir = tmp_path / "empty"
+    emptydir.mkdir()
+    monkeypatch.chdir(emptydir)
+    result = load_aider_config(str(emptydir))
+    assert result == {}
+
+    # Case 6: Exception during YAML loading (malformed YAML)
+    bad_path = tmp_path / "bad.yml"
+    with open(bad_path, "w") as f:
+        f.write("not: [valid: yaml")
+    result = load_aider_config(str(emptydir), str(bad_path))
+    # Should not raise, should log warning and skip
+
+    # Case 7: Empty config file
+    empty_path = tmp_path / "empty.yml"
+    empty_path.write_text("")
+    result = load_aider_config(str(emptydir), str(empty_path))
+    assert result == {}
