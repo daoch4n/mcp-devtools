@@ -753,6 +753,8 @@ def test_load_aider_config_various_cases(tmp_path, monkeypatch):
     assert result["d"] == 4
 
     # Case 5: No config files found
+    # Remove home config file to avoid pollution
+    home_config.unlink()
     emptydir = tmp_path / "empty"
     emptydir.mkdir()
     monkeypatch.chdir(emptydir)
@@ -836,6 +838,8 @@ def test_load_dotenv_file_various_cases(tmp_path, monkeypatch):
     assert result["E"] == "5"
 
     # Case 5: No .env files found
+    # Remove home .env file to avoid pollution
+    home_env.unlink()
     emptydir = tmp_path / "empty"
     emptydir.mkdir()
     monkeypatch.chdir(emptydir)
