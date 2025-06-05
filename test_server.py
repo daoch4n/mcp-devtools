@@ -302,7 +302,7 @@ async def test_search_and_replace_in_file_sed_success(
     assert "Successfully replaced 'search_term' with 'replace_term' in test_sed.txt using literal search." in result
     assert (repo_path / file_path).read_text() == "line1\nreplace_term\nline3"
     mock_execute_custom_command.assert_called_once()
-    assert "flatpak-spawn --host sed -i 's#search_term#replace_term#g'" in mock_execute_custom_command.call_args[0][1]
+    assert "sed -i 's#search_term#replace_term#g'" in mock_execute_custom_command.call_args[0][1]
 
 @pytest.mark.asyncio
 @patch('server._generate_diff_output', new_callable=AsyncMock)

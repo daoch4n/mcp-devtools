@@ -542,7 +542,7 @@ async def search_and_replace_in_file(
 ) -> str:
     full_file_path = Path(repo_path) / file_path
 
-    sed_command_parts = ["flatpak-spawn", "--host", "sed", "-i"]
+    sed_command_parts = ["sed", "-i"]
 
     sed_pattern = search_string.replace('#', r'\#')
     sed_replacement = replace_string.replace('#', r'\#').replace('&', r'\&').replace('\\', r'\\\\')
@@ -712,7 +712,7 @@ async def ai_edit_files(
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
         
-        base_command = ["flatpak-spawn", "--host", aider_path]
+        base_command = [aider_path]
         command = prepare_aider_command(
             base_command,
             [],
@@ -755,7 +755,7 @@ async def aider_status_tool(repo_path: str, check_environment: bool = True) -> s
     result = {}
     
     try:
-        command = ["flatpak-spawn", "--host", aider_path, "--version"]
+        command = [aider_path, "--version"]
         stdout, stderr = await run_command(command)
         
         version_info = stdout.strip() if stdout else "Unknown version"
@@ -785,11 +785,11 @@ async def aider_status_tool(repo_path: str, check_environment: bool = True) -> s
                 
                 os.chdir(directory_path)
                 
-                name_cmd = ["flatpak-spawn", "--host", "git", "config", "--get", "remote.origin.url"]
+                name_cmd = ["git", "config", "--get", "remote.origin.url"]
                 name_stdout, _ = await run_command(name_cmd)
                 result["git"]["remote_url"] = name_stdout.strip() if name_stdout else None
                 
-                branch_cmd = ["flatpak-spawn", "--host", "git", "branch", "--show-current"]
+                branch_cmd = ["git", "branch", "--show-current"]
                 branch_stdout, _ = await run_command(branch_cmd)
                 result["git"]["current_branch"] = branch_stdout.strip() if branch_stdout else None
                 
