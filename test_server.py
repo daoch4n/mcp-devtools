@@ -1,3 +1,5 @@
+pytest_plugins = "pytest_asyncio"
+
 import os
 import tempfile
 import shutil
@@ -297,6 +299,59 @@ async def test_execute_custom_command(temp_git_repo):
     assert (repo_path / "no_output.txt").exists()
 
 @pytest.mark.asyncio
+async def test_write_to_file_content_bytes_mismatch_and_exception(tmp_path, monkeypatch):
+    from server import write_to_file_content
+
+    # Simulate written_bytes != content.encode('utf-8')
+    file_path = "mismatch.txt"
+    content = "abc"
+    full_path = tmp_path / file_path
+
+    # Patch open to simulate mismatch on read-back
+    import builtins
+    real_open = builtins.open
+
+    class FakeFile:
+        def __init__(self, *a, **kw):
+            self.lines = []
+            self.mode = a[1] if len(a) > 1 else ""
+            self.closed = False
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def write(self, data): self.lines.append(data)
+        def read(self): return b"xyz" if "b" in self.mode else "xyz"
+        def writelines(self, lines): self.lines.extend(lines)
+        def close(self): self.closed = True
+
+    def fake_open(path, mode="r", *a, **kw):
+        if "mismatch.txt" in str(path) and "rb" in mode:
+            return FakeFile(path, mode)
+        if "mismatch.txt" in str(path) and "w" in mode:
+            return FakeFile(path, mode)
+        return real_open(path, mode, *a, **kw)
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+    result = await write_to_file_content(str(tmp_path), file_path, content)
+    assert "Mismatch between input content and written bytes!" in result or "Diff:" in result
+
+    # Simulate Exception during file writing
+    def raise_exc_open(*a, **kw):
+        raise Exception("write error")
+    monkeypatch.setattr(builtins, "open", raise_exc_open)
+    result_exc = await write_to_file_content(str(tmp_path), "fail.txt", "fail")
+    assert "Error writing to file fail.txt: write error" in result_exc
+
+@pytest.mark.asyncio
+async def test_execute_custom_command_exception(monkeypatch, tmp_path):
+    from server import execute_custom_command
+    import asyncio
+
+    async def raise_exc(*a, **kw):
+        raise Exception("subprocess error")
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", raise_exc)
+    result = await execute_custom_command(str(tmp_path), "echo fail")
+    assert "Error executing command: subprocess error" in result
+
 @patch('server._generate_diff_output', new_callable=AsyncMock)
 @patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
