@@ -389,9 +389,9 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
 
         return result_message
     except GitCommandError as gce:
-        return f"Error applying diff: {gce.stderr}"
+        return f"GIT_COMMAND_FAILED: Failed to apply diff. Details: {gce.stderr}. AI_HINT: Check if the diff is valid and applies cleanly to the current state of the repository."
     except Exception as e:
-        return f"An unexpected error occurred: {e}"
+        return f"UNEXPECTED_ERROR: An unexpected error occurred while applying diff: {e}. AI_HINT: Check the server logs for more details or review your input."
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.unlink(tmp_file_path)
@@ -405,7 +405,7 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
     except FileNotFoundError:
         return f"Error: file wasn't found or out of cwd: {file_path}"
     except Exception as e:
-        return f"Error reading file {file_path}: {e}"
+        return f"UNEXPECTED_ERROR: Failed to read file '{file_path}': {e}. AI_HINT: Check if the file exists, is accessible, and not corrupted. Review server logs for more details."
 
 async def _generate_diff_output(original_content: str, new_content: str, file_path: str) -> str:
     diff_lines = list(difflib.unified_diff(
@@ -513,7 +513,7 @@ async def _search_and_replace_python_logic(
     except re.error as e:
         return f"Error: Invalid regex pattern '{search_string}': {e}"
     except Exception as e:
-        return f"An unexpected error occurred: {e}"
+        return f"UNEXPECTED_ERROR: An unexpected error occurred during search and replace: {e}. AI_HINT: Check your search/replace patterns and review server logs for more details."
 
 async def search_and_replace_in_file(
     repo_path: str,
@@ -573,7 +573,7 @@ async def search_and_replace_in_file(
         return f"Error: File not found at {full_file_path}"
     except Exception as e:
         logging.error(f"An unexpected error occurred during sed attempt: {e}. Falling back to Python logic.")
-        return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
+        return f"UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: {e}. AI_HINT: Check your search/replace patterns, file permissions, and review server logs for more details."
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     try:
@@ -610,7 +610,7 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
 
         return result_message
     except Exception as e:
-        return f"Error writing to file {file_path}: {e}"
+        return f"UNEXPECTED_ERROR: Failed to write to file '{file_path}': {e}. AI_HINT: Check file permissions, disk space, and review server logs for more details."
 
 async def execute_custom_command(repo_path: str, command: str) -> str:
     try:
@@ -632,7 +632,7 @@ async def execute_custom_command(repo_path: str, command: str) -> str:
         
         return output if output else "Command executed successfully with no output."
     except Exception as e:
-        return f"Error executing command: {e}"
+        return f"UNEXPECTED_ERROR: Failed to execute command '{command}': {e}. AI_HINT: Check the command syntax, permissions, and review server logs for more details."
 
 async def ai_edit_files(
     repo_path: str,
@@ -901,7 +901,7 @@ async def aider_status_tool(
         
     except Exception as e:
         logger.error(f"Error checking Aider status: {e}")
-        return f"Error checking Aider status: {str(e)}"
+        return f"UNEXPECTED_ERROR: Failed to check Aider status: {e}. AI_HINT: Ensure Aider is installed, environment variables are set, and review server logs for more details."
 
 mcp_server: Server = Server("mcp-git")
 
@@ -1234,7 +1234,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
         return [
             TextContent(
                 type="text",
-                text=f"ERROR: Unexpected exception: {e}"
+                text=f"UNEXPECTED_ERROR: An unexpected exception occurred: {e}. AI_HINT: Check the server logs for more details or review your input for possible mistakes."
             )
         ]
 
