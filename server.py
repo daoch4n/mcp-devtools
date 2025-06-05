@@ -638,7 +638,7 @@ async def ai_edit_files(
     repo_path: str,
     message: str,
     session: ServerSession,
-    files: List[str], # Make files mandatory
+    files: List[str],  # Make files mandatory
     options: Optional[list[str]],
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
@@ -649,6 +649,143 @@ async def ai_edit_files(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
     aider_path = aider_path or "aider"
+
+    logger.info(f"Running aider in directory: {repo_path}")
+    logger.debug(f"Message length: {len(message)} characters")
+    logger.debug(f"Additional options: {options}")
+
+    directory_path = os.path.abspath(repo_path)
+    if not os.path.exists(directory_path):
+        logger.error(f"Directory does not exist: {directory_path}")
+        return f"Error: Directory does not exist: {directory_path}"
+
+    if not files:
+        error_message = (
+            "ERROR: No files were provided for ai_edit. "
+            "The 'files' argument is now mandatory and must contain a list of file paths "
+            "that Aider should operate on. Please specify the files to edit."
+        )
+        logger.error(error_message)
+        return error_message
+
+    aider_config = load_aider_config(directory_path, config_file)
+    load_dotenv_file(directory_path, env_file)
+
+    aider_options: Dict[str, Any] = {}
+    aider_options["yes_always"] = True
+
+    additional_opts: Dict[str, Any] = {}
+    if options:
+        for opt in options:
+            if opt.startswith("--"):
+                if "=" in opt:
+                    key, value_str = opt[2:].split("=", 1)
+                    if value_str.lower() == "true":
+                        additional_opts[key.replace("-", "_")] = True
+                    elif value_str.lower() == "false":
+                        additional_opts[key.replace("-", "_")] = False
+                    else:
+                        additional_opts[key.replace("-", "_")] = value_str
+                else:
+                    additional_opts[opt[2:].replace("-", "_")] = True
+            elif opt.startswith("--no-"):
+                key = opt[5:].replace("-", "_")
+                additional_opts[key] = False
+
+    unsupported_options = ["base_url", "base-url"]
+    for opt_key in unsupported_options:
+        if opt_key in additional_opts:
+            logger.warning(f"Removing unsupported Aider option: --{opt_key.replace('_', '-')}")
+            del additional_opts[opt_key]
+
+    aider_options.update(additional_opts)
+
+    for fname in files:
+        fpath = os.path.join(directory_path, fname)
+        if not os.path.isfile(fpath):
+            logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
+            # return f"Error: The file '{fname}' was not found in the repository."
+
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as f:
+        f.write(message)
+        instructions_file = f.name
+        logger.debug(f"Instructions written to temporary file: {instructions_file}")
+
+    try:
+        original_dir = os.getcwd()
+        os.chdir(directory_path)
+        logger.debug(f"Changed working directory to: {directory_path}")
+
+        base_command = [aider_path]
+        command = prepare_aider_command(
+            base_command,
+            files,
+            aider_options
+        )
+        logger.info(f"[ai_edit_files] Files passed to aider: {files}")
+        logger.info(f"Running aider command: {' '.join(command)}")
+
+        with open(instructions_file, 'r', encoding='utf-8') as f_read:
+            instructions_content_str = f_read.read()
+
+        logger.debug("Executing Aider with the instructions...")
+
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=directory_path,
+        )
+
+        stdout_bytes, stderr_bytes = await process.communicate(input=instructions_content_str.encode('utf-8'))
+        stdout = stdout_bytes.decode('utf-8')
+        stderr = stderr_bytes.decode('utf-8')
+
+        # Send stdout and stderr to the client for debugging
+        await session.send_progress_notification(
+            progress_token="ai_edit",
+            progress=0.5,
+            message=f"AIDER STDOUT:\n{stdout}"
+        )
+        if stderr:
+            await session.send_progress_notification(
+                progress_token="ai_edit",
+                progress=0.5,
+                message=f"AIDER STDERR:\n{stderr}"
+            )
+
+        os.chdir(original_dir)
+
+        return_code = process.returncode
+        if return_code != 0:
+            logger.error(f"Aider process exited with code {return_code}")
+            await session.send_progress_notification(
+                progress_token="ai_edit",
+                progress=1.0,
+                message=f"Aider process exited with code {return_code}"
+            )
+            return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
+        else:
+            logger.info("Aider process completed successfully")
+            await session.send_progress_notification(
+                progress_token="ai_edit",
+                progress=1.0,
+                message="Aider process completed successfully."
+            )
+            # Check for "applied edit" message in stdout
+            if "Applied edit to" in stdout:
+                 return "Code changes completed and applied successfully."
+            else:
+                 return f"Aider completed, but it's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
+
+    finally:
+        logger.debug(f"Cleaning up temporary file: {instructions_file}")
+        os.unlink(instructions_file)
+
+        if os.getcwd() != original_dir:
+            os.chdir(original_dir)
+            logger.debug(f"Restored working directory to: {original_dir}")
 
     # DEBUG LOG: Print session type and available methods
     logger.error(f"ai_edit_files: session type={type(session)}, dir={dir(session)}")
