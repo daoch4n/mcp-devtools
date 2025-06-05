@@ -653,7 +653,6 @@ async def ai_edit_files(
     repo_path: str,
     message: str,
     options: Optional[list[str]],
-    openai_api_key: Optional[str] = None,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -712,8 +711,6 @@ async def ai_edit_files(
     
     aider_options.update(additional_opts)
 
-    if openai_api_key:
-        aider_options["api_key"] = openai_api_key
     
     with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
         f.write(message)
@@ -1164,7 +1161,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 repo_path=str(repo_path),
                 message=message,
                 options=options,
-                openai_api_key=openai_api_key,
             )
             return [TextContent(
                 type="text",
