@@ -40,7 +40,7 @@ The `load_aider_config` and `load_dotenv_file` functions in `mcp_devtools/aider_
 
 ```mermaid
 graph TD
-    A[User Request/Tool Call] --> B(mcp_devtools/aider_mcp_server/server.py)
+    A["User Request/Tool Call"] --> B("mcp_devtools/aider_mcp_server/server.py")
     B --> C{Load Configuration}
     C --> D[Home Directory]
     C --> E[Git Repo Root]
