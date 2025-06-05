@@ -264,6 +264,15 @@ async def test_generate_diff_output():
     assert "Diff was too large (over 1000 lines)." in large_diff_output
 
 @pytest.mark.asyncio
+async def test_generate_diff_output_empty_diff():
+    from server import _generate_diff_output
+    original = "foo\nbar\nbaz"
+    new = "foo\nbar\nbaz"
+    file_path = "empty.txt"
+    result = await _generate_diff_output(original, new, file_path)
+    assert "\nNo changes detected (file content was identical)." in result
+
+@pytest.mark.asyncio
 @patch('server.execute_custom_command')
 async def test_run_tsc_if_applicable(mock_execute_custom_command):
     mock_execute_custom_command.return_value = "TSC ran successfully."
