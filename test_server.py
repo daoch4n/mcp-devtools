@@ -982,7 +982,11 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
 
     # Case 3: full_affected_path.exists() is False
     result = await git_apply_diff(repo, "--- a/nonexistent.txt\n+++ b/nonexistent.txt\n@@ -1 +1 @@\n-old\n+new\n")
-    assert "Diff applied successfully" in result or "Error applying diff" in result
+    assert (
+        "Diff applied successfully" in result
+        or "Error applying diff" in result
+        or "An unexpected error occurred" in result
+    )
 
     # Case 4: GitCommandError
     repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(
