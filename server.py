@@ -730,8 +730,8 @@ async def ai_edit_files(
         
         logger.info(f"Running aider command: {' '.join(command)}")
         
-        with open(instructions_file, 'r') as f:
-            instructions_content_str = f.read()
+        with open(instructions_file, 'r') as f_read:
+            instructions_content_str = f_read.read()
             
         logger.debug("Executing Aider with the instructions...")
         
