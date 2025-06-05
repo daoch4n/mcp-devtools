@@ -1,5 +1,5 @@
 # Default port
-$PORT = 4754
+$PORT = 1337
 
 # Parse command-line arguments
 $args | ForEach-Object {
