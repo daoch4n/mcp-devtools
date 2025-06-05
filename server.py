@@ -997,7 +997,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 type="text",
                 text=(
                     "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
-                    "AI coding agents must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
+                    "You must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
                 )
             )
         ]
@@ -1163,7 +1163,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     type="text",
                     text=(
                         "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
-                        "AI coding agents must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
+                        "You must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
                     )
                 )
             ]
