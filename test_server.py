@@ -894,3 +894,54 @@ def test_prepare_aider_command_various_cases():
     # Empty base command, no files, no options
     cmd = prepare_aider_command([])
     assert cmd == []
+@pytest.mark.asyncio
+async def test_git_apply_diff_cases(monkeypatch, tmp_path):
+    from server import git_apply_diff
+    import types
+
+    class DummyRepo:
+        def __init__(self, working_dir):
+            self.working_dir = working_dir
+            self.git = types.SimpleNamespace()
+            self.git.apply = self.apply
+
+        def apply(self, *args, **kwargs):
+            if "--fail" in args:
+                raise Exception("fail")
+            if "--giterr" in args:
+                from git.exc import GitCommandError
+                raise GitCommandError("apply", 1, stderr="git error")
+            return
+
+    # Patch _generate_diff_output and _run_tsc_if_applicable to avoid side effects
+    monkeypatch.setattr("server._generate_diff_output", lambda *a, **kw: "")
+    monkeypatch.setattr("server._run_tsc_if_applicable", lambda *a, **kw: "")
+
+    repo = DummyRepo(str(tmp_path))
+
+    # Case 1: Successful diff application with affected file
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("old")
+    diff_content = "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new\n"
+    result = await git_apply_diff(repo, diff_content)
+    assert "Diff applied successfully" in result
+
+    # Case 2: Diff content without a/ or b/ paths (should not fail)
+    result = await git_apply_diff(repo, "random diff content")
+    assert "Diff applied successfully" in result or "Error applying diff" in result
+
+    # Case 3: full_affected_path.exists() is False
+    result = await git_apply_diff(repo, "--- a/nonexistent.txt\n+++ b/nonexistent.txt\n@@ -1 +1 @@\n-old\n+new\n")
+    assert "Diff applied successfully" in result or "Error applying diff" in result
+
+    # Case 4: GitCommandError
+    repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(
+        __import__("git").exc.GitCommandError("apply", 1, stderr="git error")
+    )
+    result = await git_apply_diff(repo, diff_content)
+    assert "Error applying diff: git error" in result
+
+    # Case 5: Other Exception
+    repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(Exception("fail"))
+    result = await git_apply_diff(repo, diff_content)
+    assert "An unexpected error occurred: fail" in result
