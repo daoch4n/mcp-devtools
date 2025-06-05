@@ -597,6 +597,7 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
 
         if written_bytes != content.encode('utf-8'):
             logging.error("Mismatch between input content and written bytes! File corruption detected during write.")
+            return "Mismatch between input content and written bytes! File corruption detected during write."
 
         result_message = ""
         if not file_existed:
