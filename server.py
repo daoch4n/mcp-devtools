@@ -250,6 +250,7 @@ class ExecuteCommand(BaseModel):
 class AiEdit(BaseModel):
     repo_path: str
     message: str
+    files: List[str] # Make files mandatory
     options: Optional[list[str]] = None
 
 class AiderStatus(BaseModel):
@@ -637,6 +638,7 @@ async def ai_edit_files(
     repo_path: str,
     message: str,
     session: ServerSession,
+    files: List[str], # Make files mandatory
     options: Optional[list[str]],
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
@@ -660,6 +662,16 @@ async def ai_edit_files(
         logger.error(f"Directory does not exist: {directory_path}")
         return f"Error: Directory does not exist: {directory_path}"
     
+    # AI-actionable error: Check if files list is empty
+    if not files:
+        error_message = (
+            "ERROR: No files were provided for ai_edit. "
+            "The 'files' argument is now mandatory and must contain a list of file paths "
+            "that Aider should operate on. Please specify the files to edit."
+        )
+        logger.error(error_message)
+        return error_message
+
     aider_config = load_aider_config(directory_path, config_file)
     load_dotenv_file(directory_path, env_file)
     
@@ -694,7 +706,33 @@ async def ai_edit_files(
     
     aider_options.update(additional_opts)
 
-    
+    # --- BEGIN: LOGGING AND FILE DETECTION FOR DEBUGGING ---
+    # The previous file detection logic from message is now removed as 'files' is mandatory.
+    # We still log the files that are explicitly passed.
+    for fname in files:
+        fpath = os.path.join(directory_path, fname)
+        if os.path.isfile(fpath):
+            logger.info(f"[ai_edit_files] Provided file exists: {fname}")
+            # Check if file is tracked by git
+            try:
+                repo = git.Repo(directory_path)
+                tracked = fname in repo.git.ls_files().splitlines()
+                logger.info(f"[ai_edit_files] Provided file {fname} tracked by git: {tracked}")
+            except Exception as e:
+                logger.warning(f"[ai_edit_files] Could not check git tracking for {fname}: {e}")
+        else:
+            logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
+
+    # Log if stdin is a TTY (should be False in non-interactive mode)
+    try:
+        import sys
+        is_tty = sys.stdin.isatty()
+        logger.info(f"[ai_edit_files] sys.stdin.isatty(): {is_tty}")
+    except Exception as e:
+        logger.warning(f"[ai_edit_files] Could not check sys.stdin.isatty(): {e}")
+
+    # --- END: LOGGING AND FILE DETECTION FOR DEBUGGING ---
+
     with tempfile.NamedTemporaryFile(mode='w+', delete=False) as f:
         f.write(message)
         instructions_file = f.name
@@ -709,10 +747,10 @@ async def ai_edit_files(
         base_command = [aider_path]
         command = prepare_aider_command(
             base_command,
-            [],
+            files, # Use the files argument directly
             aider_options
         )
-        
+        logger.info(f"[ai_edit_files] Files passed to aider: {files}")
         logger.info(f"Running aider command: {' '.join(command)}")
         
         with open(instructions_file, 'r') as f_read:
@@ -1141,6 +1179,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 )]
             case GitTools.AI_EDIT:
                 message = arguments.get("message", "")
+                files = arguments["files"] # files is now mandatory
                 options = arguments.get("options", [])
                 # Retrieve OpenAI API key and base from environment variables
                 openai_api_key = os.environ.get("OPENAI_API_KEY")
@@ -1149,6 +1188,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     repo_path=str(repo_path),
                     message=message,
                     session=mcp_server.request_context.session,
+                    files=files, # Pass files to ai_edit_files
                     options=options,
                 )
                 return [TextContent(
