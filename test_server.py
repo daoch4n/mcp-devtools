@@ -817,3 +817,44 @@ def test_load_dotenv_file_various_cases(tmp_path, monkeypatch):
     write_env(comment_env, ["# This is a comment", "F=6"])
     result = load_dotenv_file(str(emptydir), str(comment_env))
     assert result["F"] == "6"
+import asyncio
+
+import pytest
+
+@pytest.mark.asyncio
+async def test_run_command_success_and_failure(monkeypatch):
+    from server import run_command
+
+    class DummyProcess:
+        def __init__(self, stdout=b"ok", stderr=b"", returncode=0):
+            self._stdout = stdout
+            self._stderr = stderr
+            self.returncode = returncode
+
+        async def communicate(self, input=None):
+            return self._stdout, self._stderr
+
+    async def dummy_create_subprocess_exec(*args, **kwargs):
+        # Simulate different scenarios based on command
+        if "fail" in args[0]:
+            return DummyProcess(stdout=b"", stderr=b"fail", returncode=1)
+        if "stdin" in args[0]:
+            return DummyProcess(stdout=b"stdin-ok", stderr=b"", returncode=0)
+        return DummyProcess(stdout=b"ok", stderr=b"", returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", dummy_create_subprocess_exec)
+
+    # Success without input
+    out, err = await run_command(["echo", "ok"])
+    assert out == "ok"
+    assert err == ""
+
+    # Success with input
+    out, err = await run_command(["stdin"], input_data="data")
+    assert out == "stdin-ok"
+    assert err == ""
+
+    # Failure
+    out, err = await run_command(["fail"])
+    assert out == ""
+    assert err == "fail"
