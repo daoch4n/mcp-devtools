@@ -956,8 +956,12 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
             return
 
     # Patch _generate_diff_output and _run_tsc_if_applicable to avoid side effects
-    monkeypatch.setattr("server._generate_diff_output", lambda *a, **kw: "")
-    monkeypatch.setattr("server._run_tsc_if_applicable", lambda *a, **kw: "")
+    async def fake_generate_diff_output(*a, **kw):
+        return ""
+    async def fake_run_tsc_if_applicable(*a, **kw):
+        return ""
+    monkeypatch.setattr("server._generate_diff_output", fake_generate_diff_output)
+    monkeypatch.setattr("server._run_tsc_if_applicable", fake_run_tsc_if_applicable)
 
     repo = DummyRepo(str(tmp_path))
 
