@@ -499,11 +499,9 @@ async def test_list_tools():
 @pytest.mark.asyncio
 @patch('server.git.Repo')
 @patch('server.git_status')
-@patch('server.git_diff_unstaged')
-@patch('server.git_diff_staged')
+@patch('server.git_diff_all')
 @patch('server.git_diff')
 @patch('server.git_commit')
-@patch('server.git_add')
 @patch('server.git_reset')
 @patch('server.git_log')
 @patch('server.git_create_branch')
@@ -511,16 +509,14 @@ async def test_list_tools():
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.git_read_file')
-@patch('server.git_stage_all')
 @patch('server.search_and_replace_in_file', new_callable=AsyncMock)
 @patch('server.write_to_file_content', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content, mock_search_and_replace_in_file,
-    mock_git_stage_all, mock_git_read_file, mock_git_apply_diff, mock_git_show,
+    mock_git_read_file, mock_git_apply_diff, mock_git_show,
     mock_git_checkout, mock_git_create_branch, mock_git_log, mock_git_reset,
-    mock_git_add, mock_git_commit, mock_git_diff, mock_git_diff_staged,
-    mock_git_diff_unstaged, mock_git_status, mock_git_repo
+    mock_git_commit, mock_git_diff, mock_git_diff_all, mock_git_status, mock_git_repo
 ):
     mock_repo_instance = MagicMock()
     mock_git_repo.return_value = mock_repo_instance
