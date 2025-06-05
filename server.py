@@ -972,19 +972,6 @@ async def ai_edit_files(
     """
     AI pair programming tool for making targeted code changes using Aider.
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
-
-    Args:
-        repo_path: The path to the repository where Aider should operate.
-        message: A detailed message describing what changes Aider should make.
-        session: The MCP ServerSession object for sending progress notifications.
-        files: A list of file paths that Aider should operate on. This argument is mandatory.
-        options: Optional list of additional Aider command-line options (e.g., ["--model=gpt-4o"]).
-        aider_path: Optional. The path to the Aider executable. Defaults to "aider".
-        config_file: Optional. Path to a specific Aider configuration file.
-        env_file: Optional. Path to a specific .env file for environment variables.
-
-    Returns:
-        A string indicating the outcome of the Aider operation, including success or error messages.
     """
     aider_path = aider_path or "aider"
 
@@ -1042,7 +1029,6 @@ async def ai_edit_files(
         fpath = os.path.join(directory_path, fname)
         if not os.path.isfile(fpath):
             logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
-            # return f"Error: The file '{fname}' was not found in the repository." # Commented out as per original logic
 
     with tempfile.NamedTemporaryFile(mode='w+', delete=False, encoding='utf-8') as f:
         f.write(message)
@@ -1053,83 +1039,61 @@ async def ai_edit_files(
         original_dir = os.getcwd()
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
-        import json
-        logger.info(f"Aider subprocess environment: {json.dumps(dict(os.environ), indent=2)}")
 
         base_command = [aider_path]
-        command = prepare_aider_command(
+        command_list = prepare_aider_command(
             base_command,
             files,
             aider_options
         )
+        # Convert the command list to a single string for create_subprocess_shell
+        command_str = ' '.join(shlex.quote(part) for part in command_list)
+        
         logger.info(f"[ai_edit_files] Files passed to aider: {files}")
-        logger.info(f"Running aider command: {' '.join(command)}")
+        logger.info(f"Running aider command: {command_str}")
 
         with open(instructions_file, 'r', encoding='utf-8') as f_read:
             instructions_content_str = f_read.read()
 
         logger.debug("Executing Aider with the instructions...")
 
-        process = await asyncio.create_subprocess_exec(
-            *command,
+        process = await asyncio.create_subprocess_shell(
+            command_str,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=directory_path,
         )
 
-        if instructions_content_str:
-            try:
-                if process.stdin is not None:
-                    process.stdin.write(instructions_content_str.encode('utf-8'))
-                    await process.stdin.drain()
-                    process.stdin.close()
-                else:
-                    logger.error("process.stdin is None; cannot write instructions to process.")
-            except Exception as e:
-                logger.error(f"Error writing to or closing process stdin: {e}")
+        stdout_bytes, stderr_bytes = await process.communicate(input=instructions_content_str.encode('utf-8'))
+        stdout = stdout_bytes.decode('utf-8')
+        stderr = stderr_bytes.decode('utf-8')
 
-        async def read_stream_and_send(stream, stream_name):
-            """Helper to read from a stream and send progress notifications."""
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                decoded_line = line.decode().strip()
-                await session.send_progress_notification(
-                    progress_token="ai_edit",
-                    progress=0.0, # Progress is not granularly updated here, just for streaming output
-                    message=f"[{stream_name}] {decoded_line}"
-                )
+        await session.send_progress_notification(
+            progress_token="ai_edit",
+            progress=0.5,
+            message=f"AIDER STDOUT:\n{stdout}"
+        )
+        if stderr:
+            await session.send_progress_notification(
+                progress_token="ai_edit",
+                progress=0.5,
+                message=f"AIDER STDERR:\n{stderr}"
+            )
 
-        stdout_task = asyncio.create_task(read_stream_and_send(process.stdout, "AIDER_STDOUT"))
-        stderr_task = asyncio.create_task(read_stream_and_send(process.stderr, "AIDER_STDERR"))
-
-        await asyncio.gather(stdout_task, stderr_task)
-        await process.wait()
-        
-        os.chdir(original_dir) # Restore original directory after process finishes
+        os.chdir(original_dir)
 
         return_code = process.returncode
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
-            await session.send_progress_notification(
-                progress_token="ai_edit",
-                progress=1.0,
-                message=f"Aider process exited with code {return_code}"
-            )
-            return f"Error: Aider process exited with code {return_code}"
+            return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
             logger.info("Aider process completed successfully")
-            await session.send_progress_notification(
-                progress_token="ai_edit",
-                progress=1.0,
-                message="Aider process completed successfully."
-            )
-            # Check for "applied edit" message in stdout
-            # Note: stdout is already streamed, so we can't check it here directly.
-            # The previous logic for checking "Applied edit to" is removed as stdout is streamed.
-            return "Code changes completed successfully."
+            if "Applied edit to" in stdout:
+                 return "Code changes completed and applied successfully."
+            else:
+                 return f"Aider completed, but it's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
+
     finally:
         logger.debug(f"Cleaning up temporary file: {instructions_file}")
         os.unlink(instructions_file)
