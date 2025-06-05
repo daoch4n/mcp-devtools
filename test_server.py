@@ -748,3 +748,72 @@ def test_load_aider_config_various_cases(tmp_path, monkeypatch):
     empty_path.write_text("")
     result = load_aider_config(str(emptydir), str(empty_path))
     assert result == {}
+def test_load_dotenv_file_various_cases(tmp_path, monkeypatch):
+    from server import load_dotenv_file
+
+    # Helper to write a .env file
+    def write_env(path, lines):
+        with open(path, "w") as f:
+            f.write("\n".join(lines))
+
+    # Case 1: .env in working directory
+    workdir = tmp_path / "workdir"
+    workdir.mkdir()
+    env1 = ["A=1", "B=2"]
+    env_path1 = workdir / ".env"
+    write_env(env_path1, env1)
+    monkeypatch.chdir(workdir)
+    result = load_dotenv_file(str(workdir))
+    assert result["A"] == "1"
+    assert result["B"] == "2"
+
+    # Case 2: .env in git root (different from workdir)
+    gitroot = tmp_path / "gitroot"
+    gitroot.mkdir()
+    (gitroot / ".git").mkdir()
+    env2 = ["C=3"]
+    env_path2 = gitroot / ".env"
+    write_env(env_path2, env2)
+    with mock.patch("server.find_git_root", return_value=str(gitroot)):
+        result = load_dotenv_file(str(workdir))
+        assert result["C"] == "3"
+
+    # Case 3: .env specified directly
+    env3 = ["D=4"]
+    env_path3 = tmp_path / "direct.env"
+    write_env(env_path3, env3)
+    result = load_dotenv_file(str(workdir), str(env_path3))
+    assert result["D"] == "4"
+
+    # Case 4: .env in home directory
+    home_env = tmp_path / "home.env"
+    env4 = ["E=5"]
+    write_env(home_env, env4)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    result = load_dotenv_file(str(workdir))
+    assert result["E"] == "5"
+
+    # Case 5: No .env files found
+    emptydir = tmp_path / "empty"
+    emptydir.mkdir()
+    monkeypatch.chdir(emptydir)
+    result = load_dotenv_file(str(emptydir))
+    assert result == {}
+
+    # Case 6: Malformed line (ValueError)
+    bad_env = tmp_path / "bad.env"
+    write_env(bad_env, ["BADLINE"])
+    result = load_dotenv_file(str(emptydir), str(bad_env))
+    # Should not raise, should log warning and skip
+
+    # Case 7: Empty .env file
+    empty_env = tmp_path / "empty.env"
+    empty_env.write_text("")
+    result = load_dotenv_file(str(emptydir), str(empty_env))
+    assert result == {}
+
+    # Case 8: Lines starting with #
+    comment_env = tmp_path / "comment.env"
+    write_env(comment_env, ["# This is a comment", "F=6"])
+    result = load_dotenv_file(str(emptydir), str(comment_env))
+    assert result["F"] == "6"
