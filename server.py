@@ -655,12 +655,15 @@ async def ai_edit_files(
     options: Optional[list[str]],
     openai_api_key: Optional[str] = None,
     openai_api_base: Optional[str] = None,
+    aider_path: Optional[str] = None,
+    config_file: Optional[str] = None,
+    env_file: Optional[str] = None,
 ) -> str:
     """
     AI pair programming tool for making targeted code changes using Aider.
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
-    aider_path = "aider"
+    aider_path = aider_path or "aider"
     
     logger.info(f"Running aider in directory: {repo_path}")
     logger.debug(f"Message length: {len(message)} characters")
@@ -671,8 +674,8 @@ async def ai_edit_files(
         logger.error(f"Directory does not exist: {directory_path}")
         return f"Error: Directory does not exist: {directory_path}"
     
-    aider_config = load_aider_config(directory_path)
-    load_dotenv_file(directory_path)
+    aider_config = load_aider_config(directory_path, config_file)
+    load_dotenv_file(directory_path, env_file)
     
     aider_options: Dict[str, Any] = {}
     aider_options["yes_always"] = True
@@ -757,12 +760,17 @@ async def ai_edit_files(
             os.chdir(original_dir)
             logger.debug(f"Restored working directory to: {original_dir}")
 
-async def aider_status_tool(repo_path: str, check_environment: bool = True) -> str:
+async def aider_status_tool(
+    repo_path: str,
+    check_environment: bool = True,
+    aider_path: Optional[str] = None,
+    config_file: Optional[str] = None
+) -> str:
     """
     Check the status of Aider and its environment.
     This function encapsulates the logic from aider_mcp/server.py's aider_status tool.
     """
-    aider_path = "aider"
+    aider_path = aider_path or "aider"
 
     logger.info("Checking Aider status")
     
@@ -818,7 +826,7 @@ async def aider_status_tool(repo_path: str, check_environment: bool = True) -> s
             
             result["environment"] = env_vars
             
-            config = load_aider_config(directory_path)
+            config = load_aider_config(directory_path, config_file)
             if config:
                 result["config"] = config
             
@@ -828,7 +836,7 @@ async def aider_status_tool(repo_path: str, check_environment: bool = True) -> s
                     os.path.join(git_root, ".aider.conf.yml") if git_root else None,
                     os.path.join(directory_path, ".aider.conf.yml"),
                 ],
-                "used": os.path.join(directory_path, ".aider.conf.yml") 
+                "used": os.path.join(directory_path, ".aider.conf.yml")
                 if os.path.exists(os.path.join(directory_path, ".aider.conf.yml")) else None
             }
         
