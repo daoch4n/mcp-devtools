@@ -17,9 +17,6 @@ uv pip install fastapi uvicorn "mcp-server-git" httpx python-dotenv
 "MCP_PORT=$PORT" | Out-File -FilePath .env -Encoding utf8 -Append
 
 # Run server using UV's enhanced execution
-Write-Host "Git MCP server listening at http://localhost:$PORT/sse"
-uv run uvicorn server:app `
-   --host 127.0.0.1 `
-   --port "$PORT" `
-   --reload `
-   --log-level info
+# Run server using the Python entrypoint, with reload explicitly enabled
+$env:MCP_DEVTOOLS_RELOAD="true"
+uv run python -m mcp_devtools_cli --port "$PORT"
