@@ -36,6 +36,8 @@ from starlette.routing import Route, Mount
 from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+logging.getLogger().setLevel(logging.DEBUG)
 
 def find_git_root(path: str) -> Optional[str]:
     current = os.path.abspath(path)
@@ -652,6 +654,7 @@ async def execute_custom_command(repo_path: str, command: str) -> str:
 async def ai_edit_files(
     repo_path: str,
     message: str,
+    session: ServerSession,
     options: Optional[list[str]],
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
@@ -729,19 +732,47 @@ async def ai_edit_files(
         logger.info(f"Running aider command: {' '.join(command)}")
         
         with open(instructions_file, 'r') as f:
-            instructions_content = f.read()
+            instructions_content_str = f.read()
             
         logger.debug("Executing Aider with the instructions...")
-        stdout, stderr = await run_command(command, instructions_content)
         
-        os.chdir(original_dir)
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=directory_path,
+        )
+
+        if instructions_content_str:
+            process.stdin.write(instructions_content_str.encode())
+            process.stdin.close()
+
+        async def read_stream_and_send(stream, stream_name):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                decoded_line = line.decode().strip()
+                await session.send_text_content(f"[{stream_name}] {decoded_line}")
+
+        stdout_task = asyncio.create_task(read_stream_and_send(process.stdout, "AIDER_STDOUT"))
+        stderr_task = asyncio.create_task(read_stream_and_send(process.stderr, "AIDER_STDERR"))
+
+        await asyncio.gather(stdout_task, stderr_task)
+        await process.wait()
         
-        if stderr and ("error" in stderr.lower() or "exception" in stderr.lower()):
-            logger.error(f"Aider reported an error: {stderr}")
-            return f"Error making code changes:\n{stderr}\n\nOutput:\n{stdout}"
-        
-        logger.info("Code changes completed successfully")
-        return f"Code changes completed successfully:\n\n{stdout}"
+        os.chdir(original_dir) # Restore original directory after process finishes
+
+        return_code = process.returncode
+        if return_code != 0:
+            logger.error(f"Aider process exited with code {return_code}")
+            await session.send_text_content(f"Aider process exited with code {return_code}")
+            return f"Error: Aider process exited with code {return_code}"
+        else:
+            logger.info("Aider process completed successfully")
+            await session.send_text_content("Aider process completed successfully.")
+            return "Code changes completed successfully."
     finally:
         logger.debug(f"Cleaning up temporary file: {instructions_file}")
         os.unlink(instructions_file)
@@ -982,7 +1013,18 @@ async def list_repos() -> Sequence[str]:
 
 @mcp_server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[Content]:
-    repo_path = Path(arguments.get("repo_path", "."))
+    repo_path_arg = arguments.get("repo_path", ".")
+    if repo_path_arg == ".":
+        return [
+            TextContent(
+                type="text",
+                text=(
+                    "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
+                    "AI coding agents must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
+                )
+            )
+        ]
+    repo_path = Path(repo_path_arg)
     
     repo = None
     
@@ -1151,6 +1193,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
             result = await ai_edit_files(
                 repo_path=str(repo_path),
                 message=message,
+                session=mcp_server.request_context.session,
                 options=options,
             )
             return [TextContent(
