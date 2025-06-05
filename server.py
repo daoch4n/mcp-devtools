@@ -686,13 +686,27 @@ async def ai_edit_files(
         for opt in options:
             if opt.startswith("--"):
                 if "=" in opt:
-                    key, value = opt[2:].split("=", 1)
+                    key, value_str = opt[2:].split("=", 1)
+                    # Convert "true"/"false" strings to actual booleans
+                    if value_str.lower() == "true":
+                        value = True
+                    elif value_str.lower() == "false":
+                        value = False
+                    else:
+                        value = value_str
                     additional_opts[key.replace("-", "_")] = value
                 else:
                     additional_opts[opt[2:].replace("-", "_")] = True
             elif opt.startswith("--no-"):
                 key = opt[5:].replace("-", "_")
                 additional_opts[key] = False
+
+    # Remove unsupported options that are not recognized by aider itself.
+    unsupported_options = ["base_url", "base-url"]  # Remove both underscore and dash variants
+    for opt_key in unsupported_options:
+        if opt_key in additional_opts:
+            logger.warning(f"Removing unsupported Aider option: --{opt_key.replace('_', '-')}")
+            del additional_opts[opt_key]
     
     aider_options.update(additional_opts)
 
