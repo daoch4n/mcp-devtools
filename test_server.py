@@ -527,13 +527,11 @@ async def test_call_tool(
     assert result[0].text == "Repository status:\nclean"
     mock_git_status.assert_called_with(mock_repo_instance)
 
-    # Test GitTools.DIFF_UNSTAGED
-    mock_git_diff_unstaged.return_value = "diff_unstaged_output"
+    # Test GitTools.DIFF_ALL
+    mock_git_diff_all.return_value = "diff_all_output"
     result = list(await call_tool(GitTools.DIFF_ALL.value, {"repo_path": "/tmp/repo"})) # Cast to list
-    assert result[0].text == "All changes (staged and unstaged):\ndiff_unstaged_output"
+    assert result[0].text == "All changes (staged and unstaged):\ndiff_all_output"
 
-    # Test GitTools.DIFF_STAGED
-    mock_git_diff_staged.return_value = "diff_staged_output"
     # Removed test for GitTools.DIFF_STAGED as the tool no longer exists
 
     # Test GitTools.DIFF
