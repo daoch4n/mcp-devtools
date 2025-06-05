@@ -745,8 +745,15 @@ async def ai_edit_files(
         )
 
         if instructions_content_str:
-            process.stdin.write(instructions_content_str.encode())
-            process.stdin.close()
+            try:
+                if process.stdin is not None:
+                    process.stdin.write(instructions_content_str.encode())
+                    await process.stdin.drain()
+                    process.stdin.close()
+                else:
+                    logger.error("process.stdin is None; cannot write instructions to process.")
+            except Exception as e:
+                logger.error(f"Error writing to or closing process stdin: {e}")
 
         async def read_stream_and_send(stream, stream_name):
             while True:
@@ -754,7 +761,7 @@ async def ai_edit_files(
                 if not line:
                     break
                 decoded_line = line.decode().strip()
-                await session.send_text_content(f"[{stream_name}] {decoded_line}")
+                await session.send_text_content(f"[{stream_name}] {decoded_line}")  # type: ignore
 
         stdout_task = asyncio.create_task(read_stream_and_send(process.stdout, "AIDER_STDOUT"))
         stderr_task = asyncio.create_task(read_stream_and_send(process.stderr, "AIDER_STDERR"))
@@ -767,11 +774,11 @@ async def ai_edit_files(
         return_code = process.returncode
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
-            await session.send_text_content(f"Aider process exited with code {return_code}")
+            await session.send_text_content(f"Aider process exited with code {return_code}")  # type: ignore
             return f"Error: Aider process exited with code {return_code}"
         else:
             logger.info("Aider process completed successfully")
-            await session.send_text_content("Aider process completed successfully.")
+            await session.send_text_content("Aider process completed successfully.")  # type: ignore
             return "Code changes completed successfully."
     finally:
         logger.debug(f"Cleaning up temporary file: {instructions_file}")
