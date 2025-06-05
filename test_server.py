@@ -945,3 +945,26 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
     repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(Exception("fail"))
     result = await git_apply_diff(repo, diff_content)
     assert "An unexpected error occurred: fail" in result
+def test_git_read_file_error_cases(monkeypatch):
+    from server import git_read_file
+    import types
+
+    class DummyRepo:
+        def __init__(self, working_dir):
+            self.working_dir = working_dir
+
+    repo = DummyRepo("/tmp")
+
+    # Simulate FileNotFoundError
+    def fake_open_notfound(*a, **kw):
+        raise FileNotFoundError()
+    monkeypatch.setattr("builtins.open", fake_open_notfound)
+    result = git_read_file(repo, "nofile.txt")
+    assert "file wasn't found" in result
+
+    # Simulate generic Exception
+    def fake_open_exc(*a, **kw):
+        raise Exception("fail")
+    monkeypatch.setattr("builtins.open", fake_open_exc)
+    result = git_read_file(repo, "nofile.txt")
+    assert "Error reading file" in result
