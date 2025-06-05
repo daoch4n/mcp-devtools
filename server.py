@@ -689,12 +689,11 @@ async def ai_edit_files(
                     key, value_str = opt[2:].split("=", 1)
                     # Convert "true"/"false" strings to actual booleans
                     if value_str.lower() == "true":
-                        value = True
+                        additional_opts[key.replace("-", "_")] = True
                     elif value_str.lower() == "false":
-                        value = False
+                        additional_opts[key.replace("-", "_")] = False
                     else:
-                        value: str | bool = value_str
-                    additional_opts[key.replace("-", "_")] = value
+                        additional_opts[key.replace("-", "_")] = value_str
                 else:
                     additional_opts[opt[2:].replace("-", "_")] = True
             elif opt.startswith("--no-"):
