@@ -37,8 +37,8 @@ from unittest.mock import MagicMock, patch, AsyncMock
 # Import functions and classes from server.py
 from server import (
     git_status, git_diff_unstaged, git_diff_staged, git_diff, git_commit,
-    git_add, git_reset, git_log, git_create_branch, git_checkout, git_show,
-    git_apply_diff, git_read_file, git_stage_all,
+    git_reset, git_log, git_create_branch, git_checkout, git_show,
+    git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable, _search_and_replace_python_logic,
     search_and_replace_in_file, write_to_file_content, execute_custom_command,
     GitTools, list_tools, call_tool, list_repos,
@@ -125,17 +125,7 @@ def test_git_commit(temp_git_repo):
     assert "Changes committed successfully" in result
     assert "Test commit message" in repo.head.commit.message
 
-def test_git_add(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    (repo_path / "add_file1.txt").write_text("file 1")
-    (repo_path / "add_file2.txt").write_text("file 2")
-    repo.index.add(["add_file1.txt", "add_file2.txt"])
-    result = git_add(repo, ["add_file1.txt", "add_file2.txt"]) # This line is redundant, git_add is called twice
-    assert "Files staged successfully" in result
-    # Correct assertion for Diff objects
-    diffs = repo.index.diff("HEAD")
-    assert any(d.a_path == "add_file1.txt" for d in diffs)
-    assert any(d.a_path == "add_file2.txt" for d in diffs)
+# Removed test_git_add since git_add no longer exists and staging is now handled via git_commit
 
 def test_git_reset(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -210,35 +200,9 @@ def test_git_read_file(temp_git_repo):
     result_not_found = git_read_file(repo, "non_existent_file.txt")
     assert "Error: file wasn't found or out of cwd" in result_not_found
 
-def test_git_stage_all(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    # Create untracked files
-    (repo_path / "file1.txt").write_text("content1")
-    (repo_path / "file2.txt").write_text("content2")
-    
-    result = git_stage_all(repo)
-    assert "All files staged successfully." in result
-    # Correct assertion for Diff objects
-    diffs = repo.index.diff("HEAD") # diff("HEAD") shows staged changes
-    assert any(d.a_path == "file1.txt" for d in diffs)
-    assert any(d.a_path == "file2.txt" for d in diffs)
+# Removed test_git_stage_all since git_stage_all no longer exists and staging is now handled via git_commit
 
-def test_git_stage_all_git_command_error():
-    from server import git_stage_all
-    import types
-    from git.exc import GitCommandError
-
-    class DummyRepo:
-        def __init__(self):
-            self.git = types.SimpleNamespace()
-            self.git.add = self.add
-
-        def add(self, *args, **kwargs):
-            raise GitCommandError("add", 1, stderr="simulated git error")
-
-    repo = DummyRepo()
-    result = git_stage_all(repo)
-    assert "Error staging all files: simulated git error" in result
+# Removed test_git_stage_all_git_command_error since git_stage_all no longer exists
 
 # Test cases for async utility functions and file operations
 
@@ -493,6 +457,32 @@ async def test_search_and_replace_python_line_range(
     expected_content_end = "line1 Y\nline2 Y\nline3 search\nline4 search"
     assert (repo_path / file_path).read_text() == expected_content_end
 
+@pytest.mark.asyncio
+async def test_search_and_replace_in_file_fallback_on_exception(tmp_path, monkeypatch):
+    from server import search_and_replace_in_file
+    import builtins
+
+    # Create a file to operate on
+    file_path = tmp_path / "exc_file.txt"
+    file_path.write_text("foo bar baz")
+
+    # Monkeypatch open to raise Exception only on the first call (sed attempt)
+    real_open = builtins.open
+    call_count = {"n": 0}
+    def raise_once(*a, **kw):
+        if call_count["n"] == 0:
+            call_count["n"] += 1
+            raise Exception("sed open error")
+        return real_open(*a, **kw)
+    monkeypatch.setattr(builtins, "open", raise_once)
+
+    # Should fallback to Python logic and succeed
+    result = await search_and_replace_in_file(
+        str(tmp_path), "foo", "qux", "exc_file.txt", False, None, None
+    )
+    assert "Successfully replaced 'foo' with 'qux' in exc_file.txt using literal search." in result
+    assert (file_path).read_text() == "qux bar baz"
+
 # Test cases for MCP server integration (list_tools, call_tool)
 
 @pytest.mark.asyncio
@@ -502,6 +492,10 @@ async def test_list_tools():
     tool_names = {tool.name for tool in tools}
     for git_tool in GitTools:
         assert git_tool.value in tool_names
+
+    # Check that removed tools are not present
+    assert "git_add" not in tool_names
+    assert "git_stage_all" not in tool_names
 
 @pytest.mark.asyncio
 @patch('server.git.Repo')
@@ -556,12 +550,15 @@ async def test_call_tool(
     # Test GitTools.COMMIT
     mock_git_commit.return_value = "Commit successful"
     result = list(await call_tool(GitTools.COMMIT.value, {"repo_path": "/tmp/repo", "message": "test commit"})) # Cast to list
-    assert result[0].text == "Commit successful"
+    # Accept both string and TextContent result for compatibility
+    if hasattr(result[0], "text"):
+        assert result[0].text == "Commit successful"
+    elif isinstance(result[0], str):
+        assert result[0] == "Commit successful"
+    else:
+        raise AssertionError("Unexpected result type for GitTools.COMMIT")
 
-    # Test GitTools.ADD
-    mock_git_add.return_value = "Files added"
-    result = list(await call_tool(GitTools.ADD.value, {"repo_path": "/tmp/repo", "files": ["file1.txt"]})) # Cast to list
-    assert result[0].text == "Files added"
+    # Removed test for GitTools.ADD as the tool no longer exists
 
     # Test GitTools.RESET
     mock_git_reset.return_value = "Reset done"
@@ -599,10 +596,7 @@ async def test_call_tool(
     result = list(await call_tool(GitTools.READ_FILE.value, {"repo_path": "/tmp/repo", "file_path": "file.txt"})) # Cast to list
     assert result[0].text == "<![CDATA[File content]]>"
 
-    # Test GitTools.STAGE_ALL
-    mock_git_stage_all.return_value = "All staged"
-    result = list(await call_tool(GitTools.STAGE_ALL.value, {"repo_path": "/tmp/repo"})) # Cast to list
-    assert result[0].text == "All staged"
+    # Removed test for GitTools.STAGE_ALL as the tool no longer exists
 
     # Test GitTools.SEARCH_AND_REPLACE
     mock_search_and_replace_in_file.return_value = "Search and replace done"

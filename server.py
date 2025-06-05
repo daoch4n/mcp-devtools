@@ -202,11 +202,7 @@ class GitDiff(BaseModel):
 class GitCommit(BaseModel):
     repo_path: str
     message: str
-
-class GitAdd(BaseModel):
-    repo_path: str
-
-    files: list[str]
+    files: Optional[List[str]] = None  # Optional: files to stage before commit
 
 class GitReset(BaseModel):
     repo_path: str
@@ -235,9 +231,6 @@ class GitApplyDiff(BaseModel):
 class GitReadFile(BaseModel):
     repo_path: str
     file_path: str
-
-class GitStageAll(BaseModel):
-    repo_path: str
 
 class SearchAndReplace(BaseModel):
     repo_path: str
@@ -272,7 +265,6 @@ class GitTools(str, Enum):
     DIFF_STAGED = "git_diff_staged"
     DIFF = "git_diff"
     COMMIT = "git_commit"
-    ADD = "git_add"
     RESET = "git_reset"
     LOG = "git_log"
     CREATE_BRANCH = "git_create_branch"
@@ -280,7 +272,6 @@ class GitTools(str, Enum):
     SHOW = "git_show"
     APPLY_DIFF = "git_apply_diff"
     READ_FILE = "git_read_file"
-    STAGE_ALL = "git_stage_all"
     SEARCH_AND_REPLACE = "search_and_replace"
     WRITE_TO_FILE = "write_to_file"
     EXECUTE_COMMAND = "execute_command"
@@ -299,13 +290,16 @@ def git_diff_staged(repo: git.Repo) -> str:
 def git_diff(repo: git.Repo, target: str) -> str:
     return repo.git.diff(target)
 
-def git_commit(repo: git.Repo, message: str) -> str:
-    commit = repo.index.commit(message)
-    return f"Changes committed successfully with hash {commit.hexsha}"
+def git_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
+    if files:
+        repo.index.add(files)
+        staged_message = f"Files {', '.join(files)} staged successfully."
+    else:
+        repo.git.add(A=True)
+        staged_message = "All changes staged successfully."
 
-def git_add(repo: git.Repo, files: list[str]) -> str:
-    repo.index.add(files)
-    return "Files staged successfully"
+    commit = repo.index.commit(message)
+    return f"{staged_message}\nChanges committed successfully with hash {commit.hexsha}"
 
 def git_reset(repo: git.Repo) -> str:
     repo.index.reset()
@@ -419,12 +413,6 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
     except Exception as e:
         return f"Error reading file {file_path}: {e}"
 
-def git_stage_all(repo: git.Repo) -> str:
-    try:
-        repo.git.add(A=True)
-        return "All files staged successfully."
-    except git.GitCommandError as e:
-        return f"Error staging all files: {e.stderr}"
 async def _generate_diff_output(original_content: str, new_content: str, file_path: str) -> str:
     diff_lines = list(difflib.unified_diff(
         original_content.splitlines(keepends=True),
@@ -899,11 +887,6 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitCommit.model_json_schema(),
         ),
         Tool(
-            name=GitTools.ADD,
-            description="Adds file contents to the staging area",
-            inputSchema=GitAdd.model_json_schema(),
-        ),
-        Tool(
             name=GitTools.RESET,
             description="Unstages all staged changes",
             inputSchema=GitReset.model_json_schema(),
@@ -937,11 +920,6 @@ async def list_tools() -> list[Tool]:
             name=GitTools.READ_FILE,
             description="Reads the content of a file in the repository",
             inputSchema=GitReadFile.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.STAGE_ALL,
-            description="Stages all changes in the working directory",
-            inputSchema=GitStageAll.model_json_schema(),
         ),
         Tool(
             name=GitTools.SEARCH_AND_REPLACE,
@@ -1079,13 +1057,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 text=result
             )]
 
-        case GitTools.ADD:
-            repo = git.Repo(repo_path)
-            result = git_add(repo, arguments["files"])
-            return [TextContent(
-                type="text",
-                text=result
-            )]
 
         case GitTools.RESET:
             repo = git.Repo(repo_path)
@@ -1145,13 +1116,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
             return [TextContent(
                 type="text",
                 text=f"<![CDATA[{result}]]>"
-            )]
-        case GitTools.STAGE_ALL:
-            repo = git.Repo(repo_path)
-            result = git_stage_all(repo)
-            return [TextContent(
-                type="text",
-                text=result
             )]
         
         case GitTools.SEARCH_AND_REPLACE:
