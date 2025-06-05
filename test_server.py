@@ -126,8 +126,6 @@ def test_git_commit(temp_git_repo):
     assert "Changes committed successfully" in result
     assert "Test commit message" in repo.head.commit.message
 
-# Removed test_git_add since git_add no longer exists and staging is now handled via git_commit
-
 def test_git_reset(temp_git_repo):
     repo, repo_path = temp_git_repo
     (repo_path / "reset_file.txt").write_text("content")
@@ -546,10 +544,6 @@ async def test_list_tools():
     tool_names = {tool.name for tool in tools}
     for git_tool in GitTools:
         assert git_tool.value in tool_names
-
-    # Check that removed tools are not present
-    assert "git_add" not in tool_names
-    assert "git_stage_all" not in tool_names
 
 @pytest.mark.asyncio
 @patch('server.git.Repo')
