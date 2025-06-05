@@ -774,9 +774,28 @@ def test_load_aider_config_various_cases(tmp_path, monkeypatch):
 def test_load_dotenv_file_various_cases(tmp_path, monkeypatch):
     from server import load_dotenv_file
 
+    # Patch os.path.exists and open to prevent reading real home .env files
+    import builtins
+    real_exists = os.path.exists
+    real_open = builtins.open
+
+    def safe_exists(path):
+        try:
+            return str(tmp_path) in os.path.abspath(path) or real_exists(path) is False and "/dev/" in path
+        except Exception:
+            return False
+
+    def safe_open(path, *args, **kwargs):
+        if str(tmp_path) in os.path.abspath(path):
+            return real_open(path, *args, **kwargs)
+        raise FileNotFoundError(f"Blocked open for {path}")
+
+    monkeypatch.setattr(os.path, "exists", safe_exists)
+    monkeypatch.setattr(builtins, "open", safe_open)
+
     # Helper to write a .env file
     def write_env(path, lines):
-        with open(path, "w") as f:
+        with real_open(path, "w") as f:
             f.write("\n".join(lines))
 
     # Case 1: .env in working directory
