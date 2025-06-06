@@ -999,7 +999,7 @@ async def ai_edit_files(
     aider_options: Dict[str, Any] = {}
     aider_options["yes_always"] = True
     # Always use unified diff format for edits
-    aider_options["edit_format"] = "udiff"
+    aider_options["edit_format"] = "diff-fenced"
     # Pass the message directly as a command-line option
     aider_options["message"] = message
 
