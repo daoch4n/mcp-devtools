@@ -401,7 +401,14 @@ class AiEdit(BaseModel):
     )
     edit_format: EditFormat = Field(
         EditFormat.DIFF,
-        description="Optional. The format Aider should use for edits. Defaults to 'diff'. Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
+        description=(
+            "Optional. The format Aider should use for edits. "
+            "If not explicitly provided, the default is selected based on the model name: "
+            "if the model includes 'gemini', defaults to 'diff-fenced'; "
+            "if the model includes 'gpt', defaults to 'udiff'; "
+            "otherwise defaults to 'diff'. "
+            "Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
+        )
     )
 
 class AiderStatus(BaseModel):
