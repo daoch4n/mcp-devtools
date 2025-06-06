@@ -1031,7 +1031,17 @@ async def ai_edit_files(
 
     aider_options: Dict[str, Any] = {}
     aider_options["yes_always"] = True
-    # Use the specified edit format
+
+    # Determine the default edit format based on the model if not explicitly provided
+    if edit_format == EditFormat.DIFF:
+        model_name = aider_options.get("model", "").lower()
+        if "gemini" in model_name:
+            edit_format_str = EditFormat.DIFF_FENCED.value
+        elif "gpt" in model_name:
+            edit_format_str = EditFormat.UDIFF.value
+        else:
+            edit_format_str = EditFormat.DIFF.value
+
     aider_options["edit_format"] = edit_format_str
     # Pass the message directly as a command-line option
     aider_options["message"] = message
