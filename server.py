@@ -1032,8 +1032,8 @@ async def ai_edit_files(
         if not os.path.isfile(fpath):
             logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
 
+    original_dir = os.getcwd()
     try:
-        original_dir = os.getcwd()
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
 
@@ -1074,19 +1074,59 @@ async def ai_edit_files(
                 message=f"AIDER STDERR:\n{stderr}"
             )
 
-        os.chdir(original_dir)
-
         return_code = process.returncode
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
             return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
             logger.info("Aider process completed successfully")
+            
+            result_message = "Aider completed successfully."
             if "Applied edit to" in stdout:
-                 return "Code changes completed and committed successfully."
-            else:
-                 return f"Aider completed, but it's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
+                result_message = "Code changes completed and committed successfully."
+                
+                try:
+                    # Re-initialize repo object to get latest state
+                    repo = git.Repo(directory_path)
+                    
+                    if repo.head.is_valid() and repo.head.commit:
+                        last_commit = repo.head.commit
+                        
+                        diff_output_lines = []
+                        if last_commit.parents:
+                            parent_commit = last_commit.parents[0]
+                            diffs = parent_commit.diff(last_commit, create_patch=True)
+                        else:
+                            # This is the very first commit in the repo
+                            diffs = last_commit.diff(git.NULL_TREE, create_patch=True)
 
+                        for d in diffs:
+                            diff_output_lines.append(f"\n--- a/{d.a_path}\n+++ b/{d.b_path}\n")
+                            if d.diff is not None:
+                                if isinstance(d.diff, bytes):
+                                    diff_output_lines.append(d.diff.decode('utf-8'))
+                                else:
+                                    diff_output_lines.append(str(d.diff))
+                        
+                        full_diff_str = "".join(diff_output_lines)
+                        if full_diff_str:
+                            result_message += f"\n\nDiff of last commit:\n```diff\n{full_diff_str}\n```"
+                        else:
+                            result_message += "\n\nNo diff generated for the last commit (perhaps no changes were made or it's an empty commit)."
+                    else:
+                        result_message += "\n\nCould not retrieve last commit information (repository might be empty or detached HEAD)."
+                except git.InvalidGitRepositoryError:
+                    result_message += "\n\nCould not access Git repository to get diff."
+                except Exception as e:
+                    result_message += f"\n\nError generating diff for last commit: {e}"
+            else:
+                 result_message += f"\nIt's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
+            
+            return result_message
+
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during ai_edit_files: {e}")
+        return f"UNEXPECTED_ERROR: An unexpected error occurred during AI edit: {e}. AI_HINT: Check the server logs for more details."
     finally:
         if os.getcwd() != original_dir:
             os.chdir(original_dir)
