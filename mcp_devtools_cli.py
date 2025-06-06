@@ -1,6 +1,30 @@
 import uvicorn
 import os
 import argparse
+import tomllib # Added tomllib import
+
+def get_project_version() -> str:
+    """
+    Reads the project version from pyproject.toml.
+    Assumes pyproject.toml is in the parent directory of the script.
+    """
+    script_dir = os.path.dirname(__file__)
+    # Construct path to pyproject.toml, assuming it's one level up
+    pyproject_path = os.path.join(script_dir, '..', 'pyproject.toml')
+
+    if not os.path.exists(pyproject_path):
+        return "unknown"
+
+    try:
+        with open(pyproject_path, "rb") as f:
+            pyproject_data = tomllib.load(f)
+        version = pyproject_data.get("project", {}).get("version")
+        if version:
+            return str(version)
+    except Exception:
+        # Catch any errors during file reading or TOML parsing
+        pass
+    return "unknown"
 
 def main():
     """
@@ -22,6 +46,9 @@ def main():
     # This will be 'false' by default when running via 'uvx'.
     reload_enabled = os.getenv('MCP_DEVTOOLS_RELOAD', 'false').lower() in ('true', '1', 't')
 
+    # Get and print the server version
+    server_version = get_project_version()
+    print(f"MCP DevTools Server v{server_version}")
     print(f"DevTools MCP server listening at http://{host}:{port}/sse")
     if reload_enabled:
         print("Auto-reloading is enabled.")
