@@ -644,12 +644,12 @@ async def test_call_tool(
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock
     
     result = list(await call_tool(GitTools.APPLY_DIFF.value, {"repo_path": "/tmp/repo", "diff_content": "diff"})) # Cast to list
-    assert result[0].text == "<![CDATA[Diff applied]]>"
+    assert result[0].text == "Diff applied"
 
     # Test GitTools.READ_FILE
     mock_git_read_file.return_value = "File content"
     result = list(await call_tool(GitTools.READ_FILE.value, {"repo_path": "/tmp/repo", "file_path": "file.txt"})) # Cast to list
-    assert result[0].text == "<![CDATA[File content]]>"
+    assert result[0].text == "File content"
 
     # Removed test for GitTools.STAGE_ALL as the tool no longer exists
 
@@ -658,14 +658,14 @@ async def test_call_tool(
     result = list(await call_tool(GitTools.SEARCH_AND_REPLACE.value, { # Cast to list
         "repo_path": "/tmp/repo", "file_path": "f.txt", "search_string": "s", "replace_string": "r"
     }))
-    assert result[0].text == "<![CDATA[Search and replace done]]>"
+    assert result[0].text == "Search and replace done"
 
     # Test GitTools.WRITE_TO_FILE
     mock_write_to_file_content.return_value = "File written"
     result = list(await call_tool(GitTools.WRITE_TO_FILE.value, { # Cast to list
         "repo_path": "/tmp/repo", "file_path": "new.txt", "content": "new content"
     }))
-    assert result[0].text == "<![CDATA[File written]]>"
+    assert result[0].text == "File written"
 
     # Test GitTools.EXECUTE_COMMAND
     mock_execute_custom_command.return_value = "Command output"
