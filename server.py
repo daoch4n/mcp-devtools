@@ -1075,12 +1075,26 @@ async def ai_edit_files(
             repo = git.Repo(directory_path)
             try:
                 if repo.head.is_valid():
-                    pre_aider_commit_hash = repo.head.commit.hexsha
-                    logger.debug(f"Pre-Aider HEAD commit: {pre_aider_commit_hash}")
+                    try:
+                        pre_aider_commit_hash = repo.head.commit.hexsha
+                        logger.debug(f"Pre-Aider HEAD commit: {pre_aider_commit_hash}")
+                    except (ValueError, AttributeError, IndexError):
+                        # Fallback: use git_log to get last commit hash
+                        log_entries = git_log(repo, max_count=1)
+                        if log_entries:
+                            # Parse hash from "Commit: <hash>" line
+                            first_line = log_entries[0].splitlines()[0]
+                            if first_line.startswith("Commit: "):
+                                pre_aider_commit_hash = first_line.split("Commit: ")[1].strip()
+                                logger.debug(f"Pre-Aider HEAD commit (from git_log): {pre_aider_commit_hash}")
+                            else:
+                                logger.debug("git_log did not return a commit hash line.")
+                        else:
+                            logger.debug("git_log returned no entries; repository may be empty.")
                 else:
                     logger.debug("Repository has no commits yet or detached HEAD before Aider.")
-            except (ValueError, AttributeError, IndexError):
-                logger.debug("Repository has no commits yet or detached HEAD before Aider.")
+            except Exception as e:
+                logger.debug(f"Error retrieving pre-Aider HEAD commit: {e}")
         except git.InvalidGitRepositoryError:
             logger.warning(f"Directory {directory_path} is not a valid Git repository. Cannot capture pre-Aider commit hash.")
         except Exception as e:
@@ -1143,12 +1157,25 @@ async def ai_edit_files(
                     post_aider_commit_hash = None
                     try:
                         if repo.head.is_valid():
-                            post_aider_commit_hash = repo.head.commit.hexsha
-                            logger.debug(f"Post-Aider HEAD commit: {post_aider_commit_hash}")
+                            try:
+                                post_aider_commit_hash = repo.head.commit.hexsha
+                                logger.debug(f"Post-Aider HEAD commit: {post_aider_commit_hash}")
+                            except (ValueError, AttributeError, IndexError):
+                                # Fallback: use git_log to get last commit hash
+                                log_entries = git_log(repo, max_count=1)
+                                if log_entries:
+                                    first_line = log_entries[0].splitlines()[0]
+                                    if first_line.startswith("Commit: "):
+                                        post_aider_commit_hash = first_line.split("Commit: ")[1].strip()
+                                        logger.debug(f"Post-Aider HEAD commit (from git_log): {post_aider_commit_hash}")
+                                    else:
+                                        logger.debug("git_log did not return a commit hash line.")
+                                else:
+                                    logger.debug("git_log returned no entries; repository may be empty.")
                         else:
                             logger.debug("Repository has no commits or detached HEAD after Aider.")
-                    except (ValueError, AttributeError, IndexError):
-                        logger.debug("Repository has no commits or detached HEAD after Aider.")
+                    except Exception as e:
+                        logger.debug(f"Error retrieving post-Aider HEAD commit: {e}")
 
                     if pre_aider_commit_hash and post_aider_commit_hash and pre_aider_commit_hash != post_aider_commit_hash:
                         # Generate diff between the two commit hashes
