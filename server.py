@@ -1609,7 +1609,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         session=mcp_server.request_context.session,
                         files=files,
                         options=options,
-                        edit_format=arguments.get("edit_format", EditFormat.DIFF),
+                        edit_format=EditFormat(arguments.get("edit_format", EditFormat.DIFF.value)),
                     )
                     return [TextContent(
                         type="text",
