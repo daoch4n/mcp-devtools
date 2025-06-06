@@ -15,21 +15,21 @@ Here's the order of precedence for configuration sources, from lowest to highest
     *   See a [sample.aider.conf.yml](https://github.com/Aider-AI/aider/blob/main/aider/website/assets/sample.aider.conf.yml) for reference.
     *   **Purpose**: These files provide global default settings for Aider and environment variables that apply across all projects.
 
-2.  **Git Repository Root Configuration**:
-    *   **Files**: `.aider.conf.yml` and `.env`
-    *   **Purpose**: If the current working directory (or the `repo_path` provided to the MCP server) is part of a Git repository, Aider will look for configuration and environment files in the root of that repository. These settings will override any conflicting settings found in the home directory.
-
-3.  **Working Directory Configuration**:
-    *   **Files**: `.aider.conf.yml` and `.env`
-    *   **Purpose**: The directory where the Aider command is executed (or the `repo_path` specified to the MCP server) is the primary location for local, project-specific configuration and environment variables. Settings defined here take precedence over those found in the Git root or home directory.
-
-4.  **Custom Configuration (Explicitly Provided)**:
+2.  **Custom Configuration (Explicitly Provided)**:
     *   **Mechanism**: The server's configuration loader can accept `config_file` parameter during initialization.
-    *   **Purpose**: If provided, these custom files will be loaded, and their settings will take the highest precedence among file-based configurations. This allows for specific configurations to be applied without modifying existing project files.
+    *   **Purpose**: If provided, these custom files will be loaded, and their settings will take precedence over those found in the home directory.
+
+3.  **Git Repository Root Configuration**:
+    *   **Files**: `.aider.conf.yml` and `.env`
+    *   **Purpose**: If the current working directory (or the `repo_path` provided to the MCP server) is part of a Git repository, Aider will look for configuration and environment files in the root of that repository. These settings will override any conflicting settings found in the home directory or custom configuration.
+
+4.  **Working Directory Configuration**:
+    *   **Files**: `.aider.conf.yml` and `.env`
+    *   **Purpose**: The directory where the Aider command is executed (or the `repo_path` specified to the MCP server) is the primary location for local, project-specific configuration and environment variables. Settings defined here take the highest precedence among file-based configurations.
 
 
 5.  **Command-Line Options**:
-    *   **Mechanism**: When tools like `edit_files` are invoked, additional options can be passed directly as command-line arguments to the `aider` executable.
+    *   **Mechanism**: When tools like `ai_edit` are invoked, additional options can be passed directly as command-line arguments to the `aider` executable.
     *   **Purpose**: These options provide the most immediate and highest-precedence way to configure Aider's behavior for a specific operation, overriding all other configuration sources.
 
 ## Configuration Loading Process Flow
@@ -46,10 +46,10 @@ graph TD
     C --> G[Custom Files]
     C --> H[Environment Variables]
     C --> I[Command-Line Options]
-    D -- Overridden by --> E
+    D -- Overridden by --> G
+    G -- Overridden by --> E
     E -- Overridden by --> F
-    F -- Overridden by --> G
-    G -- Overridden by --> H
+    F -- Overridden by --> H
     H -- Overridden by --> I
     I --> J{Final Aider Configuration}
     J --> K[Aider Execution]
