@@ -6,11 +6,11 @@ import tomllib # Added tomllib import
 def get_project_version() -> str:
     """
     Reads the project version from pyproject.toml.
-    Assumes pyproject.toml is in the parent directory of the script.
+    Assumes pyproject.toml is in the same directory as the script.
     """
     script_dir = os.path.dirname(__file__)
-    # Construct path to pyproject.toml, assuming it's one level up
-    pyproject_path = os.path.join(script_dir, '..', 'pyproject.toml')
+    # Construct path to pyproject.toml, assuming it's in the same directory
+    pyproject_path = os.path.join(script_dir, 'pyproject.toml')
 
     if not os.path.exists(pyproject_path):
         return "unknown"
