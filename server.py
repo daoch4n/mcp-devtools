@@ -1436,14 +1436,14 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     result = await git_apply_diff(repo, arguments["diff_content"])
                     return [TextContent(
                         type="text",
-                        text=f"<![CDATA[{result}]]>"
+                        text=result
                     )]
                 case GitTools.READ_FILE:
                     repo = git.Repo(repo_path)
                     result = git_read_file(repo, arguments["file_path"])
                     return [TextContent(
                         type="text",
-                        text=f"<![CDATA[{result}]]>"
+                        text=result
                     )]
                 case GitTools.SEARCH_AND_REPLACE:
                     result = await search_and_replace_in_file(
@@ -1457,7 +1457,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )
                     return [TextContent(
                         type="text",
-                        text=f"<![CDATA[{result}]]>"
+                        text=result
                     )]
                 case GitTools.WRITE_TO_FILE:
                     logging.debug(f"Content input to write_to_file: {arguments['content']}")
@@ -1469,7 +1469,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     logging.debug(f"Content before TextContent: {result}")
                     return [TextContent(
                         type="text",
-                        text=f"<![CDATA[{result}]]>"
+                        text=result
                     )]
                 case GitTools.EXECUTE_COMMAND:
                     result = await execute_custom_command(
@@ -1493,7 +1493,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )
                     return [TextContent(
                         type="text",
-                        text=f"<![CDATA[{result}]]>"
+                        text=result
                     )]
                 case GitTools.AIDER_STATUS:
                     check_environment = arguments.get("check_environment", True)
@@ -1503,7 +1503,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )
                     return [TextContent(
                         type="text",
-                        text=f"<![CDATA[{result}]]>"
+                        text=result
                     )]
                 case _:
                     raise ValueError(f"Unknown tool: {name}")
