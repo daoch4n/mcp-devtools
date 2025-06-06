@@ -379,6 +379,15 @@ class ExecuteCommand(BaseModel):
     repo_path: str = Field(description="The absolute path to the directory where the command should be executed.")
     command: str = Field(description="The shell command string to execute (e.g., 'ls -l', 'npm install').")
 
+class EditFormat(str, Enum):
+    """
+    An enumeration of supported Aider edit formats.
+    """
+    DIFF = "diff"
+    DIFF_FENCED = "diff-fenced"
+    UDIFF = "udiff"
+    WHOLE = "whole"
+
 class AiEdit(BaseModel):
     """
     Represents the input schema for the `ai_edit` tool.
@@ -404,15 +413,6 @@ class AiderStatus(BaseModel):
         True,
         description="If true, the tool will also check Aider's configuration, environment variables, and Git repository details. Defaults to true."
     )
-
-class EditFormat(str, Enum):
-    """
-    An enumeration of supported Aider edit formats.
-    """
-    DIFF = "diff"
-    DIFF_FENCED = "diff-fenced"
-    UDIFF = "udiff"
-    WHOLE = "whole"
 
 class GitTools(str, Enum):
     """
