@@ -257,10 +257,10 @@ def prepare_aider_command(
                 command.append(f"--{arg_key}")
                 command.append(str(value))
     
+    command = [c for c in command if c]
+
     if files:
         command.extend(files)
-    
-    command = [c for c in command if c]
     
     return command
 
@@ -1083,7 +1083,7 @@ async def ai_edit_files(
         else:
             logger.info("Aider process completed successfully")
             if "Applied edit to" in stdout:
-                 return "Code changes completed and applied successfully."
+                 return "Code changes completed and committed successfully."
             else:
                  return f"Aider completed, but it's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
 
