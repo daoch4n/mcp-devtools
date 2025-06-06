@@ -22,7 +22,7 @@ def main():
     # This will be 'false' by default when running via 'uvx'.
     reload_enabled = os.getenv('MCP_DEVTOOLS_RELOAD', 'false').lower() in ('true', '1', 't')
 
-    print(f"Git MCP server listening at http://{host}:{port}/sse")
+    print(f"DevTools MCP server listening at http://{host}:{port}/sse")
     if reload_enabled:
         print("Auto-reloading is enabled.")
     else:
