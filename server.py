@@ -390,6 +390,10 @@ class AiEdit(BaseModel):
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider (e.g., ['--model=gpt-4o', '--dirty-diff']). Each option should be a string."
     )
+    edit_format: EditFormat = Field(
+        EditFormat.DIFF,
+        description="Optional. The format Aider should use for edits. Defaults to 'diff'. Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
+    )
 
 class AiderStatus(BaseModel):
     """
@@ -400,6 +404,15 @@ class AiderStatus(BaseModel):
         True,
         description="If true, the tool will also check Aider's configuration, environment variables, and Git repository details. Defaults to true."
     )
+
+class EditFormat(str, Enum):
+    """
+    An enumeration of supported Aider edit formats.
+    """
+    DIFF = "diff"
+    DIFF_FENCED = "diff-fenced"
+    UDIFF = "udiff"
+    WHOLE = "whole"
 
 class GitTools(str, Enum):
     """
@@ -983,6 +996,7 @@ async def ai_edit_files(
     session: ServerSession,
     files: List[str],
     options: Optional[list[str]],
+    edit_format: EditFormat = EditFormat.DIFF,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -992,6 +1006,7 @@ async def ai_edit_files(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
     aider_path = aider_path or "aider"
+    edit_format_str = edit_format.value
 
     logger.info(f"Running aider in directory: {repo_path}")
     logger.debug(f"Message length: {len(message)} characters")
@@ -1016,8 +1031,8 @@ async def ai_edit_files(
 
     aider_options: Dict[str, Any] = {}
     aider_options["yes_always"] = True
-    # Always use unified diff format for edits
-    aider_options["edit_format"] = "diff"
+    # Use the specified edit format
+    aider_options["edit_format"] = edit_format_str
     # Pass the message directly as a command-line option
     aider_options["message"] = message
 
@@ -1548,8 +1563,9 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         repo_path=str(repo_path),
                         message=message,
                         session=mcp_server.request_context.session,
-                        files=files, # Pass files to ai_edit_files
+                        files=files,
                         options=options,
+                        edit_format=arguments.get("edit_format", EditFormat.DIFF),
                     )
                     return [TextContent(
                         type="text",
