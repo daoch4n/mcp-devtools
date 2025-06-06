@@ -37,12 +37,12 @@ from mcp.types import (
     ListRootsResult,
     RootsCapability,
 )
-Content: TypeAlias = TextContent | ImageContent | EmbeddedResource
+Content: TypeAlias = TextContent | ImageContent | EmbeddedResource # type: ignore
 
 from enum import Enum
-import git
+import git # type: ignore
 from git.exc import GitCommandError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import asyncio
 import tempfile
 import os
@@ -268,120 +268,138 @@ class GitStatus(BaseModel):
     """
     Represents the input schema for the `git_status` tool.
     """
-    repo_path: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
 
 class GitDiffAll(BaseModel):
     """
     Represents the input schema for the `git_diff_all` tool.
     """
-    repo_path: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
 
 class GitDiff(BaseModel):
     """
     Represents the input schema for the `git_diff` tool.
     """
-    repo_path: str
-    target: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    target: str = Field(description="The target (e.g., branch name, commit hash, tag) to diff against. For example, 'main', 'HEAD~1', or a full commit SHA.")
 
 class GitCommit(BaseModel):
     """
     Represents the input schema for the `git_stage_and_commit` tool.
     """
-    repo_path: str
-    message: str
-    files: Optional[List[str]] = None  # Optional: files to stage before commit
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    message: str = Field(description="The commit message for the changes.")
+    files: Optional[List[str]] = Field(
+        None,
+        description="An optional list of specific file paths (relative to the repository root) to stage before committing. If not provided, all changes will be staged."
+    )
 
 class GitReset(BaseModel):
     """
     Represents the input schema for the `git_reset` tool.
     """
-    repo_path: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
 
 class GitLog(BaseModel):
     """
     Represents the input schema for the `git_log` tool.
     """
-    repo_path: str
-    max_count: int = 10
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    max_count: int = Field(10, description="The maximum number of commit entries to retrieve. Defaults to 10.")
 
 class GitCreateBranch(BaseModel):
     """
     Represents the input schema for the `git_create_branch` tool.
     """
-    repo_path: str
-    branch_name: str
-    base_branch: str | None = None
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    branch_name: str = Field(description="The name of the new branch to create.")
+    base_branch: Optional[str] = Field(
+        None,
+        description="Optional. The name of the branch or commit hash to base the new branch on. If not provided, the new branch will be based on the current active branch."
+    )
 
 class GitCheckout(BaseModel):
     """
     Represents the input schema for the `git_checkout` tool.
     """
-    repo_path: str
-    branch_name: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    branch_name: str = Field(description="The name of the branch to checkout.")
 
 class GitShow(BaseModel):
     """
     Represents the input schema for the `git_show` tool.
     """
-    repo_path: str
-    revision: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    revision: str = Field(description="The commit hash or reference (e.g., 'HEAD', 'main', 'abc1234') to show details for.")
 
 class GitApplyDiff(BaseModel):
     """
     Represents the input schema for the `git_apply_diff` tool.
     """
-    repo_path: str
-    diff_content: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    diff_content: str = Field(description="The diff content string to apply to the repository. This should be in a unified diff format.")
 
 class GitReadFile(BaseModel):
     """
     Represents the input schema for the `git_read_file` tool.
     """
-    repo_path: str
-    file_path: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    file_path: str = Field(description="The path to the file to read, relative to the repository's working directory.")
 
 class SearchAndReplace(BaseModel):
     """
     Represents the input schema for the `search_and_replace` tool.
     """
-    repo_path: str
-    file_path: str
-    search_string: str
-    replace_string: str
-    ignore_case: bool = False
-    start_line: Optional[int] = None
-    end_line: Optional[int] = None
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    file_path: str = Field(description="The path to the file to modify, relative to the repository's working directory.")
+    search_string: str = Field(description="The string or regex pattern to search for within the file.")
+    replace_string: str = Field(description="The string to replace all matches of the search string with.")
+    ignore_case: bool = Field(False, description="If true, the search will be case-insensitive. Defaults to false.")
+    start_line: Optional[int] = Field(
+        None,
+        description="Optional. The 1-based starting line number for the search and replace operation (inclusive). If not provided, search starts from the beginning of the file."
+    )
+    end_line: Optional[int] = Field(
+        None,
+        description="Optional. The 1-based ending line number for the search and replace operation (inclusive). If not provided, search continues to the end of the file."
+    )
 
 class WriteToFile(BaseModel):
     """
     Represents the input schema for the `write_to_file` tool.
     """
-    repo_path: str
-    file_path: str
-    content: str
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    file_path: str = Field(description="The path to the file to write to, relative to the repository's working directory. The file will be created if it doesn't exist, or overwritten if it does.")
+    content: str = Field(description="The string content to write to the specified file.")
 
 class ExecuteCommand(BaseModel):
     """
     Represents the input schema for the `execute_command` tool.
     """
-    repo_path: str
-    command: str
+    repo_path: str = Field(description="The absolute path to the directory where the command should be executed.")
+    command: str = Field(description="The shell command string to execute (e.g., 'ls -l', 'npm install').")
 
 class AiEdit(BaseModel):
     """
     Represents the input schema for the `ai_edit` tool.
     """
-    repo_path: str
-    message: str
-    files: List[str] # Make files mandatory
-    options: Optional[list[str]] = None
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory where the AI edit should be performed.")
+    message: str = Field(description="A detailed natural language message describing the code changes to make. Be specific about files, desired behavior, and any constraints.")
+    files: List[str] = Field(description="A list of file paths (relative to the repository root) that Aider should operate on. This argument is mandatory.")
+    options: Optional[List[str]] = Field(
+        None,
+        description="Optional. A list of additional command-line options to pass directly to Aider (e.g., ['--model=gpt-4o', '--dirty-diff']). Each option should be a string."
+    )
 
 class AiderStatus(BaseModel):
     """
     Represents the input schema for the `aider_status` tool.
     """
-    repo_path: str
-    check_environment: bool = True
+    repo_path: str = Field(description="The absolute path to the Git repository or working directory to check Aider's status within.")
+    check_environment: bool = Field(
+        True,
+        description="If true, the tool will also check Aider's configuration, environment variables, and Git repository details. Defaults to true."
+    )
 
 class GitTools(str, Enum):
     """
@@ -1238,72 +1256,72 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name=GitTools.STATUS,
-            description="Shows the working tree status",
+            description="Shows the current status of the Git working tree, including untracked, modified, and staged files.",
             inputSchema=GitStatus.model_json_schema(),
         ),
         Tool(
             name=GitTools.DIFF_ALL,
-            description="Shows all changes in the working directory (staged and unstaged, compared to HEAD)",
+            description="Shows all changes in the working directory, including both staged and unstaged modifications, compared to the HEAD commit. This provides a comprehensive view of all local changes.",
             inputSchema=GitDiffAll.model_json_schema(),
         ),
         Tool(
             name=GitTools.DIFF,
-            description="Shows differences between branches or commits",
+            description="Shows differences between the current working directory and a specified Git target (e.g., another branch, a specific commit hash, or a tag).",
             inputSchema=GitDiff.model_json_schema(),
         ),
         Tool(
             name=GitTools.STAGE_AND_COMMIT,
-            description="Records changes to the repository",
+            description="Stages specified files (or all changes if no files are specified) and then commits them to the repository with a given message. This creates a new commit in the Git history.",
             inputSchema=GitCommit.model_json_schema(),
         ),
         Tool(
             name=GitTools.RESET,
-            description="Unstages all staged changes",
+            description="Unstages all currently staged changes in the repository, moving them back to the working directory without discarding modifications. This is equivalent to `git reset` without arguments.",
             inputSchema=GitReset.model_json_schema(),
         ),
         Tool(
             name=GitTools.LOG,
-            description="Shows the commit logs",
+            description="Shows the commit history for the repository, listing recent commits with their hash, author, date, and message. The number of commits can be limited.",
             inputSchema=GitLog.model_json_schema(),
         ),
         Tool(
             name=GitTools.CREATE_BRANCH,
-            description="Creates a new branch from an optional base branch",
+            description="Creates a new Git branch with the specified name. Optionally, you can base the new branch on an existing branch or commit, otherwise it defaults to the current active branch.",
             inputSchema=GitCreateBranch.model_json_schema(),
         ),
         Tool(
             name=GitTools.CHECKOUT,
-            description="Switches branches",
+            description="Switches the current active branch to the specified branch name. This updates the working directory to reflect the state of the target branch.",
             inputSchema=GitCheckout.model_json_schema(),
         ),
         Tool(
             name=GitTools.SHOW,
-            description="Shows the contents of a commit",
+            description="Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit.",
             inputSchema=GitShow.model_json_schema(),
         ),
         Tool(
             name=GitTools.APPLY_DIFF,
-            description="Applies a diff to the working directory",
+            description="Applies a given diff content (in unified diff format) to the working directory of the repository. This can be used to programmatically apply patches or changes.",
             inputSchema=GitApplyDiff.model_json_schema(),
         ),
         Tool(
             name=GitTools.READ_FILE,
-            description="Reads the content of a file in the repository",
+            description="Reads and returns the entire content of a specified file within the Git repository's working directory. The file path must be relative to the repository root.",
             inputSchema=GitReadFile.model_json_schema(),
         ),
         Tool(
             name=GitTools.SEARCH_AND_REPLACE,
-            description="Searches for a string or regex pattern in a file and replaces it with another string.",
+            description="Searches for a specified string or regex pattern within a file and replaces all occurrences with a new string. Supports case-insensitive search and line-range restrictions. It attempts to use `sed` for efficiency, falling back to Python logic if `sed` fails or makes no changes.",
             inputSchema=SearchAndReplace.model_json_schema(),
         ),
         Tool(
             name=GitTools.WRITE_TO_FILE,
-            description="Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.",
+            description="Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. If it exists, its content will be completely overwritten. Includes a check to ensure content was written correctly and generates a diff.",
             inputSchema=WriteToFile.model_json_schema(),
         ),
         Tool(
             name=GitTools.EXECUTE_COMMAND,
-            description="Executes a custom shell command within the specified repository path.",
+            description="Executes an arbitrary shell command within the context of the specified repository's working directory. This tool can be used for tasks not covered by other specific Git tools, such as running build scripts, linters, or other system commands.",
             inputSchema=ExecuteCommand.model_json_schema(),
         ),
         Tool(
