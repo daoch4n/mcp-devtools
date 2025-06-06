@@ -1073,10 +1073,13 @@ async def ai_edit_files(
         # Capture the current HEAD commit hash before Aider runs
         try:
             repo = git.Repo(directory_path)
-            if repo.head.is_valid() and repo.head.is_set(): # Check if HEAD points to a valid ref
-                pre_aider_commit_hash = repo.head.commit.hexsha
-                logger.debug(f"Pre-Aider HEAD commit: {pre_aider_commit_hash}")
-            else:
+            try:
+                if repo.head.is_valid():
+                    pre_aider_commit_hash = repo.head.commit.hexsha
+                    logger.debug(f"Pre-Aider HEAD commit: {pre_aider_commit_hash}")
+                else:
+                    logger.debug("Repository has no commits yet or detached HEAD before Aider.")
+            except (ValueError, AttributeError, IndexError):
                 logger.debug("Repository has no commits yet or detached HEAD before Aider.")
         except git.InvalidGitRepositoryError:
             logger.warning(f"Directory {directory_path} is not a valid Git repository. Cannot capture pre-Aider commit hash.")
@@ -1138,10 +1141,13 @@ async def ai_edit_files(
                     repo = git.Repo(directory_path)
                     
                     post_aider_commit_hash = None
-                    if repo.head.is_valid() and repo.head.is_set():
-                        post_aider_commit_hash = repo.head.commit.hexsha
-                        logger.debug(f"Post-Aider HEAD commit: {post_aider_commit_hash}")
-                    else:
+                    try:
+                        if repo.head.is_valid():
+                            post_aider_commit_hash = repo.head.commit.hexsha
+                            logger.debug(f"Post-Aider HEAD commit: {post_aider_commit_hash}")
+                        else:
+                            logger.debug("Repository has no commits or detached HEAD after Aider.")
+                    except (ValueError, AttributeError, IndexError):
                         logger.debug("Repository has no commits or detached HEAD after Aider.")
 
                     if pre_aider_commit_hash and post_aider_commit_hash and pre_aider_commit_hash != post_aider_commit_hash:
