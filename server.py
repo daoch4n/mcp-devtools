@@ -1068,7 +1068,20 @@ async def ai_edit_files(
             logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
 
     original_dir = os.getcwd()
+    pre_aider_commit_hash = None
     try:
+        # Capture the current HEAD commit hash before Aider runs
+        try:
+            repo = git.Repo(directory_path)
+            if repo.head.is_valid() and repo.head.is_set(): # Check if HEAD points to a valid ref
+                pre_aider_commit_hash = repo.head.commit.hexsha
+                logger.debug(f"Pre-Aider HEAD commit: {pre_aider_commit_hash}")
+            else:
+                logger.debug("Repository has no commits yet or detached HEAD before Aider.")
+        except git.InvalidGitRepositoryError:
+            logger.warning(f"Directory {directory_path} is not a valid Git repository. Cannot capture pre-Aider commit hash.")
+        except Exception as e:
+            logger.warning(f"Error capturing pre-Aider commit hash: {e}")
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
 
@@ -1121,39 +1134,37 @@ async def ai_edit_files(
                 result_message = "Code changes completed and committed successfully."
                 
                 try:
-                    # Re-initialize repo object to get latest state
+                    # Re-initialize repo object to get latest state after Aider potentially made changes
                     repo = git.Repo(directory_path)
                     
-                    if repo.head.is_valid() and repo.head.commit:
-                        last_commit = repo.head.commit
-                        
-                        diff_output_lines = []
-                        if last_commit.parents:
-                            parent_commit = last_commit.parents[0]
-                            diffs = parent_commit.diff(last_commit, create_patch=True)
-                        else:
-                            # This is the very first commit in the repo
-                            diffs = last_commit.diff(git.NULL_TREE, create_patch=True)
-
-                        for d in diffs:
-                            diff_output_lines.append(f"\n--- a/{d.a_path}\n+++ b/{d.b_path}\n")
-                            if d.diff is not None:
-                                if isinstance(d.diff, bytes):
-                                    diff_output_lines.append(d.diff.decode('utf-8'))
-                                else:
-                                    diff_output_lines.append(str(d.diff))
-                        
-                        full_diff_str = "".join(diff_output_lines)
-                        if full_diff_str:
-                            result_message += f"\n\nDiff of last commit:\n```diff\n{full_diff_str}\n```"
-                        else:
-                            result_message += "\n\nNo diff generated for the last commit (perhaps no changes were made or it's an empty commit)."
+                    post_aider_commit_hash = None
+                    if repo.head.is_valid() and repo.head.is_set():
+                        post_aider_commit_hash = repo.head.commit.hexsha
+                        logger.debug(f"Post-Aider HEAD commit: {post_aider_commit_hash}")
                     else:
-                        result_message += "\n\nCould not retrieve last commit information (repository might be empty or detached HEAD)."
+                        logger.debug("Repository has no commits or detached HEAD after Aider.")
+
+                    if pre_aider_commit_hash and post_aider_commit_hash and pre_aider_commit_hash != post_aider_commit_hash:
+                        # Generate diff between the two commit hashes
+                        diff_output = repo.git.diff(pre_aider_commit_hash, post_aider_commit_hash)
+                        if diff_output:
+                            result_message += f"\n\nDiff of changes made by Aider:\n```diff\n{diff_output}\n```"
+                        else:
+                            result_message += "\n\nNo diff generated between pre and post Aider commits (perhaps no changes were made or it's an empty commit)."
+                    elif not pre_aider_commit_hash and post_aider_commit_hash:
+                        # Case: Repo was empty before, now has commits. Diff against NULL_TREE.
+                        diff_output = repo.git.diff(git.NULL_TREE, post_aider_commit_hash)
+                        if diff_output:
+                            result_message += f"\n\nDiff of changes made by Aider (initial commit):\n```diff\n{diff_output}\n```"
+                        else:
+                            result_message += "\n\nNo diff generated for the initial commit (perhaps no changes were made or it's an empty commit)."
+                    else:
+                        result_message += "\n\nNo new commit detected or no changes made by Aider."
+
                 except git.InvalidGitRepositoryError:
-                    result_message += "\n\nCould not access Git repository to get diff."
+                    result_message += "\n\nCould not access Git repository to get diff after Aider run."
                 except Exception as e:
-                    result_message += f"\n\nError generating diff for last commit: {e}"
+                    result_message += f"\n\nError generating diff for Aider changes: {e}"
             else:
                  result_message += f"\nIt's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
             
