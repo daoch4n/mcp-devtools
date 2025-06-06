@@ -52,6 +52,7 @@ import shlex
 import json
 import subprocess
 import yaml
+import tomllib # Added for reading pyproject.toml
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -62,6 +63,34 @@ from starlette.responses import Response
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logging.getLogger().setLevel(logging.DEBUG)
+
+def get_project_version() -> str:
+    """
+    Reads the project version from pyproject.toml.
+    Assumes pyproject.toml is in the same directory as this script or its parent.
+    """
+    try:
+        # Try current directory first (if server.py is at project root)
+        pyproject_path = Path(__file__).parent / "pyproject.toml"
+        if not pyproject_path.exists():
+            # If server.py is in a subdirectory (e.g., 'src/server.py'), try parent directory
+            pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        
+        if pyproject_path.exists():
+            with open(pyproject_path, "rb") as f:
+                pyproject_data = tomllib.load(f)
+            version = pyproject_data.get("project", {}).get("version")
+            if version:
+                return str(version)
+            else:
+                logger.warning("Version not found in pyproject.toml under [project].version")
+                return "Unknown"
+        else:
+            logger.warning(f"pyproject.toml not found at expected paths: {Path(__file__).parent / 'pyproject.toml'} or {Path(__file__).parent.parent / 'pyproject.toml'}")
+            return "Unknown"
+    except Exception as e:
+        logger.error(f"Error reading project version from pyproject.toml: {e}")
+        return "Unknown"
 
 def find_git_root(path: str) -> Optional[str]:
     """
@@ -1584,4 +1613,8 @@ routes = [
 app = Starlette(routes=routes)
 
 if __name__ == "__main__":
-    pass
+    project_version = get_project_version()
+    print(f"MCP Git Server Version: {project_version}")
+    # To run the server, you would typically use uvicorn:
+    # import uvicorn
+    # uvicorn.run(app, host="0.0.0.0", port=8000)
