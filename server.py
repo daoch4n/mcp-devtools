@@ -399,8 +399,8 @@ class AiEdit(BaseModel):
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider (e.g., ['--model=gpt-4o', '--dirty-diff']). Each option should be a string."
     )
-    edit_format: EditFormat = Field(
-        EditFormat.DIFF,
+    edit_format: str = Field(
+        "diff",
         description=(
             "Optional. The format Aider should use for edits. "
             "If not explicitly provided, the default is selected based on the model name: "
@@ -408,7 +408,10 @@ class AiEdit(BaseModel):
             "if the model includes 'gpt', defaults to 'udiff'; "
             "otherwise defaults to 'diff'. "
             "Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
-        )
+        ),
+        json_schema_extra={
+            "enum": ["diff", "diff-fenced", "udiff", "whole"]
+        }
     )
 
 class AiderStatus(BaseModel):
