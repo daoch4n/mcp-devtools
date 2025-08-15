@@ -1,0 +1,64 @@
+<examples>
+  <example name="full_task_planning_workflow">
+    <description>
+      This example demonstrates the complete workflow for the Agile Planner mode, from reading the initial design document to generating a final, user-approved implementation plan and handing off to the Agile Dev.
+    </description>
+    
+    <context>
+      The user has just completed the design for a new "User Login" feature and now wants to create an implementation plan. The `design.md` and `requirements.md` files already exist.
+    </context>
+
+    <steps>
+      <step number="1">
+        <title>Initial Request</title>
+        <user_request>Create an implementation plan for the User Login feature.</user_request>
+      </step>
+
+      <step number="2">
+        <title>Read Input Files</title>
+        <action>The mode reads the design and requirements documents.</action>
+        <tool_used>
+          <![CDATA[
+<read_file>
+<args>
+  <file>
+    <path>.roo/specs/user-login/design.md</path>
+  </file>
+  <file>
+    <path>.roo/specs/user-login/requirements.md</path>
+  </file>
+</args>
+</read_file>
+          ]]>
+        </tool_used>
+        <!-- For this example, we'll assume the content of these files. -->
+      </step>
+
+      <step number="3">
+        <title>Generate Initial Task List</title>
+        <action>The mode creates the first version of `tasks.md` based on the design.</action>
+        <tool_used>
+<write_to_file>
+<path>.roo/specs/user-login/tasks.md</path>
+<content>
+# Implementation Plan: User Login
+
+- [ ] 1. **Create Login Form Component**
+  - Create a new file at `src/components/LoginForm.jsx`.
+  - It should include email and password input fields and a submit button.
+  - Ref: Requirement 1.1
+- [ ] 2. **Implement API Endpoint for Login**
+  - Add a `POST /api/auth/login` endpoint in `server/routes/auth.js`.
+  - It should validate user credentials against the database.
+  - Ref: Requirement 1.2
+- [ ] 3. **Add Unit Tests for Login Endpoint**
+  - Create `tests/api/auth.test.js` to test the login endpoint.
+  - Include tests for valid and invalid credentials.
+  - Ref: Requirement 3.1
+</content>
+</write_to_file>
+</tool_used>
+</step>
+</steps>
+</example>
+</examples>

@@ -1,0 +1,71 @@
+<common_patterns>
+  <pattern name="agile_requirements_document">
+    <usage>This template should be used for generating the `requirements.md` file, focusing on an Epic and User Story structure.</usage>
+    <template><![CDATA[
+# Feature: User Authentication
+
+## 1. Introduction
+This document outlines the requirements for a user authentication feature. The goal is to allow users to create an account, log in, and log out, ensuring secure access to the application.
+
+## 2. Epics
+
+### 2.1. Epic: Account Management
+This epic covers the core functionalities for creating and managing a user account.
+
+#### 2.1.1. User Story: User Registration
+- **Priority**: High
+- **As a** new user,
+- **I want** to create a new account using my email and a password,
+- **so that** I can access the application's features.
+
+##### Acceptance Criteria (Gherkin Syntax)
+```gherkin
+Scenario: Successful registration
+  Given I am on the registration page
+  When I enter a valid email and a password that meets the security criteria
+  Then my account is created and I am logged in.
+
+Scenario: Email already exists
+  Given I am on the registration page
+  When I enter an email that is already registered
+  Then I see an error message "This email is already in use."
+```
+
+### 2.2. Epic: Session Control
+This epic covers the functionalities for user login and logout.
+
+#### 2.2.1. User Story: User Login
+- **Priority**: High
+- **As a** registered user,
+- **I want** to log in with my email and password,
+- **so that** I can access my account and personalized content.
+
+##### Acceptance Criteria (Gherkin Syntax)
+```gherkin
+Scenario: Successful login
+  Given I am on the login page
+  When I enter my correct email and password
+  Then I am logged in successfully and redirected to the dashboard.
+
+Scenario: Invalid credentials
+  Given I am on the login page
+  When I enter an incorrect email or password
+  Then I see an error message "Invalid credentials."
+```
+    ]]></template>
+  </pattern>
+
+  <pattern name="epic_feedback_request">
+    <usage>This is the required format for requesting user feedback after proposing the initial epics.</usage>
+    <template><![CDATA[
+<ask_followup_question>
+  <question>Here are the initial epics I've identified for the [Feature Name] feature. How does this look as a starting point?</question>
+  <follow_up>
+    <suggest>Looks good, let's start breaking them down.</suggest>
+    <suggest>Add an epic for password recovery.</suggest>
+    <suggest>Let's combine the 'Session Control' and 'Account Management' epics.</suggest>
+  </follow_up>
+</ask_followup_question>
+    ]]></template>
+  </pattern>
+</common_patterns>

@@ -1,0 +1,40 @@
+<tool_usage_guide>
+  <tool_priorities>
+    <priority level="1">
+      <tool>list_files</tool>
+      <when>At the beginning of the workflow to check for an existing `requirements.md` file.</when>
+      <why>To avoid overwriting existing work and to determine if a new file needs to be created.</why>
+    </priority>
+    <priority level="2">
+      <tool>write_to_file</tool>
+      <when>To create the initial `requirements.md` file or to overwrite it with significant changes during the refinement cycle.</when>
+      <why>This tool is best for creating new files or making substantial changes where an `apply_diff` would be too complex.</why>
+    </priority>
+    <priority level="3">
+      <tool>apply_diff</tool>
+      <when>To make minor modifications to the `requirements.md` file based on user feedback.</when>
+      <why>For small, targeted changes, `apply_diff` is more efficient than rewriting the entire file. This should be the default for incorporating feedback.</why>
+    </priority>
+    <priority level="4">
+      <tool>userInput</tool>
+      <when>After creating or updating the `requirements.md` file.</when>
+      <why>This is the mandatory step for getting user approval. The workflow cannot proceed without it.</why>
+    </priority>
+  </tool_priorities>
+
+  <tool_specific_guidance>
+    <tool name="write_to_file">
+      <best_practices>
+        <practice>When creating the initial `requirements.md`, use the template from `3_common_patterns.xml` to ensure correct formatting.</practice>
+        <practice>Ensure the full, complete content of the file is included in the `content` block.</practice>
+      </best_practices>
+    </tool>
+    <tool name="userInput">
+      <best_practices>
+        <practice>The `reason` must be exactly `spec-requirements-review`.</practice>
+        <practice>The `message` must be exactly "Do the requirements look good? If so, we can move on to the design."</practice>
+        <practice>Do not proceed until the user gives a clear, affirmative answer.</practice>
+      </best_practices>
+    </tool>
+  </tool_specific_guidance>
+</tool_usage_guide>

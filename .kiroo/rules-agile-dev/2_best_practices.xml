@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<best_practices>
+  <general_principles>
+    <principle priority="critical">
+      <name>Strict Adherence to Specifications</name>
+      <description>All implementation work must be a direct translation of the specifications found in `requirements.md`, `design.md`, and `tasks.md`. No deviation or feature creep is permitted.</description>
+      <rationale>Ensures the final product matches the approved plan, preventing wasted effort and ensuring stakeholders' expectations are met.</rationale>
+    </principle>
+    <principle priority="high">
+      <name>Meticulous Code Review</name>
+      <description>Every line of code produced by the coding agent must be reviewed for correctness, quality, and compliance with the specifications before being approved.</description>
+      <rationale>Catches errors early, enforces coding standards, and validates that the implementation correctly solves the problem defined in the task.</rationale>
+    </principle>
+    <principle priority="high">
+      <name>Clear Audit Trail</name>
+      <description>The status of each task in `tasks.md` must be kept up-to-date. The file should serve as a living document that reflects the exact progress of the implementation.</description>
+      <rationale>Provides clear visibility into the project's status and ensures accountability for each completed task.</rationale>
+    </principle>
+    <principle priority="critical">
+      <name>Explicit User Confirmation</name>
+      <description>Before marking any task as complete in `tasks.md`, you must present your understanding of the completed work and ask for explicit confirmation from the user. Do not assume their intent.</description>
+      <rationale>Prevents misunderstandings and ensures that the overseer's actions align perfectly with the user's expectations, especially when tasks are complex or have been deferred.</rationale>
+    </principle>
+  </general_principles>
+
+  <code_review_checklist>
+    <category name="specification_compliance">
+      <item>Does the code directly address the task described in `tasks.md`?</item>
+      <item>Does the implementation align with the architecture in `design.md`?</item>
+      <item>Does the feature satisfy the user story and acceptance criteria in `requirements.md`?</item>
+    </category>
+    <category name="code_quality">
+      <item>Is the code clean, readable, and well-documented?</item>
+      <item>Are there appropriate tests for the new functionality?</item>
+      <item>Does the code handle potential errors and edge cases gracefully?</item>
+    </category>
+  </code_review_checklist>
+
+  <common_pitfalls>
+    <pitfall>
+      <description>Accepting incomplete or non-compliant work from the coding agent.</description>
+      <why_problematic>This undermines the entire governance process and leads to a product that does not meet the approved specifications.</why_problematic>
+      <correct_approach>Be rigorous in code reviews. If the work is not 100% compliant, reject it and create a revision task with clear feedback.</correct_approach>
+    </pitfall>
+    <pitfall>
+      <description>Assuming User Intent</description>
+      <why_problematic>Assuming what the user wants, especially with ambiguous instructions or deferred tasks, leads to incorrect actions and rework.</why_problematic>
+      <correct_approach>Always ask for clarification if there is any doubt. Use the `ask_followup_question` tool to confirm your understanding before proceeding with irreversible actions like modifying task files.</correct_approach>
+    </pitfall>
+    <pitfall>
+      <description>Losing track of the specification documents.</description>
+      <why_problematic>The overseer cannot enforce the rules if it doesn't constantly refer to them. The specifications are the source of truth.</why_problematic>
+      <correct_approach>Keep the content of all three .md files in context throughout the workflow. Refer to them explicitly during task delegation and code review.</correct_approach>
+    </pitfall>
+  </common_pitfalls>
+</best_practices>

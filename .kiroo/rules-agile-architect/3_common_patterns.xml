@@ -1,0 +1,103 @@
+<design_patterns>
+  <overview>
+    This file provides common patterns and templates for structuring a `design.md` document. Use these patterns to ensure consistency and completeness.
+  </overview>
+
+  <section_pattern name="Overview">
+    <description>A high-level summary of the feature and the proposed solution.</description>
+    <template>
+### Overview
+
+This document outlines the technical design for the **{Feature Name}** feature. The goal is to {briefly describe the user-facing goal}. The proposed solution involves {summarize the technical approach, e.g., creating a new microservice, adding a new API endpoint, extending the existing data model}. This design ensures the solution is {mention key attributes, e.g., scalable, maintainable, and secure}.
+    </template>
+  </section_pattern>
+
+  <section_pattern name="Architecture">
+    <description>A description of the system's architecture, often including a diagram.</description>
+    <template>
+### Architecture
+
+The proposed architecture follows a {architectural pattern, e.g., microservices, event-driven} pattern. The main components involved are {list main components}. The diagram below illustrates the relationships and data flow between them.
+
+```mermaid
+graph TD
+    A[User Interface] -->|Sends Request| B(API Gateway);
+    B -->|Forwards to| C{Feature Service};
+    C -->|Reads/Writes| D[(Database)];
+    C -->|Publishes Event| E((Message Queue));
+```
+
+**Data Flow:**
+1.  The User Interface sends a request to the API Gateway.
+2.  The API Gateway authenticates the request and forwards it to the Feature Service.
+3.  The Feature Service processes the business logic, interacting with the Database.
+4.  Upon completion, it publishes an event to the Message Queue for other services.
+    </template>
+  </section_pattern>
+
+  <section_pattern name="Components and Interfaces">
+    <description>A breakdown of the individual components and their APIs.</description>
+    <template>
+### Components and Interfaces
+
+#### 1. Feature Service
+*   **Responsibility:** Manages all business logic related to the {Feature Name} feature.
+*   **Interface:**
+    *   `POST /api/v1/feature`: Creates a new feature resource.
+        *   **Request Body:** `{...}`
+        *   **Response:** `{...}`
+
+#### 2. Data Access Layer
+*   **Responsibility:** Handles all database interactions for the feature.
+*   **Interface:**
+    *   `getFeatureById(id: string): Promise<Feature>`
+    *   `createFeature(data: FeatureData): Promise<Feature>`
+    </template>
+  </section_pattern>
+
+  <section_pattern name="Data Models">
+    <description>Definitions for new or modified data structures.</description>
+    <template>
+### Data Models
+
+#### Feature Table (`features`)
+| Column        | Type          | Constraints              | Description                  |
+|---------------|---------------|--------------------------|------------------------------|
+| `id`          | `UUID`        | `PRIMARY KEY`            | Unique identifier.           |
+| `name`        | `VARCHAR(255)`| `NOT NULL`               | Name of the feature.         |
+| `created_at`  | `TIMESTAMPZ`  | `NOT NULL, DEFAULT NOW()`| Timestamp of creation.       |
+| `is_active`   | `BOOLEAN`     | `NOT NULL, DEFAULT true` | Activation status.           |
+    </template>
+  </section_pattern>
+
+  <section_pattern name="Error Handling">
+    <description>The strategy for managing errors.</description>
+    <template>
+### Error Handling
+
+Errors will be handled at the service layer and returned with standard HTTP status codes.
+
+| Status Code | Error Type            | Reason                                      |
+|-------------|-----------------------|---------------------------------------------|
+| `400`       | `Bad Request`         | Invalid input from the client.              |
+| `404`       | `Not Found`           | The requested resource does not exist.      |
+| `409`       | `Conflict`            | The resource already exists.                |
+| `500`       | `Internal Server Error`| An unexpected error occurred on the server. |
+
+All errors will be logged with a unique correlation ID to facilitate debugging.
+    </template>
+  </section_pattern>
+
+  <section_pattern name="Testing Strategy">
+    <description>The approach for ensuring the feature is well-tested.</description>
+    <template>
+### Testing Strategy
+
+The feature will be tested at multiple levels to ensure quality.
+
+*   **Unit Tests:** Each method in the Feature Service and Data Access Layer will be tested in isolation. Mocks will be used for external dependencies like the database.
+*   **Integration Tests:** The interaction between the Feature Service and the database will be tested to ensure queries are correct and data integrity is maintained.
+*   **End-to-End (E2E) Tests:** Automated tests will simulate user interaction from the UI to the database to verify the entire workflow.
+    </template>
+  </section_pattern>
+</design_patterns>

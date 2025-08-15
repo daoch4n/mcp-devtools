@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tool_usage_guide>
+  <tool_priorities>
+    <priority level="1">
+      <tool>read_file</tool>
+      <when>At the start of the process to read all specification documents (`requirements.md`, `design.md`, `tasks.md`).</when>
+      <why>To load the complete context and plan for the entire implementation feature.</why>
+    </priority>
+    <priority level="2">
+      <tool>new_task</tool>
+      <when>When a task requires preliminary research or is ready for implementation.</when>
+      <why>To delegate work to specialized agents (`project-research` or `code`) in a consistent, parallel-friendly way.</why>
+    </priority>
+    <priority level="3">
+      <tool>use_mcp_tool</tool>
+      <when>After a coding task is completed and committed by the sub-agent.</when>
+      <why>To perform a code review by analyzing the git diff of the last commit, which is more efficient than reading entire files.</why>
+    </priority>
+    <priority level="4">
+      <tool>apply_diff</tool>
+      <when>When a task is approved and `tasks.md` needs to be updated.</when>
+      <why>For making precise updates to the task list.</why>
+    </priority>
+  </tool_priorities>
+
+  <tool_specific_guidance>
+    <tool name="read_file">
+      <best_practices>
+        <practice>Read all three specification documents at the very beginning of the workflow.</practice>
+        <practice>Avoid re-reading these files unless a change is explicitly made to them.</practice>
+      </best_practices>
+    </tool>
+
+    <tool name="new_task">
+      <best_practices>
+        <practice>For research, the target mode is `project-research`. The message should state the research objective clearly.</practice>
+        <practice>For implementation, the target mode is `code`. The message must be structured using the `task_delegation_prompt` pattern from `3_common_patterns.xml`.</practice>
+        <practice>Always provide all necessary context from the specification documents in the message to the delegated agent to ensure it has all information needed.</practice>
+      </best_practices>
+    </tool>
+
+    <tool name="use_mcp_tool">
+      <best_practices>
+        <practice>For code review, use the `devtools.git_show` tool with `revision: 'HEAD'`.</practice>
+        <practice>The `repo_path` should be the absolute path to the current project.</practice>
+        <practice>The output of the diff should be carefully analyzed against the requirements and design for the completed task.</practice>
+      </best_practices>
+      <example><![CDATA[
+<use_mcp_tool>
+  <server_name>devtools</server_name>
+  <tool_name>git_show</tool_name>
+  <arguments>
+    {
+      "repo_path": "/home/vi/gemini-chan",
+      "revision": "HEAD"
+    }
+  </arguments>
+</use_mcp_tool>
+      ]]></example>
+    </tool>
+
+    <tool name="apply_diff">
+      <best_practices>
+        <practice>Use this tool to update the status of tasks in `tasks.md` (e.g., changing `[ ]` to `[x]`).</practice>
+      </best_practices>
+    </tool>
+  </tool_specific_guidance>
+</tool_usage_guide>

@@ -1,0 +1,102 @@
+<workflow_instructions>
+  <mode_overview>
+    This mode is designed to help users create well-structured user stories and requirements documents. It takes a high-level feature idea and transforms it into a detailed `requirements.md` file, following a structured, iterative process with user validation.
+  </mode_overview>
+
+  <initialization_steps>
+    <step number="1">
+      <action>Derive Feature Name</action>
+      <details>
+        Parse the user's request to create a machine-readable `{feature_name}` (e.g., "user-authentication", "playlist-management"). This name is used for file paths.
+      </details>
+    </step>
+    <step number="2">
+      <action>Understand the User's Request</action>
+      <details>
+        Parse the user's initial prompt to identify the core feature idea, its primary goal, and any initial constraints or key details provided.
+      </details>
+    </step>
+    <step number="3">
+      <action>Check for Existing Specification</action>
+      <details>
+        Check if a `.roo/specs/{feature_name}/requirements.md` file already exists. If not, create it.
+      </details>
+      <tools>
+        <tool>list_files</tool>
+        <tool>write_to_file</tool>
+      </tools>
+    </step>
+  </initialization_steps>
+
+  <main_workflow>
+    <phase name="epic_definition">
+      <description>Collaboratively define high-level epics with the user.</description>
+      <steps>
+        <step>
+          <title>Propose Initial Epics</title>
+          <action>Based on the user's request, propose a list of 2-4 high-level epics.</action>
+          <details>
+            Use `ask_followup_question` to present the epics and ask the user to confirm or refine them.
+          </details>
+        </step>
+        <step>
+          <title>Refine and Prioritize Epics</title>
+          <action>Work with the user to add, remove, or modify epics until they are satisfied. Then, ask the user to prioritize them.</action>
+          <details>This creates a high-level backlog to work from.</details>
+        </step>
+        <step>
+          <title>Create Initial Document</title>
+          <action>Create the `requirements.md` file with the introduction and the prioritized list of epics.</action>
+          <tools>
+            <tool>write_to_file</tool>
+          </tools>
+        </step>
+      </steps>
+    </phase>
+    <phase name="story_breakdown_cycle">
+      <description>Iteratively break down each epic into user stories and get approval.</description>
+      <steps>
+        <step>
+          <title>Select Highest Priority Epic</title>
+          <action>Start with the highest-priority, un-detailed epic from the list.</action>
+        </step>
+        <step>
+          <title>Draft User Stories for Epic</title>
+          <action>Generate a set of user stories for the selected epic, including priority and Gherkin-style acceptance criteria.</action>
+          <details>Append these stories to the `requirements.md` file under the corresponding epic.</details>
+          <tools>
+            <tool>insert_content</tool>
+          </tools>
+        </step>
+        <step>
+          <title>Request User Feedback on Stories</title>
+          <action>Ask the user for approval on the newly added stories for the epic.</action>
+          <details>Use a targeted question: "Do the user stories for the '[Epic Name]' epic look good? We can refine them or move to the next epic."</details>
+        </step>
+        <step>
+          <title>Incorporate Feedback</title>
+          <action>If the user requests changes, modify the user stories using `apply_diff` and repeat the feedback step. If they approve, mark the epic as detailed.</action>
+        </step>
+        <step>
+          <title>Repeat for Next Epic</title>
+          <action>If there are more epics to detail, return to the first step of this phase. Otherwise, proceed to finalization.</action>
+        </step>
+      </steps>
+    </phase>
+    <phase name="finalization">
+      <description>Confirm the completed requirements and inform the user about the next steps.</description>
+      <steps>
+        <step>
+          <title>Inform User</title>
+          <action>Post a message confirming that all epics have been detailed and approved, and that the process is moving to the design phase.</action>
+        </step>
+      </steps>
+    </phase>
+  </main_workflow>
+
+  <completion_criteria>
+    <criterion>The user has explicitly approved the `requirements.md` document.</criterion>
+    <criterion>The final `requirements.md` file is saved in the correct location.</criterion>
+    <criterion>The model has informed the user that the next step is the design phase.</criterion>
+  </completion_criteria>
+</workflow_instructions>

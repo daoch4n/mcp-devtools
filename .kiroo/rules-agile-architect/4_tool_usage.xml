@@ -1,0 +1,81 @@
+<tool_usage_guide>
+  <overview>
+    This guide outlines the primary tools for the Agile Architect mode and how to use them to create a technical design document.
+  </overview>
+
+  <tool_priorities>
+    <priority level="1">
+      <tool>read_file</tool>
+      <when>At the beginning of the workflow to load the `requirements.md` file.</when>
+      <why>The requirements document is the primary input and source of truth for the entire design process.</why>
+    </priority>
+    <priority level="2">
+      <tool>new_task</tool>
+      <when>To delegate the research phase to the Project Research mode.</when>
+      <why>This ensures a dedicated, structured research process that produces a summary for the design phase.</why>
+    </priority>
+    <priority level="3">
+      <tool>read_file</tool>
+      <when>After the research phase, to read the `research-summary.md` file.</when>
+      <why>The research summary is a key input for creating the technical design.</why>
+    </priority>
+    <priority level="4">
+      <tool>write_to_file / apply_diff</tool>
+      <when>To create or update the `design.md` file.</when>
+      <why>All design work culminates in the content of this file, making these tools the primary mechanism for producing the mode's output.</why>
+    </priority>
+    <priority level="5">
+      <tool>ask_followup_question</tool>
+      <when>After creating or updating the `design.md` file, to get user approval.</when>
+      <why>Ensuring the user approves the design before the workflow is considered complete is a critical, mandatory step managed by this tool.</why>
+    </priority>
+  </tool_priorities>
+
+  <tool_specific_guidance>
+    <tool name="read_file">
+      <best_practices>
+        <practice>Construct the file path dynamically using the feature name: `.roo/specs/{feature_name}/requirements.md`.</practice>
+        <practice>If the file is not found, inform the user and ask for the correct feature name.</practice>
+      </best_practices>
+    </tool>
+
+    <tool name="new_task">
+      <best_practices>
+        <practice>The target mode must be `project-research`.</practice>
+        <practice>The prompt must instruct the research mode to create a `research-summary.md` file in the `.roo/specs/{feature_name}/` directory.</practice>
+      </best_practices>
+    </tool>
+
+    <tool name="write_to_file">
+      <best_practices>
+        <practice>Use this to create the initial `design.md` document.</practice>
+        <practice>Ensure the file is created at the correct path: `.roo/specs/{feature_name}/design.md`.</practice>
+        <practice>Populate the file with all required sections, using the templates from `3_common_patterns.xml`.</practice>
+      </best_practices>
+    </tool>
+    
+    <tool name="apply_diff">
+      <best_practices>
+        <practice>Use this to apply user-requested changes to an existing `design.md` file.</practice>
+        <practice>Make targeted changes to specific sections to reflect user feedback accurately.</practice>
+      </best_practices>
+    </tool>
+
+    <tool name="ask_followup_question">
+      <best_practices>
+        <practice>The question must be exactly: "Does the design look good? If so, we can move on to the implementation plan."</practice>
+        <practice>Provide clear suggestions, such as "Yes, the design is approved." or "No, I have some changes."</practice>
+        <practice>Do not treat the task as complete until explicit approval is received.</practice>
+      </best_practices>
+      <example><![CDATA[
+<ask_followup_question>
+  <question>Does the design look good? If so, we can move on to the implementation plan.</question>
+  <follow_up>
+    <suggest>Yes, the design is approved.</suggest>
+    <suggest>No, I'd like to make a change to the Architecture section.</suggest>
+  </follow_up>
+</ask_followup_question>
+      ]]></example>
+    </tool>
+  </tool_specific_guidance>
+</tool_usage_guide>

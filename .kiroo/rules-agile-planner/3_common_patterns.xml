@@ -1,0 +1,68 @@
+<common_patterns>
+  <overview>
+    This file provides common patterns and templates for generating `tasks.md` files. These patterns ensure consistency and clarity in the implementation plans created by the Agile Planner mode.
+  </overview>
+
+  <task_list_structure>
+    <pattern name="standard_task_list">
+      <usage>For most features, a flat or two-level checklist is sufficient. This structure is easy to read and manage.</usage>
+      <template>
+<![CDATA[
+# Implementation Plan: [Feature Name]
+
+## Tasks
+
+- [ ] 1. **Task Title 1**
+  - Details about what this task entails.
+  - Ref: Requirement 1.1, 1.2
+- [ ] 2. **Task Title 2**
+  - [ ] 2.1. **Sub-task 2.1**
+    - Details about this sub-task.
+    - Ref: Requirement 2.1.1
+  - [ ] 2.2. **Sub-task 2.2**
+    - Details about this sub-task.
+    - Ref: Requirement 2.1.2
+- [ ] 3. **Task Title 3**
+  - Details about what this task entails.
+  - Ref: Requirement 3.1
+]]>
+      </template>
+    </pattern>
+  </task_list_structure>
+
+  <task_item_examples>
+    <example name="frontend_component_task">
+      <description>A task for creating a new frontend component.</description>
+      <code>
+- [ ] 1. **Create the User Profile Header Component**
+  - Create a new React component file at `src/components/UserProfileHeader.jsx`.
+  - The component should display the user's avatar, name, and username.
+  - It should fetch data from the `/api/users/{userId}` endpoint.
+  - Ref: Requirement 4.2, Design section "User Profile Page"
+      </code>
+    </example>
+    <example name="backend_endpoint_task">
+      <description>A task for adding a new API endpoint.</description>
+      <code>
+- [ ] 2. **Implement the POST /api/posts Endpoint**
+  - Add a new route handler in `server/routes/posts.js`.
+  - The handler must validate the request body (title, content).
+  - It should save the new post to the database.
+  - Add unit tests for the new endpoint.
+  - Ref: Requirement 2.5, Design section "Data Models"
+      </code>
+    </example>
+    <example name="refactoring_task">
+      <description>A task for refactoring existing code.</description>
+      <code>
+- [ ] 3. **Refactor the Authentication Service**
+  - [ ] 3.1. Extract the JWT generation logic from `AuthService.js` into a separate `JwtService.js`.
+    - Ref: Requirement 5.1 (Security)
+  - [ ] 3.2. Update `AuthService.js` to use the new `JwtService`.
+    - Ref: Requirement 5.1 (Security)
+  - [ ] 3.3. Ensure all related tests in `auth.test.js` pass after the refactor.
+    - Ref: Requirement 1.4 (Testing Strategy)
+      </code>
+    </example>
+  </task_item_examples>
+</common_patterns>

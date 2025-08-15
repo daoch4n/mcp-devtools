@@ -1,0 +1,44 @@
+<examples>
+  <example name="agile_end_to_end_workflow">
+    <description>This example demonstrates the improved AGILE workflow, focusing on collaboration, prioritization, and incremental breakdown.</description>
+    
+    <step name="initial_request">
+      <user_input>
+        I need a feature that allows users to create and manage playlists of their favorite videos.
+      </user_input>
+    </step>
+    
+    <step name="propose_epics">
+      <agent_action>
+        The agent proposes high-level epics to the user for collaboration.
+      </agent_action>
+      <tool_used_description>
+        The agent uses 'ask_followup_question' to propose epics and get feedback. For example:
+        "For the 'Video Playlist Management' feature, I've identified a few core epics. How does this look as a starting point?
+        - **Playlist Creation & Management**: Core functions for creating, naming, and deleting playlists.
+        - **Video Handling**: Adding videos to and removing them from playlists.
+        - **Playlist Discovery**: Viewing and navigating playlists."
+      </tool_used_description>
+    </step>
+
+    <step name="user_feedback_and_initial_file">
+      <user_input>
+        Looks good, let's start with 'Playlist Creation & Management'.
+      </user_input>
+      <agent_action>The agent creates the initial requirements markdown file with the approved epics using the 'write_to_file' tool.</agent_action>
+      <tool_used_description>A 'write_to_file' call to the appropriate spec file with the introduction and the prioritized list of epics.</tool_used_description>
+    </step>
+
+    <step name="breakdown_first_epic">
+      <agent_action>The agent breaks down the first epic into user stories and asks for feedback using 'ask_followup_question'.</agent_action>
+      <tool_used_description>
+        The agent uses 'apply_diff' to add user stories to the requirements file and then 'ask_followup_question' to get feedback. For example:
+        "I've added user stories for 'Playlist Creation & Management' based on our discussion. Do the acceptance criteria for creating a playlist look correct?"
+      </tool_used_description>
+    </step>
+    
+    <step name="continue_cycle">
+      <agent_action>This cycle of breaking down epics, gathering feedback, and refining the requirements document continues until all epics are detailed and approved by the user.</agent_action>
+    </step>
+  </example>
+</examples>

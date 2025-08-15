@@ -1,0 +1,106 @@
+<tool_usage_guide>
+  <overview>
+    This guide provides specific instructions for using tools within the Agile Planner mode. Correct tool usage is essential for reading the necessary documents and managing the interactive review workflow.
+  </overview>
+
+  <tool_priorities>
+    <priority level="1">
+      <tool>read_file</tool>
+      <when>At the beginning of the workflow to gather context.</when>
+      <why>The mode must read both `design.md` and `requirements.md` to create a comprehensive and traceable task plan.</why>
+      <example>
+        <![CDATA[
+<read_file>
+<args>
+  <file>
+    <path>.roo/specs/{feature_name}/design.md</path>
+  </file>
+  <file>
+    <path>.roo/specs/{feature_name}/requirements.md</path>
+  </file>
+</args>
+</read_file>
+        ]]>
+      </example>
+    </priority>
+    <priority level="2">
+      <tool>write_to_file / apply_diff</tool>
+      <when>For creating or updating the `tasks.md` file.</when>
+      <why>These tools are used to persist the generated implementation plan. Use `write_to_file` for the initial creation and `apply_diff` for subsequent modifications based on user feedback.</why>
+    </priority>
+    <priority level="3">
+      <tool>ask_followup_question</tool>
+      <when>After creating or updating the `tasks.md` to get user approval.</when>
+      <why>This tool is critical for the mandatory review cycle. The workflow cannot be completed without explicit user approval obtained through this tool.</why>
+    </priority>
+  </tool_priorities>
+
+  <tool_specific_guidance>
+    <tool name="write_to_file">
+      <best_practices>
+        <practice>Use `write_to_file` to create the initial `tasks.md` file.</practice>
+        <practice>Ensure the path is correct: `.roo/specs/{feature_name}/tasks.md`.</practice>
+        <practice>The content should be a well-formatted markdown checklist.</practice>
+      </best_practices>
+      <example>
+        <![CDATA[
+<write_to_file>
+  <path>.roo/specs/new-feature/tasks.md</path>
+  <content>
+# Implementation Plan for New Feature
+
+- [ ] 1. **Component Setup**
+  - [ ] 1.1. Create the main component file `src/components/NewFeature.js`.
+  - [ ] 1.2. Add basic boilerplate code.
+- [ ] 2. **State Management**
+  - [ ] 2.1. Define state variables in the Redux store.
+</content>
+  <line_count>8</line_count>
+</write_to_file>
+        ]]>
+      </example>
+    </tool>
+    <tool name="apply_diff">
+      <best_practices>
+        <practice>Use `apply_diff` to modify `tasks.md` based on user feedback.</practice>
+        <practice>Read the file first to ensure the `SEARCH` block is exact.</practice>
+        <practice>Make targeted changes to avoid overwriting unrelated content.</practice>
+      </best_practices>
+      <example>
+        <![CDATA[
+<apply_diff>
+<args>
+<file>
+  <path>.roo/specs/new-feature/tasks.md</path>
+  <diff>
+<content>
+- [ ] 1.1. Create the main component file `src/components/NewFeature.js`.
+</content>
+    <start_line>4</start_line>
+  </diff>
+</file>
+</args>
+</apply_diff>
+        ]]>
+      </example>
+    </tool>
+    <tool name="ask_followup_question">
+      <best_practices>
+        <practice>Always use the exact question "Do the tasks look good?" to initiate the review.</practice>
+        <practice>The approval suggestion must include `mode="code" to automatically hand off the task for implementation.</practice>
+        <practice>The suggestion text should clearly state that implementation will begin, e.g., "Yes, they are approved. Begin implementation."</practice>
+      </best_practices>
+      <example>
+        <![CDATA[
+<ask_followup_question>
+  <question>Do the tasks look good?</question>
+  <follow_up>
+    <suggest mode="code">Yes, they are approved. Begin implementation.</suggest>
+    <suggest>No, I want to suggest a few modifications.</suggest>
+  </follow_up>
+</ask_followup_question>
+        ]]>
+      </example>
+    </tool>
+  </tool_specific_guidance>
+</tool_usage_guide>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<common_patterns>
+  <pattern name="task_delegation_prompt">
+    <usage>This template is used to generate the prompt when delegating a task to the `code` mode.</usage>
+    <template><![CDATA[
+Implement the following task based on the specifications.
+
+**Task:**
+{task_description_from_tasks.md}
+
+**Relevant Requirements:**
+{relevant_snippets_from_requirements.md}
+
+**Relevant Design Details:**
+{relevant_snippets_from_design.md}
+
+Ensure your implementation strictly adheres to these details.
+    ]]></template>
+  </pattern>
+
+  <pattern name="task_status_update">
+    <usage>This shows how to update the `tasks.md` file to mark a task as complete.</usage>
+    <template><![CDATA[
+<<<<<<< SEARCH
+- [ ] 1.1. Create the main component file `MyComponent.jsx`.
+=======
+- [x] 1.1. Create the main component file `MyComponent.jsx`.
+>>>>>>> REPLACE
+    ]]></template>
+  </pattern>
+
+  <pattern name="revision_request">
+    <usage>This template is for creating a new sub-task when a code review fails and a revision is needed.</usage>
+    <template><![CDATA[
+<<<<<<< SEARCH
+- [x] 2. Implement the core logic.
+=======
+- [x] 2. Implement the core logic.
+  - [ ] 2.1. **REVISION:** {Brief description of what needs to be fixed.}
+    - {Detailed feedback from the code review.}
+>>>>>>> REPLACE
+    ]]></template>
+  </pattern>
+</common_patterns>

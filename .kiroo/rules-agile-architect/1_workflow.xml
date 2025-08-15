@@ -1,0 +1,113 @@
+<workflow_instructions>
+  <mode_overview>
+    This mode transforms a feature requirements document into a comprehensive technical design. It reads a `requirements.md` file, facilitates research, and produces a `design.md` file that outlines the architecture, components, data models, and testing strategy for the feature.
+  </mode_overview>
+
+  <initialization_steps>
+    <step number="1">
+      <action>Identify the target feature</action>
+      <details>
+        Parse the user's request to determine the `{feature_name}`. This is essential for locating the correct spec file at `.roo/specs/{feature_name}/requirements.md`.
+      </details>
+    </step>
+    <step number="2">
+      <action>Read the requirements document</action>
+      <details>
+        Read the content of `.roo/specs/{feature_name}/requirements.md`. This document is the foundation for the entire design process.
+      </details>
+      <tools>
+        <tool>read_file</tool>
+      </tools>
+    </step>
+    <step number="3">
+      <action>Check for an Existing Design Document</action>
+      <details>
+        Before any writing operation, you MUST check if a `.roo/specs/{feature_name}/design.md` file already exists. This is a critical step to prevent accidental overwrites.
+      </details>
+      <tools>
+        <tool>list_files</tool>
+      </tools>
+    </step>
+  </initialization_steps>
+
+  <main_workflow>
+    <phase name="design_creation">
+      <description>Draft or update the technical design document.</description>
+      <steps>
+        <step>
+          <action>Create or Update `design.md`</action>
+          <details>
+            If `design.md` does not exist, create it from scratch.
+            If `design.md` already exists, you MUST read its contents and inform the user you will be updating it, then use `apply_diff` for all modifications.
+          </details>
+        </step>
+        <step>
+          <action>Structure the design document.</action>
+          <details>
+            The document MUST include these sections: Overview, Architecture, Components and Interfaces, Data Models, Error Handling, and Testing Strategy.
+          </details>
+        </step>
+        <step>
+          <action>Incorporate research findings (if available).</action>
+          <details>
+            If a `research-summary.md` exists, directly integrate the summarized research into the relevant sections of the design, highlighting design decisions and their rationales. Use Mermaid for diagrams where appropriate.
+          </details>
+        </step>
+        <step>
+          <action>Ensure full requirements coverage.</action>
+          <details>
+            Verify that every requirement from `requirements.md` is addressed in the design.
+          </details>
+        </step>
+      </steps>
+      <tools>
+        <tool>write_to_file</tool>
+        <tool>apply_diff</tool>
+      </tools>
+    </phase>
+
+    <phase name="review_and_refinement">
+      <description>Iterate on the design with the user until it is approved, with an option to perform research.</description>
+      <steps>
+        <step>
+          <action>Request user feedback and present options.</action>
+          <details>
+            After generating or updating the `design.md` file, ask the user for next steps using `ask_followup_question`. The question should be "The technical design is ready. How should we proceed?".
+            The suggestions should be:
+            1. "Proceed to implementation planning."
+            2. "I'd like to modify the design."
+            3. "Perform research to refine the design."
+          </details>
+        </step>
+        <step>
+          <action>Handle user's choice.</action>
+          <details>
+            - If the user approves, proceed to the completion criteria.
+            - If the user wants to modify the design, incorporate feedback and re-enter the review step.
+            - If the user chooses to perform research, trigger the optional_research phase.
+          </details>
+        </step>
+      </steps>
+    </phase>
+    
+    <phase name="optional_research">
+      <description>Delegate the research task to the Project Research mode to analyze the codebase and produce a research summary.</description>
+      <steps>
+        <step>
+          <action>Create a new research task.</action>
+          <details>
+            Use the `new_task` tool to create an independent research task in the Project Research mode. The prompt will instruct the research mode to analyze the codebase based on the `requirements.md` and generate a `research-summary.md` file in the same spec directory. After the research is complete, the `design.md` should be updated to incorporate the findings, and the flow should return to the `review_and_refinement` phase.
+          </details>
+          <tools>
+            <tool>new_task</tool>
+          </tools>
+        </step>
+      </steps>
+    </phase>
+  </main_workflow>
+
+  <completion_criteria>
+    <criterion>The `design.md` file has been created and approved by the user.</criterion>
+    <criterion>The mode has communicated that the design is complete and ready for the next step (implementation planning).</criterion>
+  </completion_criteria>
+</workflow_instructions>

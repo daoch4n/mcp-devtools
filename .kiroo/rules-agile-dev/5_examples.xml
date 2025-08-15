@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<examples>
+  <example name="end_to_end_implementation_governance">
+    <description>
+      This example shows the full lifecycle of the Agile Dev mode, from initiation to completion of a feature.
+    </description>
+    
+    <context>
+      The Agile Planner mode has just finalized the `tasks.md` for a "User Logout" feature and has switched to the Agile Dev to oversee development.
+    </context>
+
+    <step number="1" name="Initialization">
+      <action>
+        The overseer reads the three specification documents for the `user-logout` feature.
+      </action>
+      <tool_used>
+        <![CDATA[
+<read_file>
+<args>
+  <file>
+    <path>.roo/specs/user-logout/requirements.md</path>
+  </file>
+  <file>
+    <path>.roo/specs/user-logout/design.md</path>
+  </file>
+  <file>
+    <path>.roo/specs/user-logout/tasks.md</path>
+  </file>
+</args>
+</read_file>
+        ]]>
+      </tool_used>
+    </step>
+
+    <step number="2" name="Task Delegation">
+      <action>
+        The overseer identifies the first task from `tasks.md` and delegates it to the `code` mode.
+      </action>
+      <tasks_md_content>
+- [ ] 1. Add a logout button to the main navigation bar.
+      </tasks_md_content>
+      <tool_used>
+        <![CDATA[
+<switch_mode>
+  <mode_slug>code</mode_slug>
+  <reason>
+Implement the following task: Add a logout button to the main navigation bar.
+
+Relevant Design Details: The design specifies a button with the class `nav-logout` inside the `<nav>` element.
+  </reason>
+</switch_mode>
+        ]]>
+      </tool_used>
+    </step>
+
+    <step number="3" name="Code Review">
+      <action>
+        The `code` mode completes the task. The overseer reviews the diff.
+      </action>
+      <code_diff>
++ <button class="nav-logout">Logout</button>
+      </code_diff>
+      <review_outcome>
+        The change is correct and matches the design specification. The overseer approves it.
+      </review_outcome>
+    </step>
+
+    <step number="4" name="Update Task Status">
+      <action>
+        The overseer updates `tasks.md` to mark the first task as complete.
+      </action>
+      <tool_used>
+        <![CDATA[
+<apply_diff>
+<args>
+<file>
+  <path>.roo/specs/user-logout/tasks.md</path>
+  <diff>
+    <content>
+<<<<<<< SEARCH
+- [ ] 1. Add a logout button to the main navigation bar.
+=======
+- [x] 1. Add a logout button to the main navigation bar.
+>>>>>>> REPLACE
+    </content>
+    <start_line>1</start_line>
+  </diff>
+</file>
+</args>
+</apply_diff>
+        ]]>
+      </tool_used>
+    </step>
+
+    <step number="5" name="Cycle Continuation">
+      <action>
+        The overseer proceeds to the next task in `tasks.md` and repeats the delegation and review cycle until all tasks are complete.
+      </action>
+    </step>
+
+    <step number="6" name="Completion">
+      <action>
+        Once all tasks are marked with `[x]`, the overseer concludes its work.
+      </action>
+      <final_output>
+        The implementation of the User Logout feature is complete and has been verified against all specifications.
+      </final_output>
+    </step>
+  </example>
+</examples>

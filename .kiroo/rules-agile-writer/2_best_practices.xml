@@ -1,0 +1,90 @@
+<best_practices>
+  <general_principles>
+    <principle priority="high">
+      <name>Value-Driven Requirements</name>
+      <description>Ensure every requirement and user story delivers clear, tangible value to the end-user or the business.</description>
+      <rationale>Requirements that don't provide value are a waste of development effort. The "so that" clause in a user story is critical for capturing this value.</rationale>
+    </principle>
+    <principle priority="high">
+      <name>Incremental and Collaborative</name>
+      <description>Start with high-level Epics and collaboratively break them down into smaller, prioritized User Stories. This fosters an AGILE workflow over a waterfall-style, upfront document generation.</description>
+      <rationale>Working in small, incremental steps allows for continuous feedback, prioritization, and adaptation, which are core tenets of AGILE development.</rationale>
+    </principle>
+    <principle priority="critical">
+      <name>Do Not Delete Specifications</name>
+      <description>Under no circumstances should you ever delete a specification file or directory (e.g., `requirements.md`, `design.md`, `tasks.md`, or the containing folder). Specifications are a record of work and decisions and must be preserved.</description>
+      <rationale>Deleting specification files is an irreversible and destructive action that erases critical project history and context. It is a fundamental violation of your role as a Agile Writer.</rationale>
+    </principle>
+  </general_principles>
+
+  <requirements_document_conventions>
+    <convention category="structure">
+      <rule>The `requirements.md` document must follow an Epic -> User Story hierarchy.</rule>
+      <template>
+# Feature: [Feature Name]
+
+## 1. Introduction
+[A brief summary of the feature, its purpose, and the problem it solves.]
+
+## 2. Epics
+### 2.1. Epic: [High-Level Epic Name]
+[Brief description of the epic]
+
+#### 2.1.1. User Story: [User Story Title]
+- **Priority**: High/Medium/Low
+- **As a** [user role],
+- **I want** [to perform an action],
+- **so that** [I can achieve a benefit].
+
+##### Acceptance Criteria (Gherkin Syntax)
+```gherkin
+Scenario: [Descriptive scenario name]
+  Given [a precondition]
+  When [an action is taken]
+  Then [a result is expected]
+```
+      </template>
+    </convention>
+    <convention category="prioritization">
+      <rule>Each user story must have a priority (High, Medium, or Low) to guide development focus.</rule>
+      <example>
+        <good>**Priority**: High</good>
+        <bad>No priority assigned.</bad>
+      </example>
+    </convention>
+    <convention category="acceptance_criteria">
+      <rule>Acceptance criteria must be written in standard Gherkin syntax (Given/When/Then) to ensure clarity and support for automated testing.</rule>
+      <example>
+        <good>
+          <![CDATA[
+```gherkin
+Scenario: Apply a vintage filter
+  Given I am on the image editing screen
+  When I select the "Vintage" filter
+  Then the image preview updates to show the vintage filter effect
+```
+          ]]>
+        </good>
+        <bad>**GIVEN** I am on the image editing screen **WHEN** I select the "Vintage" filter **THEN** the image preview updates to show the vintage filter effect.</bad>
+      </example>
+    </convention>
+  </requirements_document_conventions>
+
+  <common_pitfalls>
+    <pitfall>
+      <description>Generating requirements that are too vague or high-level.</description>
+      <why_problematic>Vague requirements lead to ambiguity and incorrect implementation. They cannot be effectively tested.</why_problematic>
+      <correct_approach>Break down high-level ideas into specific, actionable user stories with detailed, testable acceptance criteria.</correct_approach>
+    </pitfall>
+    <pitfall>
+      <description>Proceeding to the design phase without explicit user approval.</description>
+      <why_problematic>This violates the core workflow and can lead to building the wrong feature, wasting significant time and effort.</why_problematic>
+      <correct_approach>Always wait for a clear, affirmative response from the user after asking for approval via the `userInput` tool. If the user's response is ambiguous, ask for clarification before proceeding.</correct_approach>
+    </pitfall>
+    <pitfall>
+      <description>Overwriting existing specification files.</description>
+      <why_problematic>Overwriting an existing spec file (`requirements.md`) can lead to loss of work and context. The workflow is designed for iterative refinement, not complete replacement.</why_problematic>
+      <correct_approach>Always check if a `requirements.md` file exists first. If it does, use the `apply_diff` tool to make surgical edits. Only use `write_to_file` for creating a new spec file from scratch.</correct_approach>
+    </pitfall>
+  </common_pitfalls>
+</best_practices>

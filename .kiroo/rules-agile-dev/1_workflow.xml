@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workflow_instructions>
+  <mode_overview>
+    This mode governs the software development process, ensuring that every implementation step strictly adheres to the approved specifications. It orchestrates the execution of tasks, reviews the code produced, and maintains alignment with `requirements.md`, `design.md`, and `tasks.md`.
+  </mode_overview>
+
+  <initialization_steps>
+    <step number="1">
+      <action>Identify Feature and Read Specifications</action>
+      <details>
+        Parse the user's request to identify the `{feature_name}`. Read the three core specification documents: `.roo/specs/{feature_name}/requirements.md`, `.roo/specs/{feature_name}/design.md`, and `.roo/specs/{feature_name}/tasks.md`. These documents are the single source of truth for the implementation.
+      </details>
+      <tools>
+        <tool>read_file</tool>
+      </tools>
+    </step>
+    <step number="2">
+      <action>Initialize Task Tracking</action>
+      <details>
+        Parse the `tasks.md` file and load the list of tasks into an internal checklist. The first task is marked as "in progress".
+      </details>
+    </step>
+  </initialization_steps>
+
+  <main_workflow>
+    <phase name="task_execution_and_review_cycle">
+      <description>
+        This cycle repeats for each task in `tasks.md`. It involves delegating the task, reviewing the output, and ensuring compliance.
+      </description>
+      <steps>
+        <step>
+          <title>Delegate Research Task (If Necessary)</title>
+          <action>If the task requires more context or analysis, delegate a research task.</action>
+          <details>
+            Before implementation, assess if the task description and specifications are sufficient. If there are ambiguities or a need for deeper investigation into the existing codebase, create a new task for the `project-research` mode. This is done via the `new_task` tool, which allows the research to happen in parallel without breaking the overseer's workflow.
+          </details>
+          <tools>
+            <tool>new_task</tool>
+          </tools>
+        </step>
+        <step>
+          <title>Delegate Task to Specialist Agent (If Applicable)</title>
+          <action>If the task requires a specialist, delegate to the appropriate mode.</action>
+          <details>
+            Analyze the task description from `tasks.md` for keywords indicating a need for a specialist agent.
+            - If keywords like "Google GenAI", "Gemini", "summarization", or "generative AI" are present, delegate the task to the `google-genai-developer` mode.
+            - If keywords like "Live2D", "Cubism", "2D model", or "character animation" are present, delegate the task to the `live2d-cubism-developer` mode.
+            - This ensures that tasks requiring specific API knowledge are handled by an expert, preventing errors and ensuring use of the correct libraries (e.g., the new `google-genai` SDK or the `Live2D Cubism SDK`).
+          </details>
+          <tools>
+            <tool>new_task</tool>
+          </tools>
+        </step>
+        <step>
+          <title>Delegate Task to Generic Code Agent</title>
+          <action>If no specialist is required, create a new task for the generic 'code' mode to implement the current task.</action>
+          <details>
+            Formulate a precise prompt for the `code` mode, including the specific task description from `tasks.md` and relevant context from `requirements.md` and `design.md`. The goal is to give the coding agent all necessary information to complete the task correctly. This is the fallback if a specialist is not needed.
+          </details>
+          <tools>
+            <tool>new_task</tool>
+          </tools>
+        </step>
+        <step>
+          <title>Code Review via Git Commit Diff</title>
+          <action>Review the code changes made by the coding agent by inspecting the latest git commit.</action>
+          <details>
+            After the `code` mode completes and commits the task, use the `git_show` tool with `revision: 'HEAD'` to get the diff of the most recent commit. The review must verify that the implementation in the diff directly satisfies the corresponding requirement, aligns with the technical design, and correctly completes the task as described. This avoids loading full files into context.
+          </details>
+          <tools>
+            <tool>use_mcp_tool (devtools.git_show)</tool>
+          </tools>
+        </step>
+        <step>
+          <title>Approve or Request Revisions</title>
+          <action>Based on the code review, either approve the task or send it back for revision.</action>
+          <details>
+            If the work is satisfactory, first confirm with the user before updating the task status.
+            Present a summary of the completed work and explicitly ask for approval to mark the task as done in `tasks.md`.
+            This is especially critical if there are deferred tasks or any potential ambiguity.
+            Only after receiving user confirmation, update the task's status to "done".
+            If the work is not satisfactory, create a new sub-task for the revision and re-delegate.
+          </details>
+          <tools>
+            <tool>ask_followup_question</tool>
+            <tool>apply_diff</tool>
+          </tools>
+        </step>
+        <step>
+          <title>Advance to Next Task</title>
+          <action>Mark the next task in the list as "in progress" and repeat the cycle.</action>
+        </step>
+      </steps>
+    </phase>
+  </main_workflow>
+
+  <completion_criteria>
+    <criterion>All tasks in `tasks.md` are marked as complete.</criterion>
+    <criterion>Every implemented feature has been reviewed and verified against the specification documents.</criterion>
+    <criterion>The user is informed that the implementation is complete and successful.</criterion>
+  </completion_criteria>
+</workflow_instructions>

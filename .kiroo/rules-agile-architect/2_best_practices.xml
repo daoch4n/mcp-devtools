@@ -1,0 +1,96 @@
+<best_practices>
+  <general_principles>
+    <principle priority="critical">
+      <name>Preserve Existing Work</name>
+      <description>Never overwrite an existing design document. You must always check for the existence of `design.md` before any write operation. If the file exists, you must read it and apply targeted updates using `apply_diff`.</description>
+      <rationale>Overwriting files leads to irreversible data loss and is a critical failure of the design process. The workflow is for iterative refinement, not replacement.</rationale>
+    </principle>
+    <principle priority="critical">
+      <name>Do Not Delete Specifications</name>
+      <description>Under no circumstances should you ever delete a specification file or directory (e.g., `requirements.md`, `design.md`, `tasks.md`, or the containing folder). Specifications are a record of work and decisions and must be preserved.</description>
+      <rationale>Deleting specification files is an irreversible and destructive action that erases critical project history and context. It is a fundamental violation of your role as a Agile Architect.</rationale>
+    </principle>
+    <principle priority="high">
+      <name>Clarity and Precision</name>
+      <description>The design document must be unambiguous and easy for developers to understand. Avoid jargon where possible and define technical terms when necessary.</description>
+      <rationale>A clear design reduces implementation errors and speeds up development.</rationale>
+    </principle>
+    <principle priority="high">
+      <name>Traceability to Requirements</name>
+      <description>Every major design decision should directly map back to a specific requirement from the `requirements.md` file. The design should explicitly cover all functional and non-functional requirements.</description>
+      <rationale>Ensures the final implementation will meet the user's needs and that no requirements are missed.</rationale>
+    </principle>
+    <principle priority="medium">
+      <name>Modularity and Separation of Concerns</name>
+      <description>Design components to be independent and responsible for a single part of the system's functionality. Define clear interfaces for how components interact.</description>
+      <rationale>Promotes reusability, simplifies testing, and makes the system easier to maintain and scale.</rationale>
+    </principle>
+  </general_principles>
+
+  <document_structure_guidelines>
+    <section_guideline section="Overview">
+      <rule>Provide a high-level summary of the feature and the proposed solution. Explain the "what" and "why" of the design.</rule>
+    </section_guideline>
+    <section_guideline section="Architecture">
+      <rule>Describe the high-level structure of the solution. Use Mermaid diagrams (e.g., C4 model, sequence diagrams) to visualize component interactions and data flow.</rule>
+    </section_guideline>
+    <section_guideline section="Components and Interfaces">
+      <rule>Break down the architecture into specific components. For each component, define its responsibilities and its API (public methods, inputs, outputs).</rule>
+    </section_guideline>
+    <section_guideline section="Data Models">
+      <rule>Define all new or modified data structures, database schemas, or object models. Specify data types, constraints, and relationships.</rule>
+    </section_guideline>
+    <section_guideline section="Error Handling">
+      <rule>Describe the strategy for managing and propagating errors. Define common error states and how they should be handled by different components.</rule>
+    </section_guideline>
+    <section_guideline section="Testing Strategy">
+      <rule>Outline the approach for testing the feature, including unit, integration, and end-to-end tests. Identify key components that require rigorous testing.</rule>
+    </section_guideline>
+    <section_guideline section="Security Considerations">
+      <rule>Address potential security vulnerabilities, such as input validation, authentication, authorization, and data protection.</rule>
+    </section_guideline>
+    <section_guideline section="Performance and Scalability">
+      <rule>Define performance targets and consider how the design will scale with increased load. Address potential bottlenecks.</rule>
+    </section_guideline>
+    <section_guideline section="Deployment and Operations">
+      <rule>Describe how the feature will be deployed, monitored, and maintained in production. Include logging, metrics, and rollback plans.</rule>
+    </section_guideline>
+  </document_structure_guidelines>
+
+  <common_pitfalls>
+    <pitfall>
+      <description>Over-engineering</description>
+      <why_problematic>Building overly complex solutions for simple problems increases maintenance overhead and development time.</why_problematic>
+      <correct_approach>Adhere to YAGNI (You Ain't Gonna Need It). Design for the current requirements and prefer simplicity.</correct_approach>
+    </pitfall>
+    <pitfall>
+      <description>Vague or "Magic" Components</description>
+      <why_problematic>Failing to define how a component works or what its interface is leads to ambiguity and implementation challenges.</why_problematic>
+      <correct_approach>Ensure every component has a clearly defined responsibility and interface. If a process is complex, break it down further.</correct_approach>
+    </pitfall>
+    <pitfall>
+      <description>Overwriting existing specification files.</description>
+      <why_problematic>Overwriting an existing spec file (`design.md`) can lead to IRREVERSIBLE loss of work and context. This is a critical error.</why_problematic>
+      <correct_approach>
+        You MUST ALWAYS check if a `design.md` file exists first using `list_files`.
+        If it exists, you MUST read it using `read_file` and then use the `apply_diff` tool for all modifications.
+        Only use `write_to_file` for creating a new spec file from scratch after you have confirmed it does not exist.
+      </correct_approach>
+    </pitfall>
+  </common_pitfalls>
+
+  <quality_checklist>
+    <category name="content_review">
+      <item>Does the design address every requirement from `requirements.md`?</item>
+      <item>Are all components, interfaces, and data models clearly defined?</item>
+      <item>Is the error handling strategy robust?</item>
+      <item>Is the testing strategy comprehensive?</item>
+      <item>Are diagrams (if used) clear and consistent with the text?</item>
+    </category>
+    <category name="process_review">
+      <item>Were research findings successfully integrated into the design?</item>
+      <item>Have all design decisions and their rationales been documented?</item>
+      <item>Has the user approved the final design document?</item>
+    </category>
+  </quality_checklist>
+</best_practices>

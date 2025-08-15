@@ -1,0 +1,117 @@
+<workflow_instructions>
+  <mode_overview>
+    This mode transforms a technical design document into a detailed, actionable implementation plan. It reads a `design.md` file and produces a `tasks.md` file containing a checklist of coding tasks for a development agent to execute.
+  </mode_overview>
+
+  <initialization_steps>
+    <step number="1">
+      <action>Identify the target feature</action>
+      <details>
+        Parse the user's request to determine the `{feature_name}`. This is crucial for locating the correct spec files at `.roo/specs/{feature_name}/`.
+      </details>
+    </step>
+    <step number="2">
+      <action>Read the design document</action>
+      <details>
+        Read the content of `.roo/specs/{feature_name}/design.md`. This document is the primary source for creating the implementation plan. Also read `.roo/specs/{feature_name}/requirements.md` for context.
+      </details>
+      <tools>
+        <tool>read_file</tool>
+      </tools>
+    </step>
+    <step number="3">
+      <action>Check for an Existing Task Document</action>
+      <details>
+        Before any writing operation, you MUST check if a `.roo/specs/{feature_name}/tasks.md` file already exists. This is a critical step to prevent accidental overwrites.
+      </details>
+      <tools>
+        <tool>list_files</tool>
+      </tools>
+    </step>
+  </initialization_steps>
+
+  <main_workflow>
+    <phase name="planning">
+      <description>Break down the design into concrete coding tasks.</description>
+      <steps>
+        <step>
+          <action>Create or Update `tasks.md`</action>
+          <details>
+            If `tasks.md` does not exist, create it from scratch.
+            If `tasks.md` already exists, you MUST read its contents and inform the user you will be updating it, then use `apply_diff` for all modifications.
+          </details>
+        </step>
+        <step>
+          <action>Format the implementation plan.</action>
+          <details>
+            Use a numbered checkbox list with a maximum of two levels (e.g., 1., 1.1, 1.2). Each item must be a checkbox.
+          </details>
+        </step>
+        <step>
+          <action>Define actionable tasks.</action>
+          <details>
+            Each task must be a clear, discrete coding step. It should reference specific requirements from the `requirements.md` and components from the `design.md`. Tasks must be executable by a coding agent and focus on writing, modifying, or testing code.
+          </details>
+        </step>
+        <step>
+          <action>Exclude non-coding tasks.</action>
+          <details>
+            Do not include tasks for user testing, deployment, documentation, or any other activity that is not direct code implementation.
+          </details>
+        </step>
+        <step>
+          <action>Ensure full coverage.</action>
+          <details>
+            Verify that every part of the design document that requires coding is covered by one or more tasks. All requirements must be traceable to a task.
+          </details>
+        </step>
+      </steps>
+      <tools>
+        <tool>write_to_file</tool>
+        <tool>apply_diff</tool>
+      </tools>
+    </phase>
+
+    <phase name="review_and_refinement">
+      <description>Iterate on the task plan with the user until it is approved.</description>
+      <steps>
+        <step>
+          <action>Request user feedback.</action>
+          <details>
+            After generating or updating the `tasks.md` file, ask the user "Do the tasks look good?" using the `ask_followup_question` tool.
+          </details>
+          <tool_usage>
+            <ask_followup_question>
+              <question>Do the tasks look good?</question>
+              <follow_up>
+                <suggest mode="agile-dev">The tasks are approved. Begin implementation.</suggest>
+                <suggest>No, I have some changes.</suggest>
+              </follow_up>
+            </ask_followup_question>
+          </tool_usage>
+        </step>
+        <step>
+          <action>Incorporate feedback.</action>
+          <details>
+            If the user requests changes, modify the `tasks.md` file accordingly and re-enter the review step.
+          </details>
+        </step>
+        <step>
+          <action>Receive explicit approval.</action>
+          <details>
+            Do not proceed until the user gives clear approval (e.g., "yes", "approved", "looks good").
+          </details>
+        </step>
+      </steps>
+      <tools>
+        <tool>write_to_file</tool>
+        <tool>apply_diff</tool>
+      </tools>
+    </phase>
+  </main_workflow>
+
+  <completion_criteria>
+    <criterion>The `tasks.md` file has been created and approved by the user.</criterion>
+    <criterion>The mode has switched to the code implementation of the approved tasks.</criterion>
+  </completion_criteria>
+</workflow_instructions>

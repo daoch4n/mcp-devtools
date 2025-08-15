@@ -1,0 +1,159 @@
+<![CDATA[
+<examples>
+  <example name="end_to_end_design_workflow">
+    <description>
+      This example demonstrates the complete workflow of the Agile Architect mode, from reading requirements to producing an approved design document.
+    </description>
+    
+    <context>
+      The user wants to create a design for a new "User Profile Picture Upload" feature.
+    </context>
+
+    <step number="1" name="Initial Request">
+      <user_prompt>
+        Create a technical design for the user profile picture upload feature. The feature name is `profile-picture-upload`.
+      </user_prompt>
+    </step>
+
+    <step number="2" name="Reading Requirements">
+      <action>
+        The mode reads the file at `.roo/specs/profile-picture-upload/requirements.md`.
+      </action>
+      <file_content name="requirements.md"><![CDATA[
+# Requirements: User Profile Picture Upload
+
+## 1. User Story
+As a registered user, I want to upload a profile picture so that other users can identify me more easily.
+
+## 2. Functional Requirements
+- Users MUST be able to select a JPG or PNG image from their device.
+- The image size MUST NOT exceed 5MB.
+- The image MUST be square and will be resized to 256x256 pixels.
+- Users MUST be able to see a preview of their image before uploading.
+- The uploaded image MUST replace any existing profile picture.
+
+## 3. Non-Functional Requirements
+- The upload process should be secure.
+- Image storage must be cost-effective (e.g., using an object storage service).
+- The user's profile page should load the new picture quickly after upload.
+      ]]></file_content>
+    </step>
+
+    <step number="3" name="Research Delegation">
+      <action>
+        The mode delegates the research to the Project Research mode.
+      </action>
+      <tool_call>
+        <new_task>
+          <mode>project-research</mode>
+          <message>
+            Analyze the codebase for existing file upload or cloud storage patterns and create a research-summary.md file.
+          </message>
+        </new_task>
+      </tool_call>
+    </step>
+
+    <step number="4" name="Incorporate Research">
+      <action>
+        The mode reads the `research-summary.md` file produced by the Project Research mode.
+      </action>
+      <file_content name="research-summary.md"><![CDATA[
+# Research Summary: Profile Picture Upload
+
+## 1. Existing Patterns
+- The codebase currently has no direct file upload mechanism.
+- The `media-service` handles image processing but not direct uploads.
+
+## 2. Recommended Approach
+- Use pre-signed URLs for direct client-to-S3 uploads. This is secure and scalable.
+- Create a new endpoint to generate these URLs.
+- The client will notify the server upon successful upload.
+      ]]></file_content>
+    </step>
+
+    <step number="4" name="Generating the Design Document">
+      <action>
+        The mode creates the `design.md` file, incorporating the research and following the required structure.
+      </action>
+      <file_content name="design.md"><![CDATA[
+# Technical Design: User Profile Picture Upload
+
+### Overview
+This document outlines the technical design for the "User Profile Picture Upload" feature. The solution enables users to upload an image directly to a secure cloud storage bucket (AWS S3) using a pre-signed URL, which is both secure and performant.
+
+### Architecture
+The architecture minimizes server load by offloading the file upload to the client.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    participant S3 as AWS S3
+    
+    Client->>Server: Request pre-signed URL for upload
+    Server->>Client: Generate and return pre-signed URL
+    Client->>S3: Upload image directly using URL
+    S3-->>Client: Upload success
+    Client->>Server: Notify server of successful upload (with image URL)
+    Server->>Server: Update user's profile with new image URL
+    Server-->>Client: Confirm profile update
+```
+
+### Components and Interfaces
+#### 1. Profile Picture Service (Server)
+*   **Responsibility:** Generate pre-signed URLs and update user profiles.
+*   **Interface:**
+    *   `POST /api/v1/profile/picture/generate-upload-url`:
+        *   **Request Body:** `{ "contentType": "image/jpeg" }`
+        *   **Response:** `{ "uploadUrl": "...", "imageUrl": "..." }`
+    *   `PUT /api/v1/profile/picture`:
+        *   **Request Body:** `{ "imageUrl": "..." }`
+        *   **Response:** `200 OK`
+
+#### 2. Upload Component (Client)
+*   **Responsibility:** Handle image selection, preview, and direct S3 upload.
+
+### Data Models
+#### User Table (`users`) - Modification
+| Column          | Type          | Constraints | Description                         |
+|-----------------|---------------|-------------|-------------------------------------|
+| `profile_image_url`| `VARCHAR(512)`| `NULL`      | URL of the user's profile picture. |
+
+### Error Handling
+*   **400 Bad Request:** Invalid file type or size.
+*   **403 Forbidden:** User not authenticated to request an upload URL.
+*   **500 Internal Server Error:** Failure to generate URL or update the database.
+
+### Testing Strategy
+*   **Unit Tests:** Test the pre-signed URL generation logic on the server. Test the client-side validation logic (file type, size).
+*   **Integration Tests:** Verify that the server correctly updates the user's `profile_image_url` in the database after notification.
+*   **E2E Tests:** An automated test will simulate the full upload flow.
+      ]]></file_content>
+    </step>
+
+    <step number="5" name="User Review">
+      <action>
+        The mode asks for approval using the `ask_followup_question` tool.
+      </action>
+      <tool_call>
+        <ask_followup_question>
+          <question>Does the design look good? If so, we can move on to the implementation plan.</question>
+          <follow_up>
+            <suggest>Yes, the design is approved.</suggest>
+            <suggest>No, let's add a cropping feature.</suggest>
+          </follow_up>
+        </ask_followup_question>
+      </tool_call>
+    </step>
+
+    <step number="6" name="Completion">
+      <user_response>
+        "Yes, the design is approved."
+      </user_response>
+      <final_output>
+        The mode confirms that the design is complete and that the next step is to use the "Agile Planner" mode to create the implementation plan.
+      </final_output>
+    </step>
+  </example>
+</examples>
+]]>
