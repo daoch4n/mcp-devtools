@@ -1300,7 +1300,9 @@ async def ai_edit_files(
                 except Exception as e:
                     result_message += f"\n\nError generating diff for Aider changes: {e}"
             else:
-                 result_message += f"\nIt's unclear if changes were applied. Please verify the file manually.\nSTDOUT:\n{stdout}"
+                 result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
+                                     f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
+                                     f"STDOUT:\n{stdout}")
             
             return result_message
 
