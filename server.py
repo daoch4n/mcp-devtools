@@ -1111,14 +1111,13 @@ async def ai_edit_files(
 
     # Prune Aider chat history if not continuing thread
     if not continue_thread:
-        try:
-            history_path = Path(directory_path) / ".aider.chat.history.md"
-            if history_path.exists():
-                with open(history_path, "w", encoding="utf-8") as hf:
-                    hf.write("")
+        history_path = Path(directory_path) / ".aider.chat.history.md"
+        if history_path.is_file():
+            try:
+                history_path.write_text("", encoding="utf-8")
                 logger.info(f"[ai_edit_files] Cleared Aider chat history at: {history_path}")
-        except Exception as e:
-            logger.warning(f"[ai_edit_files] Failed to clear Aider chat history: {e}")
+            except OSError as e:
+                logger.warning(f"[ai_edit_files] Failed to clear Aider chat history: {e}")
 
     # Determine the default edit format based on the model if not explicitly provided
     if edit_format == EditFormat.DIFF:
