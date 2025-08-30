@@ -96,9 +96,9 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 }
 ```
 
-## 4️⃣ [AI System Prompt](https://github.com/daoch4n/research/tree/ai/prompt-engineering/google-whitepaper) Example
+## 4️⃣ Example AI Workflow
 <details>
-<summary> <h3> ℹ️ Show Prompt </h3> </summary>
+<summary> <h3> 📄 Show Prompt </h3> </summary>
   
 ```
 # ROLE AND DIRECTIVE
@@ -167,6 +167,9 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 ### 💾 Direct Code Editing vs 🤖 AI-assisted Editing
 
+<details>
+<summary> <h4> 📃 Show Issue </h3> </summary>
+
 **Issue:**
 
 *    🔍 When using the `write_to_file` tool for direct code editing with languages like JavaScript that utilize template literals, you may encounter unexpected syntax errors. This issue stems from how the AI assistant generates the `content` string, where backticks and dollar signs within template literals might be incorrectly escaped with extra backslashes (`\`).
@@ -179,7 +182,12 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 *    🤖 Instruct your AI assistant to delegate editing files to MCP-compatible coding agent by using `ai_edit` tool instead, as it is more suitable for direct code manipulation, automatically commits changes and produces resulting diff as tool output, and let AI assistant act as task orchestrator that will write down plans and docs with `write_to_file` tool then delegate actual coding to specialized agent, get its report (diff) as tool call result, use `git_read_file` tool to double check agent's work, and manage commits and branches (`ai_edit` tool basically integrates `Aider` via some logic ported from [its MCP bridge](https://github.com/sengokudaikon/aider-mcp-server)).
 
+</details>
+
 ### ❔ Aider limitations due to its commit-first nature
+
+<details>
+<summary> <h4> 📃 Show Issue </h3> </summary>
 
 **Issue:**
 
@@ -189,7 +197,12 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 *    ⚙️ Temporarily disable auto commiting functions in your `.aider.conf.yml` configuration file.
 
+</details>
+
 ## ℹ️ Available Tools
+
+<details>
+<summary> <h3> 📄 Show Descriptions and JSON Schemas </h3> </summary>
 
 ### `git_status`
 - **Description:** Shows the current status of the Git working tree, including untracked, modified, and staged files.
@@ -644,3 +657,5 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       "repo_path"
     ]
   }
+
+</details>
