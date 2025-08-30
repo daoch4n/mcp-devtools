@@ -61,7 +61,7 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 ### 🐍 Running from PyPi
 
 ```bash
-uvx mcp-devtools@1.2.6 -p 1337
+uvx mcp-devtools -p 1337
 ```
 
 ### 🐈‍⬛ Running from GitHub
@@ -597,7 +597,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
         "items": {
           "type": "string"
         },
-        "description": "Optional. A list of additional command-line options to pass directly to Aider (e.g., ['--model=gpt-4o', '--dirty-diff']). Each option should be a string."
+        "description": "Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
       },
       "edit_format": {
         "type": "string",

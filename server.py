@@ -397,7 +397,7 @@ class AiEdit(BaseModel):
     files: List[str] = Field(description="A list of file paths (relative to the repository root) that Aider should operate on. This argument is mandatory.")
     options: Optional[List[str]] = Field(
         None,
-        description="Optional. A list of additional command-line options to pass directly to Aider (e.g., ['--model=gpt-4o', '--dirty-diff']). Each option should be a string."
+        description="Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
     )
     edit_format: str = Field(
         "diff",
