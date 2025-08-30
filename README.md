@@ -700,4 +700,9 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
     ]
   }
 
+## Recommended Aider configuration
+- Create or copy a `.aider.conf.yml` into your repo root (preferred) or your home directory (`~/.aider.conf.yml`).
+- Start from the template in [docs/aider_config.md](docs/aider_config.md) and adjust to your needs (model, API keys, auto-commit behavior, include/exclude, etc.).
+- The server automatically loads `.aider.conf.yml` from your workspace; placing it in the repo root or HOME is sufficient for most workflows.
+
 </details>
