@@ -146,10 +146,10 @@ stream: false
 dirty-commits: false
 
 ## Attribute aider code changes in the git author name (default: True). If explicitly set to True, overrides --attribute-co-authored-by precedence.
-attribute-author: false
+#attribute-author: false
 
 ## Attribute aider commits in the git committer name (default: True). If explicitly set to True, overrides --attribute-co-authored-by precedence for aider edits.
-attribute-committer: false
+#attribute-committer: false
 
 ## Prefix commit messages with 'aider: ' if aider authored the changes (default: False)
 #attribute-commit-message-author: false
@@ -167,7 +167,7 @@ attribute-committer: false
 #commit: false
 
 ## Specify a custom prompt for generating commit messages
-#commit-prompt: "append attrubution Co-authored-by: daoch4n <daoch4n@gmail.com>"
+commit-prompt: "append cute kaomoji as trailer to express your feelings about this commit"
 
 ## Perform a dry run without modifying files (default: False)
 #dry-run: false
@@ -354,39 +354,3 @@ detect-urls: false
 
 ## Print shell completion script for the specified SHELL and exit. Supported shells: bash, tcsh, zsh. Example: aider --shell-completions bash
 #shell-completions: xxx
-
-############################
-# Deprecated model settings:
-
-## Use claude-3-opus-20240229 model for the main chat (deprecated, use --model)
-#opus: false
-
-## Use anthropic/claude-3-7-sonnet-20250219 model for the main chat (deprecated, use --model)
-#sonnet: false
-
-## Use claude-3-5-haiku-20241022 model for the main chat (deprecated, use --model)
-#haiku: false
-
-## Use gpt-4-0613 model for the main chat (deprecated, use --model)
-#4: false
-
-## Use gpt-4o model for the main chat (deprecated, use --model)
-#4o: false
-
-## Use gpt-4o-mini model for the main chat (deprecated, use --model)
-#mini: false
-
-## Use gpt-4-1106-preview model for the main chat (deprecated, use --model)
-#4-turbo: false
-
-## Use gpt-3.5-turbo model for the main chat (deprecated, use --model)
-#35turbo: false
-
-## Use deepseek/deepseek-chat model for the main chat (deprecated, use --model)
-#deepseek: false
-
-## Use o1-mini model for the main chat (deprecated, use --model)
-#o1-mini: false
-
-## Use o1-preview model for the main chat (deprecated, use --model)
-#o1-preview: false
