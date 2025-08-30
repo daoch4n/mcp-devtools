@@ -23,7 +23,7 @@ Key Components:
 """
 
 import logging
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple
 from mcp.server import Server
 from mcp.server.session import ServerSession
@@ -756,7 +756,7 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
     except FileNotFoundError:
         return f"Error: file wasn't found or out of cwd: {file_path}"
     except Exception as e:
-        return ai_hint_read_file_error(file_path, repo.working_dir, e)
+        return ai_hint_read_file_error(file_path, str(repo.working_dir), e)
 
 async def _generate_diff_output(original_content: str, new_content: str, file_path: str) -> str:
     """
@@ -1601,7 +1601,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 )
             ]
         # 5) Relative paths like './repo', '../repo', 'repo'
-        from pathlib import PurePath
         if not PurePath(repo_path_arg).is_absolute():
             return [
                 TextContent(
@@ -1790,15 +1789,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
             home_dir = Path(os.path.expanduser("~"))
             if repo_path.resolve() == home_dir.resolve():
                 # Reuse the dynamic error for '.' since that's the implicit case here
-                return [
-                    TextContent(
-                        type="text",
-                        text=(
-                            "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
-                            "You must always resolve and pass the full path, not a value like '.'. This is required for correct operation."
-                        )
-                    )
-                ]
+                return _repo_path_error(".")
             else:
                 return [
                     TextContent(
