@@ -623,6 +623,10 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
         },
         "description": "A list of file paths (relative to the repository root) that Aider should operate on. This argument is mandatory."
       },
+      "continue_thread": {
+        "type": "boolean",
+        "description": "Required. Whether to continue the Aider thread by restoring chat history. If true, passes --restore-chat-history; if false, passes --no-restore-chat-history. Clients must explicitly choose."
+      },
       "options": {
         "type": "array",
         "items": {
@@ -645,7 +649,8 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
     "required": [
       "repo_path",
       "message",
-      "files"
+      "files",
+      "continue_thread"
     ]
   }
   ```

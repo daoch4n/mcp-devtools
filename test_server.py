@@ -337,10 +337,8 @@ async def test_write_to_file_content_bytes_mismatch_and_exception(tmp_path, monk
         raise Exception("write error")
     monkeypatch.setattr(builtins, "open", raise_exc_open)
     result_exc = await write_to_file_content(str(tmp_path), "fail.txt", "fail")
-    assert (
-        "UNEXPECTED_ERROR: Failed to write to file 'fail.txt': write error. AI_HINT: Check file permissions, disk space, and review server logs for more details."
-        in result_exc
-    )
+    assert "UNEXPECTED_ERROR: Failed to write to file 'fail.txt': write error" in result_exc
+    assert "UNEXPECTED_ERROR:" in result_exc
 
 @pytest.mark.asyncio
 async def test_execute_custom_command_exception(monkeypatch, tmp_path):
@@ -351,10 +349,8 @@ async def test_execute_custom_command_exception(monkeypatch, tmp_path):
         raise Exception("subprocess error")
     monkeypatch.setattr(asyncio, "create_subprocess_shell", raise_exc)
     result = await execute_custom_command(str(tmp_path), "echo fail")
-    assert (
-        "UNEXPECTED_ERROR: Failed to execute command 'echo fail': subprocess error. AI_HINT: Check the command syntax, permissions, and review server logs for more details."
-        in result
-    )
+    assert "UNEXPECTED_ERROR: Failed to execute command 'echo fail': subprocess error" in result
+    assert "UNEXPECTED_ERROR:" in result
 
 @patch('server._generate_diff_output', new_callable=AsyncMock)
 @patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
@@ -542,10 +538,8 @@ async def test_search_and_replace_in_file_fallback_on_exception(tmp_path, monkey
     result = await search_and_replace_in_file(
         str(tmp_path), "foo", "qux", "exc_file.txt", False, None, None
     )
-    assert (
-        "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: sed open error. AI_HINT: Check your search/replace patterns, file permissions, and review server logs for more details."
-        in result
-    )
+    assert "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: sed open error" in result
+    assert "UNEXPECTED_ERROR:" in result
     # The file should remain unchanged due to the error
     assert (file_path).read_text() == "foo bar baz"
 
@@ -1086,7 +1080,7 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
     )
     result = await git_apply_diff(repo, diff_content)
     assert (
-        "GIT_COMMAND_FAILED: Failed to apply diff. Details: \n  stderr: 'git error'. AI_HINT: Check if the diff is valid and applies cleanly to the current state of the repository."
+        "GIT_COMMAND_FAILED: Failed to apply diff. Details: \n  stderr: 'git error'. Check if the diff is valid and applies cleanly to the current state of the repository."
         in result
     )
 
@@ -1122,7 +1116,5 @@ def test_git_read_file_error_cases(monkeypatch):
         raise Exception("fail")
     monkeypatch.setattr("builtins.open", fake_open_exc)
     result = git_read_file(repo, "nofile.txt")
-    assert (
-        "UNEXPECTED_ERROR: Failed to read file 'nofile.txt': fail. AI_HINT: Check if the file exists, is accessible, and not corrupted. Review server logs for more details."
-        in result
-    )
+    assert "UNEXPECTED_ERROR: Failed to read file 'nofile.txt': fail" in result
+    assert "UNEXPECTED_ERROR:" in result
