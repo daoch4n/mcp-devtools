@@ -63,6 +63,71 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logging.getLogger().setLevel(logging.DEBUG)
 
+# === AI_HINT helper builders (keep terse, agent-friendly) ===
+
+def ai_hint_git_apply_diff_error(stderr: str | None, affected_file_path: str | None) -> str:
+    extra = []
+    low = (stderr or "").lower()
+    if "patch failed" in low or "could not apply" in low:
+        extra.append("The diff may not match the current repo state. Ensure the working tree is clean and the diff was created against the current HEAD.")
+    if "whitespace" in low:
+        extra.append("Whitespace conflicts detected. Consider re-generating the diff or removing trailing spaces.")
+    if affected_file_path:
+        extra.append(f"Verify that the file path in the diff exists: {affected_file_path} (relative to repo root).")
+    extra_hint = (" More info: " + " ".join(extra)) if extra else ""
+    return (
+        f"GIT_COMMAND_FAILED: Failed to apply diff. Details: {stderr}. "
+        f"Check if the diff is valid and applies cleanly to the current state of the repository.{extra_hint}"
+    )
+
+def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: Failed to read file "
+        f"'{file_path}': {e}. Confirm the file path is relative to the repo root under '{repo_working_dir}'. "
+        "Ensure the file exists and is readable, and that you passed an absolute repo_path."
+    )
+
+def ai_hint_sed_error(e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: "
+        f"{e}. If your pattern contains special characters, prefer simpler patterns or rely on Python fallback. "
+        "Ensure the file exists and is writable, and pass an absolute repo_path."
+    )
+
+def ai_hint_write_error(repo_path: str, file_path: str, e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: Failed to write to file "
+        f"'{file_path}': {e}. Ensure parent directories exist under '{repo_path}'. "
+        "Confirm write permissions and available disk space, and pass an absolute repo_path."
+    )
+
+def ai_hint_exec_error(repo_path: str, command: str, e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: Failed to execute command "
+        f"'{command}': {e}. Commands run with cwd set to '{repo_path}'. "
+        "Verify the command is installed and on PATH, and start with a simple echo to validate the environment."
+    )
+
+def ai_hint_ai_edit_unexpected(e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: An unexpected error occurred during AI edit: "
+        f"{e}. Verify aider is installed (try the 'aider_status' tool), pass absolute repo_path, "
+        "and ensure 'files' and 'continue_thread' are provided."
+    )
+
+def ai_hint_aider_status_error(e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: Failed to check Aider status: "
+        f"{e}. Ensure Aider is installed and on PATH (try 'aider --version'), or use 'aider_status' with a custom aider_path if needed."
+    )
+
+def ai_hint_unexpected_call_tool(e: Exception) -> str:
+    return (
+        "UNEXPECTED_ERROR: An unexpected exception occurred: "
+        f"{e}. Re-check the tool name and arguments. Use 'list_tools' to inspect schemas, "
+        "and ensure repo_path is an absolute path valid for your workspace."
+    )
+
 def find_git_root(path: str) -> Optional[str]:
     """
     Finds the root directory of a Git repository by traversing up from the given path.
@@ -395,6 +460,7 @@ class AiEdit(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory where the AI edit should be performed.")
     message: str = Field(description="A detailed natural language message describing the code changes to make. Be specific about files, desired behavior, and any constraints.")
     files: List[str] = Field(description="A list of file paths (relative to the repository root) that Aider should operate on. This argument is mandatory.")
+    continue_thread: bool = Field(description="Required. Whether to continue the Aider thread by restoring chat history. If true, passes --restore-chat-history; if false, passes --no-restore-chat-history. Clients must explicitly choose.")
     options: Optional[List[str]] = Field(
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
@@ -663,7 +729,7 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
 
         return result_message
     except GitCommandError as gce:
-        return f"GIT_COMMAND_FAILED: Failed to apply diff. Details: {gce.stderr}. AI_HINT: Check if the diff is valid and applies cleanly to the current state of the repository."
+        return ai_hint_git_apply_diff_error(gce.stderr, affected_file_path)
     except Exception as e:
         return f"UNEXPECTED_ERROR: An unexpected error occurred while applying diff: {e}. AI_HINT: Check the server logs for more details or review your input."
     finally:
@@ -690,7 +756,7 @@ def git_read_file(repo: git.Repo, file_path: str) -> str:
     except FileNotFoundError:
         return f"Error: file wasn't found or out of cwd: {file_path}"
     except Exception as e:
-        return f"UNEXPECTED_ERROR: Failed to read file '{file_path}': {e}. AI_HINT: Check if the file exists, is accessible, and not corrupted. Review server logs for more details."
+        return ai_hint_read_file_error(file_path, repo.working_dir, e)
 
 async def _generate_diff_output(original_content: str, new_content: str, file_path: str) -> str:
     """
@@ -915,7 +981,7 @@ async def search_and_replace_in_file(
         return f"Error: File not found at {full_file_path}"
     except Exception as e:
         logging.error(f"An unexpected error occurred during sed attempt: {e}. Falling back to Python logic.")
-        return f"UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: {e}. AI_HINT: Check your search/replace patterns, file permissions, and review server logs for more details."
+        return ai_hint_sed_error(e)
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     """
@@ -965,7 +1031,7 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
 
         return result_message
     except Exception as e:
-        return f"UNEXPECTED_ERROR: Failed to write to file '{file_path}': {e}. AI_HINT: Check file permissions, disk space, and review server logs for more details."
+        return ai_hint_write_error(repo_path, file_path, e)
 
 async def execute_custom_command(repo_path: str, command: str) -> str:
     """
@@ -998,7 +1064,7 @@ async def execute_custom_command(repo_path: str, command: str) -> str:
         
         return output if output else "Command executed successfully with no output."
     except Exception as e:
-        return f"UNEXPECTED_ERROR: Failed to execute command '{command}': {e}. AI_HINT: Check the command syntax, permissions, and review server logs for more details."
+        return ai_hint_exec_error(repo_path, command, e)
 
 async def ai_edit_files(
     repo_path: str,
@@ -1006,6 +1072,7 @@ async def ai_edit_files(
     session: ServerSession,
     files: List[str],
     options: Optional[list[str]],
+    continue_thread: bool,
     edit_format: EditFormat = EditFormat.DIFF,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
@@ -1081,6 +1148,10 @@ async def ai_edit_files(
             del additional_opts[opt_key]
 
     aider_options.update(additional_opts)
+
+    # Enforce explicit restore_chat_history flag based on required parameter (continue_thread),
+    # overriding any contradictory option passed via `options`.
+    aider_options["restore_chat_history"] = continue_thread
 
     for fname in files:
         fpath = os.path.join(directory_path, fname)
@@ -1225,7 +1296,7 @@ async def ai_edit_files(
 
     except Exception as e:
         logger.error(f"An unexpected error occurred during ai_edit_files: {e}")
-        return f"UNEXPECTED_ERROR: An unexpected error occurred during AI edit: {e}. AI_HINT: Check the server logs for more details."
+        return ai_hint_ai_edit_unexpected(e)
     finally:
         if os.getcwd() != original_dir:
             os.chdir(original_dir)
@@ -1319,7 +1390,7 @@ async def aider_status_tool(
         
     except Exception as e:
         logger.error(f"Error checking Aider status: {e}")
-        return f"UNEXPECTED_ERROR: Failed to check Aider status: {e}. AI_HINT: Ensure Aider is installed, environment variables are set, and review server logs for more details."
+        return ai_hint_aider_status_error(e)
 
 mcp_server: Server = Server("mcp-git")
 
@@ -1487,17 +1558,72 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
         if name not in set(item.value for item in GitTools):
             raise ValueError(f"Unknown tool: {name}")
 
-        repo_path_arg = arguments.get("repo_path", ".")
-        if repo_path_arg == ".":
+        def _repo_path_error(bad_value: str) -> list[Content]:
             return [
                 TextContent(
                     type="text",
                     text=(
-                        "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
-                        "You must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
+                        f"ERROR: The repo_path parameter cannot be '{bad_value}'. Please provide the full absolute path to the repository. "
+                        f"You must always resolve and pass the full path, not a value like '{bad_value}'. This is required for correct operation."
                     )
                 )
             ]
+
+        repo_path_arg = str(arguments.get("repo_path", ".")).strip()
+
+        # Common agent mistakes and heuristics
+        # 1) Relative cwd
+        if repo_path_arg == ".":
+            return _repo_path_error(repo_path_arg)
+        # 2) Container default working dir (not the actual project path)
+        if repo_path_arg in {"/workspace", "/workspace/"}:
+            return _repo_path_error(repo_path_arg)
+        # 3) Tilde shortcuts (require expansion on client side)
+        if repo_path_arg.startswith("~"):
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"ERROR: The repo_path '{repo_path_arg}' uses '~' which must be expanded on your side. "
+                        "Please pass the full absolute path (e.g., /home/you/project), not a value like '~' or '~/project'."
+                    ),
+                )
+            ]
+        # 4) URL/URI style or placeholders/env vars or relative (AI patterns)
+        if repo_path_arg.startswith("file://"):
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"ERROR: The repo_path '{repo_path_arg}' looks like a URI. "
+                        "Please pass a plain absolute filesystem path (e.g., /abs/path/to/project)."
+                    ),
+                )
+            ]
+        # 5) Relative paths like './repo', '../repo', 'repo'
+        from pathlib import PurePath
+        if not PurePath(repo_path_arg).is_absolute():
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"ERROR: The repo_path '{repo_path_arg}' is a relative path. "
+                        "Always pass the full absolute path to the repository (e.g., /abs/path/to/project)."
+                    ),
+                )
+            ]
+        # 6) Env var or placeholder patterns that AIs sometimes emit
+        if any(token in repo_path_arg for token in ["${", "$PWD", "$CWD", "<", ">", "{", "}"]):
+            return [
+                TextContent(
+                    type="text",
+                    text=(
+                        f"ERROR: The repo_path '{repo_path_arg}' appears to contain a placeholder or environment variable reference. "
+                        "Resolve it to a concrete absolute path before calling this tool."
+                    ),
+                )
+            ]
+
         repo_path = Path(repo_path_arg)
         
         repo = None
@@ -1623,12 +1749,23 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     message = arguments.get("message", "")
                     files = arguments["files"] # files is now mandatory
                     options = arguments.get("options", [])
+                    if "continue_thread" not in arguments:
+                        return [TextContent(
+                            type="text",
+                            text=(
+                                "ERROR: The 'continue_thread' boolean parameter is required for ai_edit. "
+                                "Set it to true to pass --restore-chat-history (continue Aider thread), "
+                                "or false to pass --no-restore-chat-history (start without restoring chat)."
+                            )
+                        )]
+                    continue_thread = bool(arguments["continue_thread"])
                     result = await ai_edit_files(
                         repo_path=str(repo_path),
                         message=message,
                         session=mcp_server.request_context.session,
                         files=files,
                         options=options,
+                        continue_thread=continue_thread,
                         edit_format=EditFormat(arguments.get("edit_format", EditFormat.DIFF.value)),
                     )
                     return [TextContent(
@@ -1652,12 +1789,13 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
             # If the path is the user's home directory, return the specific warning
             home_dir = Path(os.path.expanduser("~"))
             if repo_path.resolve() == home_dir.resolve():
+                # Reuse the dynamic error for '.' since that's the implicit case here
                 return [
                     TextContent(
                         type="text",
                         text=(
                             "ERROR: The repo_path parameter cannot be '.'. Please provide the full absolute path to the repository. "
-                            "You must always resolve and pass the full path, not a relative path like '.'. This is required for correct operation."
+                            "You must always resolve and pass the full path, not a value like '.'. This is required for correct operation."
                         )
                     )
                 ]
@@ -1673,7 +1811,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
             return [
                 TextContent(
                     type="text",
-                    text=f"UNEXPECTED_ERROR: An unexpected exception occurred: {e}. AI_HINT: Check the server logs for more details or review your input for possible mistakes."
+                    text=ai_hint_unexpected_call_tool(e)
                 )
             ]
     except ValueError as ve:
