@@ -151,7 +151,8 @@ https://github.com/user-attachments/assets/4d218e5e-906c-4d24-abc3-09ab0acdc1d0
    -  Start writing Epic Specs and User Stories with `✒️ Agile Writer`
    -  After your confirmation, it will auto-switch to `✏️ Agile Architect` and write Epic Design
    -  After next confirmation, it will auto-switch to `🖊️ Agile Planner` and write Epic Tasks
-   -  After final comfirmation, it will auto-switch to `🖋️ Agile Dev` and orchestrate Epic Code writing, followed by Epic Review of each commit (you might want to direct native `💻 Code` to commit results before task completion).
+   -  After final comfirmation, it will auto-switch to `🖋️ Agile Dev` and orchestrate Epic Code writing, followed by Epic Review of each commit.
+     - ℹ️ If you're not using the `ai_edit` tool, you might want to direct native `💻 Code` to commit results before task completion to avoid breaking self code review workflow upstream in `🖋️ Agile Dev` 
 
 </details>
 
