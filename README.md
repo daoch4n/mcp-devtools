@@ -683,6 +683,8 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   - Still include critical context; do not rely solely on chat history.
   - Use this to refine a change made in the immediately previous run.
 
+> Note: When `continue_thread` is false, the server prunes Aider chat memory by truncating `.aider.chat.history.md` in the repository root before invoking Aider.
+
 ### `aider_status`
 - **Description:** Check the status of Aider and its environment. Use this to:
   1. Verify Aider is correctly installed
