@@ -359,6 +359,10 @@ class GitDiff(BaseModel):
         None,
         description="Optional. If omitted, behaves like `git diff` (worktree vs index). Pass 'HEAD' or another ref to compare against a commit or branch."
     )
+    path: Optional[str] = Field(
+        None,
+        description="Optional. Limit the diff to a specific file or directory path."
+    )
 
 class GitCommit(BaseModel):
     """
@@ -525,20 +529,25 @@ def git_status(repo: git.Repo) -> str:
     return repo.git.status()
 
 
-def git_diff(repo: git.Repo, target: Optional[str] = None) -> str:
+def git_diff(repo: git.Repo, target: Optional[str] = None, path: Optional[str] = None) -> str:
     """
     Shows differences in the working directory. If target is None, shows worktree vs index.
     If target is provided, shows differences against that target.
+    If path is provided, limits the diff to that specific file or directory.
 
     Args:
         repo: The Git repository object.
         target: Optional. The target (branch, commit hash, etc.) to diff against.
                 If None, behaves like `git diff` (worktree vs index).
+        path: Optional. Limit the diff to a specific file or directory path.
 
     Returns:
         A string representing the output of `git diff` or `git diff <target>`.
     """
-    return repo.git.diff() if target is None else repo.git.diff(target)
+    if target is None:
+        return repo.git.diff() if path is None else repo.git.diff('--', path)
+    else:
+        return repo.git.diff(target) if path is None else repo.git.diff(target, '--', path)
 
 def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
     """
@@ -1274,7 +1283,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.DIFF,
-            description="Shows differences in the working directory. By default (without target), shows worktree vs index like `git diff`. Pass target='HEAD' for previous 'all changes vs HEAD' behavior.",
+            description="Shows differences in the working directory. By default (without target), shows worktree vs index like `git diff`. Pass target='HEAD' for previous 'all changes vs HEAD' behavior. Optional path filter available.",
             inputSchema=GitDiff.model_json_schema(),
         ),
         Tool(
@@ -1486,8 +1495,11 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 case GitTools.DIFF:
                     repo = git.Repo(repo_path)
                     target = arguments.get("target")
-                    diff = git_diff(repo, target)
+                    path = arguments.get("path")
+                    diff = git_diff(repo, target, path)
                     diff_header = f"Diff with {target}:" if target else "Diff of unstaged changes (worktree vs index):"
+                    if path:
+                        diff_header = diff_header[:-1] + f" for path {path}:"
                     return [TextContent(
                         type="text",
                         text=f"{diff_header}\n{diff}"
