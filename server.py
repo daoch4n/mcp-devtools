@@ -1109,17 +1109,6 @@ async def ai_edit(
         stdout = stdout_bytes.decode('utf-8')
         stderr = stderr_bytes.decode('utf-8')
 
-        await session.send_progress_notification(
-            "ai_edit",
-            0.5,
-            None
-        )
-        if stderr:
-            await session.send_progress_notification(
-                "ai_edit",
-                0.5,
-                None
-            )
 
         return_code = process.returncode
         if return_code != 0:
