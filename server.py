@@ -42,7 +42,7 @@ Content: TypeAlias = TextContent | ImageContent | EmbeddedResource # type: ignor
 from enum import Enum
 import git # type: ignore
 from git.exc import GitCommandError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 import asyncio
 import tempfile
 import os
@@ -426,7 +426,12 @@ class GitMerge(BaseModel):
     status: bool = Field(False, description="If true, preview merge status without changing the repo: reports whether a merge is in progress and conflicted files.")
     continue_: bool = Field(False, alias="continue", description="If true, finalize a merge after conflicts have been resolved. Requires that a merge is in progress and all conflicts are staged.")
 
-
+    @model_validator(mode="after")
+    def validate_source_requirement(self) -> "GitMerge":
+        # source is required unless abort, status, or continue is true
+        if not self.source and not (self.abort or self.status or self.continue_):
+            raise ValueError("'source' is required unless abort, status, or continue is true")
+        return self
 
 class GitApplyDiff(BaseModel):
     """
