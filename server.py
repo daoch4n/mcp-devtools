@@ -729,15 +729,15 @@ def git_merge(
                 flags.append("ff-only")
             suffix = f" ({', '.join(flags)})" if flags else ""
             return f"Merged {source} into {current}{suffix}"
-    except git.GitCommandError as e:
-        # Check for merge conflicts
-        conflicts = repo.index.unmerged_blobs()
-        if conflicts:
-            files = ", ".join(sorted(conflicts.keys()))
-            return f"MERGE_CONFLICT: Conflicts in files: {files}. Resolve conflicts and commit or abort."
-        else:
-            err = getattr(e, 'stderr', None) or str(e)
-            return f"MERGE_ERROR: {err}"
+        except git.GitCommandError as e:
+            # Check for merge conflicts
+            conflicts = repo.index.unmerged_blobs()
+            if conflicts:
+                files = ", ".join(sorted(conflicts.keys()))
+                return f"MERGE_CONFLICT: Conflicts in files: {files}. Resolve conflicts and commit or abort."
+            else:
+                err = getattr(e, 'stderr', None) or str(e)
+                return f"MERGE_ERROR: {err}"
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
