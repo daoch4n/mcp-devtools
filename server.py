@@ -70,48 +70,65 @@ logging.getLogger().setLevel(logging.DEBUG)
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
     """
-    Read the Aider chat history, extract the last session, clean SEARCH/REPLACE noise,
-    and return the snippet or None if unavailable.
+    Read the Aider chat history, extract the last session, clean it,
+    and return the last assistant reply.
     """
     try:
         history_path = Path(directory_path) / ".aider.chat.history.md"
         if not history_path.exists():
             return None
         history_content = history_path.read_text(encoding="utf-8", errors="ignore")
-        
+
         # Find the last session
         anchor = "# aider chat started at"
         last_anchor_pos = history_content.rfind(anchor)
         session_content = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
-        
-        # Find the last ASSISTANT block in the session
-        assistant_blocks = re.findall(r"## ASSISTANT.*?(?=\n## |\Z)", session_content, re.DOTALL)
+
+        # Standard format
+        assistant_blocks = re.findall(r"## ASSISTANT\s*(.*?)(?=\n## USER|\n## ASSISTANT|\Z)", session_content, re.DOTALL)
         if assistant_blocks:
-            # Use the last ASSISTANT block
-            snippet = assistant_blocks[-1]
-        else:
-            # Fallback to the entire session if no ASSISTANT block found
-            snippet = session_content
+            return assistant_blocks[-1].strip()
+
+        # Fallback format
         
-        # Remove noisy lines but keep useful ones
-        lines: List[str] = snippet.split('\n')
-        cleaned_lines: List[str] = []
-        
-        for line in lines:
-            # Remove session header
-            if line.startswith("# aider chat started at"):
-                continue
-            # Remove command invocation lines
-            if line.startswith("> ") and ("/aider" in line or "Aider v" in line or "Git repo:" in line):
-                continue
-            cleaned_lines.append(line)
-        
-        result = '\n'.join(cleaned_lines).strip()
-        
-        # Remove SEARCH/REPLACE noise blocks using regex
-        result = re.sub(r"<<<<<<< SEARCH.*?>>>>>>> REPLACE", "", result, flags=re.DOTALL)
+        # Extract preamble (between user prompt and diff)
+        preamble = ""
+        preamble_match = re.search(r'(?:####.*\n)+(.*?)(?=<<<<<<< SEARCH)', session_content, re.DOTALL)
+        if preamble_match:
+             preamble_text = preamble_match.group(1)
+             preamble_lines = preamble_text.strip().split('\n')
+             cleaned_preamble_lines = []
+             for line in preamble_lines:
+                 stripped = line.strip()
+                 if re.fullmatch(r'[\w\-\./]+\.[\w\-\./]+', stripped):
+                     continue # remove filenames
+                 if stripped.startswith('```'):
+                     continue # remove code fences
+                 cleaned_preamble_lines.append(line)
+             preamble = '\n'.join(cleaned_preamble_lines).strip()
+
+        # Extract summary (after diff)
+        summary = ""
+        summary_match = re.search(r'>>>>>>> REPLACE\s*\n(.*)', session_content, re.DOTALL)
+        if summary_match:
+            summary_text = summary_match.group(1)
+            summary_lines = summary_text.strip().split('\n')
+            cleaned_summary_lines = []
+            for line in summary_lines:
+                stripped = line.strip()
+                if stripped.startswith('>'):
+                    continue
+                if stripped in ('```', ''):
+                    continue
+                cleaned_summary_lines.append(line)
+            summary = '\n'.join(cleaned_summary_lines).strip()
+
+        # Combine parts
+        parts = [p for p in [preamble, summary] if p]
+        result = '\n\n'.join(parts)
         
         return result or None
+
     except Exception as e:
         logger.debug(f"Failed to get Aider chat history: {e}")
         return None
