@@ -103,13 +103,14 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
             # Keep useful lines
             if "> Model:" in line or "> Tokens:" in line or "> Commit" in line:
                 cleaned_lines.append(line)
-            # Remove SEARCH/REPLACE noise blocks
-            elif "<<<<<<< SEARCH" in line or ">>>>>>> REPLACE" in line:
-                continue
             else:
                 cleaned_lines.append(line)
         
         result = '\n'.join(cleaned_lines).strip()
+        
+        # Remove SEARCH/REPLACE noise blocks using regex
+        result = re.sub(r"<<<<<<< SEARCH.*?>>>>>>> REPLACE", "", result, flags=re.DOTALL)
+        
         return result or None
     except Exception as e:
         logger.debug(f"Failed to get Aider chat history: {e}")
@@ -1177,6 +1178,11 @@ async def ai_edit_files(
                     else:
                         result_message += "\n\nNo new commit detected or no changes made by Aider."
 
+                    # Append the last Aider reply from chat history
+                    last_reply = _get_last_aider_reply(directory_path)
+                    if last_reply:
+                        result_message += f"\n\nAider's last reply:\n{last_reply}"
+
                 except git.InvalidGitRepositoryError:
                     result_message += "\n\nCould not access Git repository to get diff after Aider run."
                 except Exception as e:
@@ -1185,9 +1191,11 @@ async def ai_edit_files(
                  result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
                                      f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
                                      f"STDOUT:\n{stdout}")
-                 last_reply = _get_last_aider_reply(directory_path)
-                 if last_reply:
-                    result_message += f"\n\nAider's last reply:\n{last_reply}"
+            
+            # Append the last Aider reply from chat history in all cases
+            last_reply = _get_last_aider_reply(directory_path)
+            if last_reply:
+                result_message += f"\n\nAider's last reply:\n{last_reply}"
 
             return result_message
 
