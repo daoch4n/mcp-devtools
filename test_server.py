@@ -223,6 +223,44 @@ def test_git_merge_into_target(temp_git_repo):
     assert (repo_path / 'dev.txt').exists()
     assert repo.active_branch.name == current
 
+def test_git_merge_ff_only_non_ff_fails(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    # Create dev branch and commit change
+    repo.git.checkout('-b', 'dev')
+    (repo_path / 'dev.txt').write_text('dev work')
+    repo.index.add(['dev.txt'])
+    repo.index.commit('dev commit')
+    # Switch back to main and create a divergent commit so fast-forward is impossible
+    repo.git.checkout('main')
+    (repo_path / 'main.txt').write_text('main work')
+    repo.index.add(['main.txt'])
+    repo.index.commit('main commit')
+    msg = git_merge(repo, 'dev', ff_only=True)
+    assert 'MERGE_ERROR' in msg or 'MERGE_CONFLICT' in msg
+    # dev change should not be present on main because ff-only prevented merge
+    assert not (repo_path / 'dev.txt').exists() or 'Not possible to fast-forward' in msg
+
+def test_git_merge_conflict_detection(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    # Create a file and commit on main
+    (repo_path / 'conflict.txt').write_text('line1\n')
+    repo.index.add(['conflict.txt'])
+    repo.index.commit('init conflict file')
+    # Create branch and modify same line
+    repo.git.checkout('-b', 'feat')
+    (repo_path / 'conflict.txt').write_text('line1-feat\n')
+    repo.index.add(['conflict.txt'])
+    repo.index.commit('feat change')
+    # Go back to main and modify same line differently
+    repo.git.checkout('main')
+    (repo_path / 'conflict.txt').write_text('line1-main\n')
+    repo.index.add(['conflict.txt'])
+    repo.index.commit('main change')
+    # Try to merge feat into main to cause a conflict
+    msg = git_merge(repo, 'feat')
+    assert msg.startswith('MERGE_CONFLICT:')
+    assert 'conflict.txt' in msg
+
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
     commit_sha = repo.head.commit.hexsha
@@ -569,6 +607,11 @@ async def test_call_tool(
     mock_git_merge.return_value = 'Merged dev into main'
     result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","no_ff": True, "squash": False, "commit_message":"Merge dev"}))
     assert result[0].text == 'Merged dev into main'
+    
+    # Test GitTools.MERGE with ff_only
+    mock_git_merge.return_value = 'MERGE_ERROR: Fast-forward only'
+    result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","ff_only": True}))
+    assert result[0].text == 'MERGE_ERROR: Fast-forward only'
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock

@@ -644,6 +644,7 @@ def git_merge(
     repo: git.Repo,
     source: str,
     target: Optional[str] = None,
+    ff_only: bool = False,
     no_ff: bool = False,
     squash: bool = False,
     commit_message: Optional[str] = None,
@@ -652,16 +653,18 @@ def git_merge(
 
     Behavior:
     - If target is provided, checkout that branch first.
-    - Supports --no-ff, --squash, and an optional commit_message. For squash, if commit_message is provided, a commit will be created after the squash.
-    - Returns a descriptive message. On errors (e.g., conflicts), returns a string starting with 'MERGE_ERROR:'.
+    - Supports --ff-only, --no-ff, --squash, and an optional commit_message. For squash, if commit_message is provided, a commit will be created after the squash.
+    - Returns a descriptive message. On errors (e.g., conflicts), returns a string starting with 'MERGE_ERROR:' or 'MERGE_CONFLICT:'.
     """
     try:
         if target:
             repo.git.checkout(target)
         args: list[str] = []
-        if no_ff:
+        # ff-only takes precedence over no-ff
+        if ff_only:
+            args.append("--ff-only")
+        elif no_ff:
             args.append("--no-ff")
-        # If ff-only were to be added later, it would take precedence over no_ff
         if squash:
             args.append("--squash")
         if commit_message and not squash:
@@ -679,10 +682,19 @@ def git_merge(
             flags.append("squash")
         if no_ff:
             flags.append("no-ff")
+        if ff_only:
+            flags.append("ff-only")
         suffix = f" ({', '.join(flags)})" if flags else ""
         return f"Merged {source} into {current}{suffix}"
     except git.GitCommandError as e:
-        return f"MERGE_ERROR: {str(e)}"
+        # Check for merge conflicts
+        conflicts = repo.index.unmerged_blobs()
+        if conflicts:
+            files = ", ".join(sorted(conflicts.keys()))
+            return f"MERGE_CONFLICT: Conflicts in files: {files}. Resolve conflicts and commit or abort."
+        else:
+            err = getattr(e, 'stderr', None) or str(e)
+            return f"MERGE_ERROR: {err}"
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
@@ -1417,7 +1429,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.MERGE,
-            description="Merge a source branch/ref into the current or specified target branch. Supports --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided.",
+            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided.",
             inputSchema=GitMerge.model_json_schema(),
         )
     ]
@@ -1679,6 +1691,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         repo,
                         arguments["source"],
                         arguments.get("target"),
+                        arguments.get("ff_only", False),
                         arguments.get("no_ff", False),
                         arguments.get("squash", False),
                         arguments.get("commit_message")

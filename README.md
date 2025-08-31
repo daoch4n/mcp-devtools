@@ -380,7 +380,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `git_merge`
-- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided.
+- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. On conflicts, returns MERGE_CONFLICT with a list of files.
 - **Input Schema:**
   ```json
   {
@@ -397,6 +397,10 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       "target": {
         "type": "string",
         "description": "Optional. The target branch to merge into. If omitted, merges into the current branch."
+      },
+      "ff_only": {
+        "type": "boolean",
+        "description": "If true, enforce fast-forward only (passes --ff-only); takes precedence over no_ff."
       },
       "no_ff": {
         "type": "boolean",
