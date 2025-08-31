@@ -388,7 +388,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `git_show`
-- **Description:** Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit.
+- **Description:** Shows the metadata (author, date, message) and the diff of a specific commit or commit range (A..B or A...B). This allows inspection of changes introduced by a particular commit or range of commits. Optionally filter by path or show only metadata/diff.
 - **Input Schema:**
   ```json
   {
@@ -400,7 +400,19 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       },
       "revision": {
         "type": "string",
-        "description": "The commit hash or reference (e.g., 'HEAD', 'main', 'abc1234') to show details for."
+        "description": "The commit hash, reference (e.g., 'HEAD', 'main', 'abc1234'), or range (A..B or A...B) to show details for."
+      },
+      "path": {
+        "type": "string",
+        "description": "Optional. Filter the output to show only changes for the specified file path."
+      },
+      "show_metadata_only": {
+        "type": "boolean",
+        "description": "Optional. If true, shows only the commit metadata (author, date, message) without the diff."
+      },
+      "show_diff_only": {
+        "type": "boolean",
+        "description": "Optional. If true, shows only the diff without the commit metadata."
       }
     },
     "required": [
