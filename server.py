@@ -357,7 +357,7 @@ def prepare_aider_command(
                     command.append(f"--no-{arg_key}")
             
             elif isinstance(value, list):
-                for item in value:
+                for item in cast(List[Any], value):
                     command.append(f"--{arg_key}")
                     command.append(str(item))
             
@@ -1111,14 +1111,14 @@ async def ai_edit(
 
         await session.send_progress_notification(
             "ai_edit",
-            0.5,
-            f"AIDER STDOUT:\n{stdout}"
+            f"AIDER STDOUT:\n{stdout}",
+            0.5
         )
         if stderr:
             await session.send_progress_notification(
                 "ai_edit",
-                0.5,
-                f"AIDER STDERR:\n{stderr}"
+                f"AIDER STDERR:\n{stderr}",
+                0.5
             )
 
         return_code = process.returncode
@@ -1288,7 +1288,7 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server = Server("mcp-git")
+mcp_server: Server = Server("mcp-git")
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -1681,7 +1681,7 @@ async def handle_sse(request: Request):
     Returns:
         A Starlette Response object for the SSE connection.
     """
-    async with sse_transport.connect_sse(request.scope, request.receive, cast(Send, request._send)) as (read_stream, write_stream):
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
