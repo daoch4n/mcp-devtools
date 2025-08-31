@@ -94,28 +94,33 @@ def test_git_status(temp_git_repo):
 
 def test_git_diff_scenarios(temp_git_repo):
     repo, repo_path = temp_git_repo
-    
-    # Scenario 1: Unstaged change
+
+    # Scenario 1: Unstaged modification to a tracked file
     (repo_path / "initial_file.txt").write_text("modified content")
-    diff = git_diff(repo, None)
-    assert "-initial content" in diff
-    assert "+modified content" in diff
-    
-    # Commit the change to stage
-    repo.index.add(["initial_file.txt"])
-    
-    # Add a new unstaged file
-    (repo_path / "new_file.txt").write_text("new content")
-    
-    # Scenario 2: git_diff with None should only show unstaged changes
     diff_unstaged = git_diff(repo, None)
-    assert "new_file.txt" in diff_unstaged
-    assert "initial_file.txt" not in diff_unstaged  # This file is staged, not unstaged
-    
-    # Scenario 3: git_diff with 'HEAD' should show all changes (staged and unstaged)
-    diff_head = git_diff(repo, 'HEAD')
-    assert "initial_file.txt" in diff_head  # Staged changes
-    assert "new_file.txt" in diff_head      # Unstaged changes
+    assert "-initial content" in diff_unstaged
+    assert "+modified content" in diff_unstaged
+
+    # Stage the change
+    repo.index.add(["initial_file.txt"])
+
+    # Scenario 2: No unstaged changes now; git_diff(None) should be empty
+    diff_after_stage = git_diff(repo, None)
+    assert diff_after_stage == ""  # no unstaged changes
+
+    # git_diff('HEAD') should show the staged change
+    diff_head_after_stage = git_diff(repo, 'HEAD')
+    assert "+modified content" in diff_head_after_stage
+
+    # Scenario 3: Make another unstaged modification
+    (repo_path / "initial_file.txt").write_text("modified again")
+    diff_unstaged_again = git_diff(repo, None)
+    assert "-modified content" in diff_unstaged_again
+    assert "+modified again" in diff_unstaged_again
+
+    # git_diff('HEAD') should reflect the net change from HEAD to worktree
+    diff_head_final = git_diff(repo, 'HEAD')
+    assert "+modified again" in diff_head_final
 
 def test_git_diff_staged(temp_git_repo):
     repo, repo_path = temp_git_repo
