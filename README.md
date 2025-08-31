@@ -494,6 +494,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 
+### `write_to_file`
 - **Description:** Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. If it exists, its content will be completely overwritten. Includes a check to ensure content was written correctly and generates a diff.
 - **Input Schema:**
   ```json
