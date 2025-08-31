@@ -97,7 +97,7 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         if preamble_match:
              preamble_text = preamble_match.group(1)
              preamble_lines = preamble_text.strip().split('\n')
-             cleaned_preamble_lines = []
+             cleaned_preamble_lines: List[str] = []
              for line in preamble_lines:
                  stripped = line.strip()
                  if re.fullmatch(r'[\w\-\./]+\.[\w\-\./]+', stripped):
@@ -113,7 +113,7 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         if summary_match:
             summary_text = summary_match.group(1)
             summary_lines = summary_text.strip().split('\n')
-            cleaned_summary_lines = []
+            cleaned_summary_lines: List[str] = []
             for line in summary_lines:
                 stripped = line.strip()
                 if stripped.startswith('>'):
