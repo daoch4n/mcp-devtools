@@ -1192,10 +1192,12 @@ async def ai_edit_files(
                                      f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
                                      f"STDOUT:\n{stdout}")
             
-            # Append the last Aider reply from chat history in all cases
-            last_reply = _get_last_aider_reply(directory_path)
-            if last_reply:
-                result_message += f"\n\nAider's last reply:\n{last_reply}"
+            # Append the last Aider reply from chat history only when outcome is unclear
+            # (i.e., when 'Applied edit to' is not in stdout)
+            if "Applied edit to" not in stdout:
+                last_reply = _get_last_aider_reply(directory_path)
+                if last_reply:
+                    result_message += f"\n\nAider's last reply:\n{last_reply}"
 
             return result_message
 
