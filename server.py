@@ -432,6 +432,10 @@ class WriteToFile(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     file_path: str = Field(description="The path to the file to write to, relative to the repository's working directory. The file will be created if it doesn't exist, or overwritten if it does.")
     content: str = Field(description="The string content to write to the specified file.")
+    overwrite: bool = Field(
+        default=False,
+        description="If true, allows overwriting an existing file. Defaults to false."
+    )
 
 class ExecuteCommand(BaseModel):
     """
@@ -799,7 +803,7 @@ async def _run_tsc_if_applicable(repo_path: str, file_path: str) -> str:
     return ""
 
 
-async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
+async def write_to_file_content(repo_path: str, file_path: str, content: str, overwrite: bool = False) -> str:
     """
     Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.
     Includes a check to ensure the content was written correctly and generates a diff.
@@ -808,6 +812,7 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
         repo_path: The path to the repository's working directory.
         file_path: The path to the file to write to, relative to the repository.
         content: The string content to write to the file.
+        overwrite: If True, allows overwriting existing files. Defaults to False.
 
     Returns:
         A string indicating the success of the write operation, including diff and TSC output,
@@ -815,6 +820,10 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str) ->
     """
     try:
         full_file_path = Path(repo_path) / file_path
+        
+        # Check if file exists and overwrite protection is enabled
+        if full_file_path.exists() and not overwrite:
+            return f"OVERWRITE_PROTECTED: File already exists: {file_path}. Pass overwrite=true to overwrite."
         
         original_content = ""
         file_existed = full_file_path.exists()
@@ -1299,7 +1308,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.WRITE_TO_FILE,
-            description="Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. If it exists, its content will be completely overwritten. Includes a check to ensure content was written correctly and generates a diff.",
+            description="Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. Existing files are never overwritten unless overwrite=true is explicitly provided. Includes a check to ensure content was written correctly and generates a diff.",
             inputSchema=WriteToFile.model_json_schema(),
         ),
         Tool(
@@ -1547,7 +1556,8 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     result = await write_to_file_content(
                         repo_path=str(repo_path),
                         file_path=arguments["file_path"],
-                        content=arguments["content"]
+                        content=arguments["content"],
+                        overwrite=arguments.get("overwrite", False)
                     )
                     logging.debug(f"Content before TextContent: {result}")
                     return [TextContent(

@@ -268,9 +268,15 @@ async def test_write_to_file_content(temp_git_repo):
     assert (repo_path / file_path).exists()
     assert (repo_path / file_path).read_text() == content
 
-    # Test overwriting existing file
+    # Test overwrite protection
     updated_content = "Updated content."
-    result_overwrite = await write_to_file_content(str(repo_path), file_path, updated_content)
+    result_protected = await write_to_file_content(str(repo_path), file_path, updated_content)
+    assert "OVERWRITE_PROTECTED: File already exists: new_dir/new_file.txt." in result_protected
+    # File content should remain unchanged
+    assert (repo_path / file_path).read_text() == content
+
+    # Test overwriting existing file with overwrite=True
+    result_overwrite = await write_to_file_content(str(repo_path), file_path, updated_content, overwrite=True)
     assert "Diff:" in result_overwrite
     assert "-Hello, world!" in result_overwrite
     assert "+Updated content." in result_overwrite
