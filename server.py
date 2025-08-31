@@ -139,6 +139,13 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         while final_text_lines and not final_text_lines[-1].strip():
             final_text_lines.pop()
         
+        # Hotfix: If the first line is part of a numbered or bulleted list
+        # (e.g., "1. " or "- "), it's likely part of the prompt, so skip it.
+        if final_text_lines:
+            first_line_stripped = final_text_lines[0].strip()
+            if re.match(r'^\d+\.\s', first_line_stripped) or first_line_stripped.startswith('- '):
+                final_text_lines.pop(0)
+
         # Join the collected lines and perform final cleanup.
         full_reply = '\n'.join(final_text_lines)
         
