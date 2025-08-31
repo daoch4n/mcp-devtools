@@ -1111,14 +1111,14 @@ async def ai_edit(
 
         await session.send_progress_notification(
             "ai_edit",
-            f"AIDER STDOUT:\n{stdout}",
-            0.5
+            0.5,
+            f"AIDER STDOUT:\n{stdout}"
         )
         if stderr:
             await session.send_progress_notification(
                 "ai_edit",
-                f"AIDER STDERR:\n{stderr}",
-                0.5
+                0.5,
+                f"AIDER STDERR:\n{stderr}"
             )
 
         return_code = process.returncode
