@@ -40,6 +40,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from server import (
     git_status, git_diff, git_stage_and_commit,
     git_log, git_branch, git_show,
+    git_merge,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
@@ -194,6 +195,33 @@ def test_git_branch_list(temp_git_repo):
     listing = git_branch(repo, 'list')
     assert 'a' in listing and 'b' in listing
     assert '* b' in listing or '*  b' in listing or '* b' in listing.replace('  ', ' ')
+
+def test_git_merge_fast_forward(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    # Create feature branch and commit a change
+    orig_branch = repo.active_branch.name
+    repo.git.checkout('-b', 'feat')
+    (repo_path / 'feat.txt').write_text('feature work')
+    repo.index.add(['feat.txt'])
+    repo.index.commit('feat commit')
+    # Switch back to original and merge
+    repo.git.checkout(orig_branch)
+    msg = git_merge(repo, 'feat')
+    assert 'Merged feat into' in msg
+    assert (repo_path / 'feat.txt').exists()
+    assert repo.active_branch.name == orig_branch
+
+def test_git_merge_into_target(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    current = repo.active_branch.name
+    repo.git.checkout('-b', 'dev')
+    (repo_path / 'dev.txt').write_text('dev work')
+    repo.index.add(['dev.txt'])
+    repo.index.commit('dev commit')
+    msg = git_merge(repo, 'dev', target=current)
+    assert 'Merged dev into' in msg
+    assert (repo_path / 'dev.txt').exists()
+    assert repo.active_branch.name == current
 
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -457,6 +485,7 @@ async def test_list_tools():
 @patch('server.git_stage_and_commit')
 @patch('server.git_log')
 @patch('server.git_branch')
+@patch('server.git_merge')
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.git_read_file')
@@ -465,6 +494,7 @@ async def test_list_tools():
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
+    mock_git_merge,
     mock_git_branch, mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
@@ -534,6 +564,11 @@ async def test_call_tool(
     mock_git_show.return_value = "Show output"
     result = list(await call_tool(GitTools.SHOW.value, {"repo_path": "/tmp/repo", "revision": "HEAD"})) # Cast to list
     assert result[0].text == "Show output"
+
+    # Test GitTools.MERGE
+    mock_git_merge.return_value = 'Merged dev into main'
+    result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","no_ff": True, "squash": False, "commit_message":"Merge dev"}))
+    assert result[0].text == 'Merged dev into main'
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock

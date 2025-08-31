@@ -379,6 +379,45 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   }
   ```
 
+### `git_merge`
+- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided.
+- **Input Schema:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "repo_path": {
+        "type": "string",
+        "description": "The absolute path to the Git repository's working directory."
+      },
+      "source": {
+        "type": "string",
+        "description": "The source branch or commit to merge from."
+      },
+      "target": {
+        "type": "string",
+        "description": "Optional. The target branch to merge into. If omitted, merges into the current branch."
+      },
+      "no_ff": {
+        "type": "boolean",
+        "description": "If true, create a merge commit even if the merge could be resolved as a fast-forward (passes --no-ff)."
+      },
+      "squash": {
+        "type": "boolean",
+        "description": "If true, perform a squash merge (passes --squash). If commit_message is provided, a commit will be created after the squash."
+      },
+      "commit_message": {
+        "type": "string",
+        "description": "Optional. Commit message to use when creating a merge commit (ignored for fast-forward). If squash=true and a message is provided, it will be used for the post-squash commit."
+      }
+    },
+    "required": [
+      "repo_path",
+      "source"
+    ]
+  }
+  ```
+
 ### `git_show`
 - **Description:** Shows the metadata (author, date, message) and the diff of a specific commit or commit range (A..B or A...B). This allows inspection of changes introduced by a particular commit or range of commits. Optionally filter by path or show only metadata/diff.
 - **Input Schema:**

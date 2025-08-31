@@ -411,6 +411,16 @@ class GitShow(BaseModel):
         description="Optional. If true, only show diff content without commit metadata. Defaults to false. If both show_metadata_only and show_diff_only are true, both sections will be included."
     )
 
+
+class GitMerge(BaseModel):
+    """Input schema for the `git_merge` tool."""
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    source: str = Field(description="The source branch or commit to merge from.")
+    target: Optional[str] = Field(None, description="Optional. The target branch to merge into. If omitted, merges into the current branch.")
+    no_ff: bool = Field(False, description="If true, create a merge commit even if the merge could be resolved as a fast-forward (passes --no-ff).")
+    squash: bool = Field(False, description="If true, perform a squash merge (passes --squash). If commit_message is provided, a commit will be created after the squash.")
+    commit_message: Optional[str] = Field(None, description="Optional. Commit message to use when creating a merge commit (ignored for fast-forward). If squash=true and a message is provided, it will be used for the post-squash commit.")
+
 class GitApplyDiff(BaseModel):
     """
     Represents the input schema for the `git_apply_diff` tool.
@@ -506,6 +516,7 @@ class GitTools(str, Enum):
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
     AIDER_STATUS = "aider_status"
+    MERGE = "git_merge"
 
 def git_status(repo: git.Repo) -> str:
     """
@@ -628,6 +639,50 @@ def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base
         return "Branches:\n" + "\n".join(branches)
     else:
         raise ValueError("Invalid action. Must be 'create', 'checkout', 'rename', or 'list'.")
+
+def git_merge(
+    repo: git.Repo,
+    source: str,
+    target: Optional[str] = None,
+    no_ff: bool = False,
+    squash: bool = False,
+    commit_message: Optional[str] = None,
+) -> str:
+    """Merge a source ref into the current or specified target branch.
+
+    Behavior:
+    - If target is provided, checkout that branch first.
+    - Supports --no-ff, --squash, and an optional commit_message. For squash, if commit_message is provided, a commit will be created after the squash.
+    - Returns a descriptive message. On errors (e.g., conflicts), returns a string starting with 'MERGE_ERROR:'.
+    """
+    try:
+        if target:
+            repo.git.checkout(target)
+        args: list[str] = []
+        if no_ff:
+            args.append("--no-ff")
+        # If ff-only were to be added later, it would take precedence over no_ff
+        if squash:
+            args.append("--squash")
+        if commit_message and not squash:
+            args.extend(["-m", commit_message])
+        # Source ref last
+        args.append(source)
+        # Call merge
+        repo.git.merge(*args)
+        # For squash merges, a commit is not created automatically; create one if a message is provided
+        if squash and commit_message:
+            repo.index.commit(commit_message)
+        current = repo.active_branch.name
+        flags = []
+        if squash:
+            flags.append("squash")
+        if no_ff:
+            flags.append("no-ff")
+        suffix = f" ({', '.join(flags)})" if flags else ""
+        return f"Merged {source} into {current}{suffix}"
+    except git.GitCommandError as e:
+        return f"MERGE_ERROR: {str(e)}"
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
@@ -1359,6 +1414,11 @@ async def list_tools() -> list[Tool]:
                         "3. View the current configuration\n"
                         "4. Diagnose connection or setup issues",
             inputSchema=AiderStatus.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.MERGE,
+            description="Merge a source branch/ref into the current or specified target branch. Supports --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided.",
+            inputSchema=GitMerge.model_json_schema(),
         )
     ]
 
@@ -1608,6 +1668,20 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     result = await aider_status_tool(
                         repo_path=str(repo_path),
                         check_environment=check_environment
+                    )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.MERGE:
+                    repo = git.Repo(repo_path)
+                    result = git_merge(
+                        repo,
+                        arguments["source"],
+                        arguments.get("target"),
+                        arguments.get("no_ff", False),
+                        arguments.get("squash", False),
+                        arguments.get("commit_message")
                     )
                     return [TextContent(
                         type="text",
