@@ -596,8 +596,7 @@ def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base
         if not branch_name:
             raise ValueError("branch_name is required for 'create' action")
         if base_branch:
-            repo.git.checkout(base_branch)
-            repo.create_head(branch_name)
+            repo.create_head(branch_name, base_branch)
             return f"Created branch '{branch_name}' from '{base_branch}'"
         else:
             repo.create_head(branch_name)
