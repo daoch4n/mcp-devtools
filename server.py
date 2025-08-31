@@ -584,13 +584,17 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
         )
     return log
 
-def git_branch(repo: git.Repo, action: str, branch_name: str, base_branch: str | None = None) -> str:
-    """Create or checkout a branch on the given repo.
+def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base_branch: str | None = None, new_name: str | None = None) -> str:
+    """Create, checkout, rename, or list branches on the given repo.
 
     - action='create': creates branch_name at base_branch (or current HEAD if None)
     - action='checkout': checks out branch_name
+    - action='rename': renames branch_name to new_name
+    - action='list': lists all branches with current branch marked
     """
     if action == 'create':
+        if not branch_name:
+            raise ValueError("branch_name is required for 'create' action")
         if base_branch:
             repo.git.checkout(base_branch)
             repo.create_head(branch_name)
@@ -599,10 +603,32 @@ def git_branch(repo: git.Repo, action: str, branch_name: str, base_branch: str |
             repo.create_head(branch_name)
             return f"Created branch '{branch_name}'"
     elif action == 'checkout':
+        if not branch_name:
+            raise ValueError("branch_name is required for 'checkout' action")
         repo.git.checkout(branch_name)
         return f"Switched to branch '{branch_name}'"
+    elif action == 'rename':
+        if not branch_name:
+            raise ValueError("branch_name is required for 'rename' action")
+        if not new_name:
+            raise ValueError("new_name is required for 'rename' action")
+        repo.git.branch('-m', branch_name, new_name)
+        return f"Renamed branch '{branch_name}' to '{new_name}'"
+    elif action == 'list':
+        branches = []
+        try:
+            current_branch = repo.active_branch.name
+        except TypeError:  # detached HEAD
+            current_branch = None
+            
+        for head in repo.heads:
+            if head.name == current_branch:
+                branches.append(f"* {head.name}")
+            else:
+                branches.append(f"  {head.name}")
+        return "Branches:\n" + "\n".join(branches)
     else:
-        raise ValueError("Invalid action. Must be 'create' or 'checkout'.")
+        raise ValueError("Invalid action. Must be 'create', 'checkout', 'rename', or 'list'.")
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
