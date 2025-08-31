@@ -41,7 +41,7 @@ from server import (
     git_status, git_diff_all, git_diff, git_stage_and_commit,
     git_reset, git_log, git_create_branch, git_checkout, git_show,
     git_apply_diff, git_read_file,
-    _generate_diff_output, _run_tsc_if_applicable, _search_and_replace_python_logic,
+    _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
     Starlette, Route, Mount, Response, ServerSession, ClientCapabilities, RootsCapability, ListRootsResult, TextContent,
     handle_sse, handle_post_message
@@ -374,11 +374,10 @@ async def test_list_tools():
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.git_read_file')
-@patch('server.search_and_replace_in_file', new_callable=AsyncMock)
 @patch('server.write_to_file_content', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
 async def test_call_tool(
-    mock_execute_custom_command, mock_write_to_file_content, mock_search_and_replace_in_file,
+    mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
     mock_git_checkout, mock_git_create_branch, mock_git_log, mock_git_reset,
     mock_git_stage_and_commit, mock_git_diff, mock_git_diff_all, mock_git_status, mock_git_repo
@@ -455,12 +454,6 @@ async def test_call_tool(
 
     # Removed test for GitTools.STAGE_ALL as the tool no longer exists
 
-    # Test GitTools.SEARCH_AND_REPLACE
-    mock_search_and_replace_in_file.return_value = "Search and replace done"
-    result = list(await call_tool(GitTools.SEARCH_AND_REPLACE.value, { # Cast to list
-        "repo_path": "/tmp/repo", "file_path": "f.txt", "search_string": "s", "replace_string": "r"
-    }))
-    assert result[0].text == "Search and replace done"
 
     # Test GitTools.WRITE_TO_FILE
     mock_write_to_file_content.return_value = "File written"
