@@ -382,23 +382,14 @@ class GitLog(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     max_count: int = Field(10, description="The maximum number of commit entries to retrieve. Defaults to 10.")
 
-class GitCreateBranch(BaseModel):
+class GitBranch(BaseModel):
     """
-    Represents the input schema for the `git_create_branch` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    branch_name: str = Field(description="The name of the new branch to create.")
-    base_branch: Optional[str] = Field(
-        None,
-        description="Optional. The name of the branch or commit hash to base the new branch on. If not provided, the new branch will be based on the current active branch."
-    )
-
-class GitCheckout(BaseModel):
-    """
-    Represents the input schema for the `git_checkout` tool.
+    Input schema for the `git_branch` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    branch_name: str = Field(description="The name of the branch to checkout.")
+    action: str = Field(description="The branch operation to perform: 'create' or 'checkout'.")
+    branch_name: str = Field(description="The name of the branch to create or checkout.")
+    base_branch: Optional[str] = Field(None, description="Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD.")
 
 class GitShow(BaseModel):
     """
@@ -506,8 +497,7 @@ class GitTools(str, Enum):
     DIFF = "git_diff"
     STAGE_AND_COMMIT = "git_stage_and_commit"
     LOG = "git_log"
-    CREATE_BRANCH = "git_create_branch"
-    CHECKOUT = "git_checkout"
+    BRANCH = "git_branch"
     SHOW = "git_show"
     APPLY_DIFF = "git_apply_diff"
     READ_FILE = "git_read_file"
@@ -593,40 +583,25 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
         )
     return log
 
-def git_create_branch(repo: git.Repo, branch_name: str, base_branch: str | None = None) -> str:
-    """
-    Creates a new branch in the repository.
+def git_branch(repo: git.Repo, action: str, branch_name: str, base_branch: str | None = None) -> str:
+    """Create or checkout a branch on the given repo.
 
-    Args:
-        repo: The Git repository object.
-        branch_name: The name of the new branch.
-        base_branch: Optional. The name of the branch to base the new branch on.
-                     If None, the new branch is based on the current active branch.
-
-    Returns:
-        A string indicating the successful creation of the branch.
+    - action='create': creates branch_name at base_branch (or current HEAD if None)
+    - action='checkout': checks out branch_name
     """
-    if base_branch:
-        base = repo.refs[base_branch]
+    if action == 'create':
+        if base_branch:
+            repo.git.checkout(base_branch)
+            repo.create_head(branch_name)
+            return f"Created branch '{branch_name}' from '{base_branch}'"
+        else:
+            repo.create_head(branch_name)
+            return f"Created branch '{branch_name}'"
+    elif action == 'checkout':
+        repo.git.checkout(branch_name)
+        return f"Switched to branch '{branch_name}'"
     else:
-        base = repo.active_branch
-
-    repo.create_head(branch_name, base)
-    return f"Created branch '{branch_name}' from '{base.name}'"
-
-def git_checkout(repo: git.Repo, branch_name: str) -> str:
-    """
-    Switches the current branch to the specified branch.
-
-    Args:
-        repo: The Git repository object.
-        branch_name: The name of the branch to checkout.
-
-    Returns:
-        A string indicating the successful checkout of the branch.
-    """
-    repo.git.checkout(branch_name)
-    return f"Switched to branch '{branch_name}'"
+        raise ValueError("Invalid action. Must be 'create' or 'checkout'.")
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
@@ -1297,14 +1272,9 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitLog.model_json_schema(),
         ),
         Tool(
-            name=GitTools.CREATE_BRANCH,
-            description="Creates a new Git branch with the specified name. Optionally, you can base the new branch on an existing branch or commit, otherwise it defaults to the current active branch.",
-            inputSchema=GitCreateBranch.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.CHECKOUT,
-            description="Switches the current active branch to the specified branch name. This updates the working directory to reflect the state of the target branch.",
-            inputSchema=GitCheckout.model_json_schema(),
+            name=GitTools.BRANCH,
+            description="Create or checkout a Git branch. Action may be 'create' with optional base_branch, or 'checkout'.",
+            inputSchema=GitBranch.model_json_schema(),
         ),
         Tool(
             name=GitTools.SHOW,
@@ -1518,20 +1488,14 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         type="text",
                         text="Commit history:\n" + "\n".join(log)
                     )]
-                case GitTools.CREATE_BRANCH:
+                case GitTools.BRANCH:
                     repo = git.Repo(repo_path)
-                    result = git_create_branch(
+                    result = git_branch(
                         repo,
+                        arguments["action"],
                         arguments["branch_name"],
                         arguments.get("base_branch")
                     )
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.CHECKOUT:
-                    repo = git.Repo(repo_path)
-                    result = git_checkout(repo, arguments["branch_name"])
                     return [TextContent(
                         type="text",
                         text=result
