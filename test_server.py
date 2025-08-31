@@ -211,6 +211,20 @@ def test_git_merge_fast_forward(temp_git_repo):
     assert (repo_path / 'feat.txt').exists()
     assert repo.active_branch.name == orig_branch
 
+def test_git_merge_dry_run_fast_forward(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    base_branch = repo.active_branch.name
+    repo.git.checkout('-b', 'feat')
+    (repo_path / 'feat_only.txt').write_text('feat work')
+    repo.index.add(['feat_only.txt'])
+    repo.index.commit('feat only')
+    repo.git.checkout(base_branch)
+    msg = git_merge(repo, 'feat', dry_run=True)
+    assert msg.startswith('DRY_RUN:')
+    assert 'Fast-forward' in msg
+    # Ensure no changes applied in dry run
+    assert not (repo_path / 'feat_only.txt').exists()
+
 def test_git_merge_into_target(temp_git_repo):
     repo, repo_path = temp_git_repo
     current = repo.active_branch.name
@@ -222,6 +236,25 @@ def test_git_merge_into_target(temp_git_repo):
     assert 'Merged dev into' in msg
     assert (repo_path / 'dev.txt').exists()
     assert repo.active_branch.name == current
+
+def test_git_merge_dry_run_merge_required(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    base_branch = repo.active_branch.name
+    # Create dev branch commit
+    repo.git.checkout('-b', 'dev')
+    (repo_path / 'dev.txt').write_text('dev work')
+    repo.index.add(['dev.txt'])
+    repo.index.commit('dev commit')
+    # Diverge main
+    repo.git.checkout(base_branch)
+    (repo_path / 'main_only.txt').write_text('main work')
+    repo.index.add(['main_only.txt'])
+    repo.index.commit('main commit')
+    msg = git_merge(repo, 'dev', dry_run=True)
+    assert msg.startswith('DRY_RUN:')
+    assert 'Merge commit required' in msg
+    # Repo unchanged for dry run
+    assert not (repo_path / 'dev.txt').exists()
 
 def test_git_merge_ff_only_non_ff_fails(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -260,6 +293,30 @@ def test_git_merge_conflict_detection(temp_git_repo):
     msg = git_merge(repo, 'feat')
     assert msg.startswith('MERGE_CONFLICT:')
     assert 'conflict.txt' in msg
+
+def test_git_merge_dry_run_conflicts(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    base_branch = repo.active_branch.name
+    # Create file and commit on base
+    (repo_path / 'conflict2.txt').write_text('line1\n')
+    repo.index.add(['conflict2.txt'])
+    repo.index.commit('init conflict2')
+    # Branch and modify same line
+    repo.git.checkout('-b', 'feat2')
+    (repo_path / 'conflict2.txt').write_text('line1-feat\n')
+    repo.index.add(['conflict2.txt'])
+    repo.index.commit('feat2 change')
+    # Back to base and modify same line differently
+    repo.git.checkout(base_branch)
+    (repo_path / 'conflict2.txt').write_text('line1-main\n')
+    repo.index.add(['conflict2.txt'])
+    repo.index.commit('main2 change')
+    msg = git_merge(repo, 'feat2', dry_run=True)
+    assert msg.startswith('DRY_RUN:')
+    assert 'conflict' in msg.lower()
+    # Ensure no changes applied
+    with open(repo_path / 'conflict2.txt', 'r') as f:
+        assert '<<<<<<<' not in f.read()
 
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -612,6 +669,11 @@ async def test_call_tool(
     mock_git_merge.return_value = 'MERGE_ERROR: Fast-forward only'
     result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","ff_only": True}))
     assert result[0].text == 'MERGE_ERROR: Fast-forward only'
+
+    # Test GitTools.MERGE with dry_run
+    mock_git_merge.return_value = 'DRY_RUN: Fast-forward merge would apply dev into main.'
+    result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","dry_run": True}))
+    assert result[0].text == 'DRY_RUN: Fast-forward merge would apply dev into main.'
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock

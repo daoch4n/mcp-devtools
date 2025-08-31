@@ -421,6 +421,7 @@ class GitMerge(BaseModel):
     no_ff: bool = Field(False, description="If true, create a merge commit even if the merge could be resolved as a fast-forward (passes --no-ff).")
     squash: bool = Field(False, description="If true, perform a squash merge (passes --squash). If commit_message is provided, a commit will be created after the squash.")
     commit_message: Optional[str] = Field(None, description="Optional. Commit message to use when creating a merge commit (ignored for fast-forward). If squash=true and a message is provided, it will be used for the post-squash commit.")
+    dry_run: bool = Field(False, description="If true, preview the merge without changing the repo. Reports whether fast-forward or a merge commit is needed; may indicate potential conflicts.")
 
 class GitApplyDiff(BaseModel):
     """
@@ -649,6 +650,7 @@ def git_merge(
     no_ff: bool = False,
     squash: bool = False,
     commit_message: Optional[str] = None,
+    dry_run: bool = False,
 ) -> str:
     """Merge a source ref into the current or specified target branch.
 
@@ -657,36 +659,76 @@ def git_merge(
     - Supports --ff-only, --no-ff, --squash, and an optional commit_message. For squash, if commit_message is provided, a commit will be created after the squash.
     - Returns a descriptive message. On errors (e.g., conflicts), returns a string starting with 'MERGE_ERROR:' or 'MERGE_CONFLICT:'.
     """
-    try:
-        if target:
-            repo.git.checkout(target)
-        args: list[str] = []
-        # ff-only takes precedence over no-ff
-        if ff_only:
-            args.append("--ff-only")
-        elif no_ff:
-            args.append("--no-ff")
-        if squash:
-            args.append("--squash")
-        if commit_message and not squash:
-            args.extend(["-m", commit_message])
-        # Source ref last
-        args.append(source)
-        # Call merge
-        repo.git.merge(*args)
-        # For squash merges, a commit is not created automatically; create one if a message is provided
-        if squash and commit_message:
-            repo.index.commit(commit_message)
-        current = repo.active_branch.name
-        flags = []
-        if squash:
-            flags.append("squash")
-        if no_ff:
-            flags.append("no-ff")
-        if ff_only:
-            flags.append("ff-only")
-        suffix = f" ({', '.join(flags)})" if flags else ""
-        return f"Merged {source} into {current}{suffix}"
+    if dry_run:
+        # Dry run mode - preview merge without changing repo
+        try:
+            # Determine target reference
+            target_ref = target or repo.active_branch.name
+            
+            # Resolve commits
+            tgt = repo.commit(target_ref)
+            src = repo.commit(source)
+            
+            # Compute merge base
+            base = repo.git.merge_base(tgt.hexsha, src.hexsha).split()[0]
+            
+            # Determine relationship using merge-base --is-ancestor
+            try:
+                repo.git.merge_base('--is-ancestor', tgt.hexsha, src.hexsha)
+                fast_forward = True
+            except GitCommandError:
+                fast_forward = False
+                
+            try:
+                repo.git.merge_base('--is-ancestor', src.hexsha, tgt.hexsha)
+                up_to_date = True
+            except GitCommandError:
+                up_to_date = False
+                
+            if up_to_date:
+                return f"DRY_RUN: Already up to date on {target_ref}."
+            elif fast_forward:
+                return f"DRY_RUN: Fast-forward merge would apply {source} into {target_ref}."
+            else:
+                # Use merge-tree to probe for conflicts without changing repo
+                out = repo.git.execute(['git', 'merge-tree', base, tgt.hexsha, src.hexsha])
+                conflicts_detected = ('<<<<<<<' in out or '>>>>>>>' in out)
+                suffix = 'conflicts detected' if conflicts_detected else 'no conflicts detected'
+                return f"DRY_RUN: Merge commit required to merge {source} into {target_ref}; {suffix}."
+        except Exception as e:
+            return f"DRY_RUN_ERROR: Failed to preview merge: {e}"
+    else:
+        # Normal merge mode
+        try:
+            if target:
+                repo.git.checkout(target)
+            args: list[str] = []
+            # ff-only takes precedence over no-ff
+            if ff_only:
+                args.append("--ff-only")
+            elif no_ff:
+                args.append("--no-ff")
+            if squash:
+                args.append("--squash")
+            if commit_message and not squash:
+                args.extend(["-m", commit_message])
+            # Source ref last
+            args.append(source)
+            # Call merge
+            repo.git.merge(*args)
+            # For squash merges, a commit is not created automatically; create one if a message is provided
+            if squash and commit_message:
+                repo.index.commit(commit_message)
+            current = repo.active_branch.name
+            flags = []
+            if squash:
+                flags.append("squash")
+            if no_ff:
+                flags.append("no-ff")
+            if ff_only:
+                flags.append("ff-only")
+            suffix = f" ({', '.join(flags)})" if flags else ""
+            return f"Merged {source} into {current}{suffix}"
     except git.GitCommandError as e:
         # Check for merge conflicts
         conflicts = repo.index.unmerged_blobs()
@@ -1430,7 +1472,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.MERGE,
-            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided.",
+            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome.",
             inputSchema=GitMerge.model_json_schema(),
         )
     ]
@@ -1695,7 +1737,8 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         arguments.get("ff_only", False),
                         arguments.get("no_ff", False),
                         arguments.get("squash", False),
-                        arguments.get("commit_message")
+                        arguments.get("commit_message"),
+                        arguments.get("dry_run", False)
                     )
                     return [TextContent(
                         type="text",

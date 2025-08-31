@@ -380,7 +380,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `git_merge`
-- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. On conflicts, returns MERGE_CONFLICT with a list of files.
+- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. On conflicts, returns MERGE_CONFLICT with a list of files.
 - **Input Schema:**
   ```json
   {
@@ -413,6 +413,10 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       "commit_message": {
         "type": "string",
         "description": "Optional. Commit message to use when creating a merge commit (ignored for fast-forward). If squash=true and a message is provided, it will be used for the post-squash commit."
+      },
+      "dry_run": {
+        "type": "boolean",
+        "description": "If true, preview the merge without changing the repo. Reports whether fast-forward or a merge commit is needed; may indicate potential conflicts."
       }
     },
     "required": [
