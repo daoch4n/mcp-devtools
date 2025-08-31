@@ -108,13 +108,6 @@ def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception)
         "Ensure the file exists and is readable, and that you passed an absolute repo_path."
     )
 
-def ai_hint_sed_error(e: Exception) -> str:
-    return (
-        "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: "
-        f"{e}. If your pattern contains special characters, prefer simpler patterns or rely on Python fallback. "
-        "Ensure the file exists and is writable, and pass an absolute repo_path."
-    )
-
 def ai_hint_write_error(repo_path: str, file_path: str, e: Exception) -> str:
     return (
         "UNEXPECTED_ERROR: Failed to write to file "
@@ -432,24 +425,6 @@ class GitReadFile(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     file_path: str = Field(description="The path to the file to read, relative to the repository's working directory.")
 
-class SearchAndReplace(BaseModel):
-    """
-    Represents the input schema for the `search_and_replace` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    file_path: str = Field(description="The path to the file to modify, relative to the repository's working directory.")
-    search_string: str = Field(description="The string or regex pattern to search for within the file.")
-    replace_string: str = Field(description="The string to replace all matches of the search string with.")
-    ignore_case: bool = Field(False, description="If true, the search will be case-insensitive. Defaults to false.")
-    start_line: Optional[int] = Field(
-        None,
-        description="Optional. The 1-based starting line number for the search and replace operation (inclusive). If not provided, search starts from the beginning of the file."
-    )
-    end_line: Optional[int] = Field(
-        None,
-        description="Optional. The 1-based ending line number for the search and replace operation (inclusive). If not provided, search continues to the end of the file."
-    )
-
 class WriteToFile(BaseModel):
     """
     Represents the input schema for the `write_to_file` tool.
@@ -526,7 +501,6 @@ class GitTools(str, Enum):
     SHOW = "git_show"
     APPLY_DIFF = "git_apply_diff"
     READ_FILE = "git_read_file"
-    SEARCH_AND_REPLACE = "search_and_replace"
     WRITE_TO_FILE = "write_to_file"
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
@@ -1503,11 +1477,6 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitReadFile.model_json_schema(),
         ),
         Tool(
-            name=GitTools.SEARCH_AND_REPLACE,
-            description="Searches for a specified string or regex pattern within a file and replaces all occurrences with a new string. Supports case-insensitive search and line-range restrictions. It attempts to use `sed` for efficiency, falling back to Python logic if `sed` fails or makes no changes.",
-            inputSchema=SearchAndReplace.model_json_schema(),
-        ),
-        Tool(
             name=GitTools.WRITE_TO_FILE,
             description="Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. If it exists, its content will be completely overwritten. Includes a check to ensure content was written correctly and generates a diff.",
             inputSchema=WriteToFile.model_json_schema(),
@@ -1748,20 +1717,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 case GitTools.READ_FILE:
                     repo = git.Repo(repo_path)
                     result = git_read_file(repo, arguments["file_path"])
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.SEARCH_AND_REPLACE:
-                    result = await search_and_replace_in_file(
-                        repo_path=str(repo_path),
-                        file_path=arguments["file_path"],
-                        search_string=arguments["search_string"],
-                        replace_string=arguments["replace_string"],
-                        ignore_case=arguments.get("ignore_case", False),
-                        start_line=arguments.get("start_line"),
-                        end_line=arguments.get("end_line")
-                    )
                     return [TextContent(
                         type="text",
                         text=result
