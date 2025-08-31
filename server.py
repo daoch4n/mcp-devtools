@@ -675,21 +675,17 @@ def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_met
         
         diff_lines = []
         for d in diff:
-            # Only include file headers if not filtering by path or if this is the requested path
-            if path is None or d.a_path == path or d.b_path == path:
-                diff_lines.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
-                if d.diff is not None:
-                    if isinstance(d.diff, bytes):
-                        diff_lines.append(d.diff.decode('utf-8'))
-                    else:
-                        diff_lines.append(str(d.diff))
+            diff_lines.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
+            if d.diff is not None:
+                if isinstance(d.diff, bytes):
+                    diff_lines.append(d.diff.decode('utf-8'))
+                else:
+                    diff_lines.append(str(d.diff))
         diff_str = "".join(diff_lines)
         
         # Return based on options
         if show_diff_only and not show_metadata_only:
             return diff_str
-        elif show_metadata_only and show_diff_only:
-            return metadata_str + diff_str
         else:
             return metadata_str + diff_str
 
