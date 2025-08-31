@@ -9,7 +9,7 @@ https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 - 🔧 `mcp-devtools` offers a comprehensive suite of software development tools: [ℹ️ Available Tools](#%E2%84%B9%EF%B8%8F-available-tools)
   -  🤖 AI-assisted file operations (`ai_edit`(uses [Aider](https://github.com/Aider-AI/aider)) 
   -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
-  -  📂 Direct file operations (`search_and_replace`(uses `sed` with fallback to direct mode), `write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
+  -  📂 Direct file operations (`write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
   -  🎋 Git management operations (`git_diff_all`(compares to HEAD, `git_diff`(compares to specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_create_branch`, `git_checkout`, `git_reset`)
   -  🖥️ Terminal commands execution (`execute_command`) [⚠️ Automation-Related Security](#-automation-related-security-considerations)
 
@@ -134,7 +134,7 @@ You must adhere to the following five-step, iterative workflow:
 
 **Primary Constraint:**
 * You are **strictly prohibited** from writing or modifying application code directly. All code implementation must be delegated.
-* **Forbidden Tools for Coding:** `apply_diff`, `search_and_replace`, `write_to_file`, and `{your_native_tool_slug}` must NOT be used to modify code.
+* **Forbidden Tools for Coding:** `apply_diff`, `write_to_file`, and `{your_native_tool_slug}` must NOT be used to modify code.
 
 **Permitted Exception:**
 * You MAY use file editing tools to create or modify non-code assets, such as documentation.
@@ -213,7 +213,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 **Mitigation:** 
 
-*    🔨 The `write_to_file`,`search_and_replace` and `git_apply_diff` tools are dynamically integrated with `tsc` (TypeScript compiler) for conditional type checking of `.js`, `.mjs`, and `.ts` files on edit. The output of `tsc --noEmit --allowJs` is provided as part of the tool's response. AI assistants should parse this output to detect any compiler errors and *should not proceed with further actions* if errors are reported, indicating a problem with the written code.
+*    🔨 The `write_to_file` and `git_apply_diff` tools are dynamically integrated with `tsc` (TypeScript compiler) for conditional type checking of `.js`, `.mjs`, and `.ts` files on edit. The output of `tsc --noEmit --allowJs` is provided as part of the tool's response. AI assistants should parse this output to detect any compiler errors and should not proceed with further actions if errors are reported, indicating a problem with the written code.
 
 **Workarounds:**
 
@@ -494,55 +494,6 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 
-### `search_and_replace`
-- **Description:** Searches for a specified string or regex pattern within a file and replaces all occurrences with a new string. Supports case-insensitive search and line-range restrictions. It attempts to use `sed` for efficiency, falling back to Python logic if `sed` fails or makes no changes.
-- **Input Schema:**
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "repo_path": {
-        "type": "string",
-        "description": "The absolute path to the Git repository's working directory."
-      },
-      "file_path": {
-        "type": "string",
-        "description": "The path to the file to modify, relative to the repository's working directory."
-      },
-      "search_string": {
-        "type": "string",
-        "description": "The string or regex pattern to search for within the file."
-      },
-      "replace_string": {
-        "type": "string",
-        "description": "The string to replace all matches of the search string with."
-      },
-      "ignore_case": {
-        "type": "boolean",
-        "default": false,
-        "description": "If true, the search will be case-insensitive. Defaults to false."
-      },
-      "start_line": {
-        "type": "integer",
-        "nullable": true,
-        "description": "Optional. The 1-based starting line number for the search and replace operation (inclusive). If not provided, search starts from the beginning of the file."
-      },
-      "end_line": {
-        "type": "integer",
-        "nullable": true,
-        "description": "Optional. The 1-based ending line number for the search and replace operation (inclusive). If not provided, search continues to the end of the file."
-      }
-    },
-    "required": [
-      "repo_path",
-      "file_path",
-      "search_string",
-      "replace_string"
-    ]
-  }
-  ```
-
-### `write_to_file`
 - **Description:** Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. If it exists, its content will be completely overwritten. Includes a check to ensure content was written correctly and generates a diff.
 - **Input Schema:**
   ```json
