@@ -84,50 +84,51 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         last_anchor_pos = history_content.rfind(anchor)
         session_content = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
 
-        # Standard format
-        assistant_blocks = re.findall(r"## ASSISTANT\s*(.*?)(?=\n## USER|\n## ASSISTANT|\Z)", session_content, re.DOTALL)
-        if assistant_blocks:
-            return assistant_blocks[-1].strip()
+        # Find the last assistant block
+        last_assistant_pos = session_content.rfind("####")
+        if last_assistant_pos == -1:
+            return None # No assistant block found
 
-        # Fallback format
+        assistant_content = session_content[last_assistant_pos:]
         
-        # Extract preamble (between user prompt and diff)
-        preamble = ""
-        preamble_match = re.search(r'(?:####.*\n)+(.*?)(?=<<<<<<< SEARCH)', session_content, re.DOTALL)
-        if preamble_match:
-             preamble_text = preamble_match.group(1)
-             preamble_lines = preamble_text.strip().split('\n')
-             cleaned_preamble_lines: List[str] = []
-             for line in preamble_lines:
-                 stripped = line.strip()
-                 if re.fullmatch(r'[\w\-\./]+\.[\w\-\./]+', stripped):
-                     continue # remove filenames
-                 if stripped.startswith('```'):
-                     continue # remove code fences
-                 cleaned_preamble_lines.append(line)
-             preamble = '\n'.join(cleaned_preamble_lines).strip()
-
-        # Extract summary (after diff)
-        summary = ""
-        summary_match = re.search(r'>>>>>>> REPLACE\s*\n(.*)', session_content, re.DOTALL)
-        if summary_match:
-            summary_text = summary_match.group(1)
-            summary_lines = summary_text.strip().split('\n')
-            cleaned_summary_lines: List[str] = []
-            for line in summary_lines:
-                stripped = line.strip()
-                if stripped.startswith('>'):
-                    continue
-                if stripped in ('```', ''):
-                    continue
-                cleaned_summary_lines.append(line)
-            summary = '\n'.join(cleaned_summary_lines).strip()
-
-        # Combine parts
-        parts = [p for p in [preamble, summary] if p]
-        result = '\n\n'.join(parts)
+        # Remove the diff block
+        diff_start = assistant_content.find("<<<<<<< SEARCH")
+        diff_end = assistant_content.rfind(">>>>>>> REPLACE")
         
-        return result or None
+        if diff_start != -1 and diff_end != -1:
+            reply_without_diff = assistant_content[:diff_start] + assistant_content[diff_end + len(">>>>>>> REPLACE"):]
+        else:
+            reply_without_diff = assistant_content
+            
+        # Clean up the remaining text
+        lines = reply_without_diff.split('\n')
+        cleaned_lines: List[str] = []
+        for line in lines:
+            stripped = line.strip()
+            
+            # Remove metadata lines
+            if stripped.startswith('> Tokens:') or stripped.startswith('> Applied edit to') or stripped.startswith('> Commit'):
+                continue
+                
+            # Remove file names that sometimes appear on their own line
+            if re.fullmatch(r'[\w\-\./]+\.[\w\-\./]+', stripped):
+                continue
+                
+            # Remove the initial prompt line
+            if stripped.startswith('####'):
+                continue
+
+            # Remove code fences
+            if stripped.startswith('```'):
+                continue
+            
+            # Skip empty lines
+            if not stripped:
+                continue
+                
+            cleaned_lines.append(line)
+            
+        return '\n'.join(cleaned_lines).strip()
 
     except Exception as e:
         logger.debug(f"Failed to get Aider chat history: {e}")
@@ -1683,6 +1684,5 @@ app = Starlette(routes=cast(Any, routes))
 
 if __name__ == "__main__":
     # To run the server, you would typically use uvicorn:
-    # import uvicorn
-    # uvicorn.run(app, host="0.0.0.0", port=8000)
-    pass
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
