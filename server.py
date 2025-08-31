@@ -110,7 +110,7 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         
         relevant_lines = lines[last_message_start:]
         
-        final_text_lines = []
+        final_text_lines: List[str] = []
         in_code_block = False
         
         for line in relevant_lines:
