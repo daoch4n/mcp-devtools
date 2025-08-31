@@ -52,6 +52,9 @@ import shlex
 import json
 import yaml
 
+# Git constant for the empty tree SHA, used for diffing initial commits.
+EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
@@ -1120,8 +1123,8 @@ async def ai_edit(
                         else:
                             result_message += "\n\nNo diff generated between pre and post Aider commits (perhaps no changes were made or it's an empty commit)."
                     elif not pre_aider_commit_hash and post_aider_commit_hash:
-                        # Case: Repo was empty before, now has commits. Diff against NULL_TREE.
-                        diff_output = repo.git.diff(git.NULL_TREE, post_aider_commit_hash)
+                        # Case: Repo was empty before, now has commits. Diff against empty tree.
+                        diff_output = repo.git.diff(EMPTY_TREE_SHA, post_aider_commit_hash)
                         if diff_output:
                             result_message += f"\n\nDiff of changes made by Aider (initial commit):\n```diff\n{diff_output}\n```"
                         else:
