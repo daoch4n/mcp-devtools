@@ -199,6 +199,12 @@ def test_git_show(temp_git_repo):
     assert "-original" in result_diff
     assert "+modified" in result_diff
 
+    # Test with commit range
+    range_result = git_show(repo, f"{commit1.hexsha}..{commit2.hexsha}")
+    assert "Add show_file" in range_result
+    assert "Modify show_file" in range_result
+    assert ("+modified" in range_result or "-original" in range_result)
+
 def test_git_read_file(temp_git_repo):
     repo, repo_path = temp_git_repo
     file_content = "This is a test file content."

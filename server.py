@@ -401,7 +401,7 @@ class GitShow(BaseModel):
     Represents the input schema for the `git_show` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    revision: str = Field(description="The commit hash or reference (e.g., 'HEAD', 'main', 'abc1234') to show details for.")
+    revision: str = Field(description="The commit hash/reference or range (e.g., 'HEAD', 'abc1234', 'rev1..rev2', or 'rev1...rev2') to show.")
 
 class GitApplyDiff(BaseModel):
     """
@@ -609,35 +609,41 @@ def git_checkout(repo: git.Repo, branch_name: str) -> str:
 
 def git_show(repo: git.Repo, revision: str) -> str:
     """
-    Shows the contents (metadata and diff) of a specific commit.
+    Shows the contents (metadata and diff) of a specific commit or range of commits.
+    For commit ranges (e.g., "A..B" or "A...B"), returns the raw git show output.
 
     Args:
         repo: The Git repository object.
-        revision: The commit hash or reference to show.
+        revision: The commit hash/reference or range to show.
 
     Returns:
-        A string containing the commit details and its diff.
+        A string containing the commit details and its diff, or raw git show output for ranges.
     """
-    commit = repo.commit(revision)
-    output = [
-        f"Commit: {commit.hexsha}\n"
-        f"Author: {commit.author}\n"
-        f"Date: {commit.authored_datetime}\n"
-        f"Message: {str(commit.message)}\n"
-    ]
-    if commit.parents:
-        parent = commit.parents[0]
-        diff = parent.diff(commit, create_patch=True)
+    if ".." in revision:
+        # Handle commit ranges with raw git show
+        return repo.git.show(revision)
     else:
-        diff = commit.diff(git.NULL_TREE, create_patch=True)
-    for d in diff:
-        output.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
-        if d.diff is not None:
-            if isinstance(d.diff, bytes):
-                output.append(d.diff.decode('utf-8'))
-            else:
-                output.append(str(d.diff))
-    return "".join(output)
+        # Handle single commit with structured output
+        commit = repo.commit(revision)
+        output = [
+            f"Commit: {commit.hexsha}\n"
+            f"Author: {commit.author}\n"
+            f"Date: {commit.authored_datetime}\n"
+            f"Message: {str(commit.message)}\n"
+        ]
+        if commit.parents:
+            parent = commit.parents[0]
+            diff = parent.diff(commit, create_patch=True)
+        else:
+            diff = commit.diff(git.NULL_TREE, create_patch=True)
+        for d in diff:
+            output.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
+            if d.diff is not None:
+                if isinstance(d.diff, bytes):
+                    output.append(d.diff.decode('utf-8'))
+                else:
+                    output.append(str(d.diff))
+        return "".join(output)
 
 async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
     """
@@ -1249,7 +1255,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.SHOW,
-            description="Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit.",
+            description="Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit. Supports commit ranges like 'A..B' or 'A...B' as well.",
             inputSchema=GitShow.model_json_schema(),
         ),
         Tool(
