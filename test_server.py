@@ -266,8 +266,7 @@ def test_git_read_file(temp_git_repo):
 #     large_diff_output = await _generate_diff_output(large_original, large_new, file_path)
 #     assert "Diff was too large (over 1000 lines)." in large_diff_output
 
-@pytest.mark.asyncio
-async def test_git_diff_path_filter(temp_git_repo):
+def test_git_diff_path_filter(temp_git_repo):
     repo, repo_path = temp_git_repo
     
     # Create and modify two files
