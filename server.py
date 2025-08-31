@@ -544,10 +544,10 @@ def git_diff(repo: git.Repo, target: Optional[str] = None, path: Optional[str] =
     Returns:
         A string representing the output of `git diff` or `git diff <target>`.
     """
-    if target is None:
-        return repo.git.diff() if path is None else repo.git.diff('--', path)
-    else:
-        return repo.git.diff(target) if path is None else repo.git.diff(target, '--', path)
+    args = [target] if target else []
+    if path:
+        args.extend(['--', path])
+    return repo.git.diff(*args)
 
 def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
     """
