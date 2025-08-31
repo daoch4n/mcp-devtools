@@ -685,6 +685,8 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 > Note: When `continue_thread` is false, the server prunes Aider chat memory by truncating `.aider.chat.history.md` in the repository root before invoking Aider.
 
+> Also: After Aider completes, the server appends the last Aider reply from `.aider.chat.history.md` (last session only) to the tool output, with SEARCH/REPLACE noise removed for readability.
+
 ### `aider_status`
 - **Description:** Check the status of Aider and its environment. Use this to:
   1. Verify Aider is correctly installed
