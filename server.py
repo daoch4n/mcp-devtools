@@ -415,7 +415,7 @@ class GitShow(BaseModel):
 class GitMerge(BaseModel):
     """Input schema for the `git_merge` tool."""
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    source: str = Field(description="The source branch or commit to merge from.")
+    source: Optional[str] = Field(None, description="The source branch or commit to merge from. Required unless abort, status, or continue is true.")
     target: Optional[str] = Field(None, description="Optional. The target branch to merge into. If omitted, merges into the current branch.")
     ff_only: bool = Field(False, description="If true, enforce fast-forward only (passes --ff-only); takes precedence over no_ff.")
     no_ff: bool = Field(False, description="If true, create a merge commit even if the merge could be resolved as a fast-forward (passes --no-ff).")
@@ -649,7 +649,7 @@ def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base
 
 def git_merge(
     repo: git.Repo,
-    source: str,
+    source: Optional[str] = None,
     target: Optional[str] = None,
     ff_only: bool = False,
     no_ff: bool = False,
@@ -733,10 +733,13 @@ def git_merge(
             sha = commit.hexsha[:7]
             return f"MERGE_CONTINUE: Merge completed on branch {current} with commit {sha}: {msg}"
         except Exception as e:
+            logger.error(f"Unexpected error during git_merge continue: {e}", exc_info=True)
             return f"MERGE_CONTINUE_ERROR: {e}"
     elif dry_run:
         # Dry run mode - preview merge without changing repo
         try:
+            if not source:
+                return "DRY_RUN_ERROR: 'source' is required for a dry-run operation." + _merge_hints()
             # Determine target reference
             target_ref = target or repo.active_branch.name
             
@@ -782,6 +785,8 @@ def git_merge(
     else:
         # Normal merge mode
         try:
+            if not source:
+                return "MERGE_ERROR: 'source' is required for a merge operation."
             if target:
                 repo.git.checkout(target)
             args: list[str] = []
@@ -1816,7 +1821,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     repo = git.Repo(repo_path)
                     result = git_merge(
                         repo,
-                        arguments["source"],
+                        arguments.get("source"),
                         arguments.get("target"),
                         arguments.get("ff_only", False),
                         arguments.get("no_ff", False),
