@@ -92,12 +92,30 @@ def test_git_status(temp_git_repo):
     assert "new_file.txt" in status
     assert "Untracked files" in status
 
-def test_git_diff_unstaged(temp_git_repo):
+def test_git_diff_scenarios(temp_git_repo):
     repo, repo_path = temp_git_repo
+    
+    # Scenario 1: Unstaged change
     (repo_path / "initial_file.txt").write_text("modified content")
     diff = git_diff(repo, None)
     assert "-initial content" in diff
     assert "+modified content" in diff
+    
+    # Commit the change to stage
+    repo.index.add(["initial_file.txt"])
+    
+    # Add a new unstaged file
+    (repo_path / "new_file.txt").write_text("new content")
+    
+    # Scenario 2: git_diff with None should only show unstaged changes
+    diff_unstaged = git_diff(repo, None)
+    assert "new_file.txt" in diff_unstaged
+    assert "initial_file.txt" not in diff_unstaged  # This file is staged, not unstaged
+    
+    # Scenario 3: git_diff with 'HEAD' should show all changes (staged and unstaged)
+    diff_head = git_diff(repo, 'HEAD')
+    assert "initial_file.txt" in diff_head  # Staged changes
+    assert "new_file.txt" in diff_head      # Unstaged changes
 
 def test_git_diff_staged(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -405,7 +423,7 @@ async def test_call_tool(
     # Test GitTools.DIFF without target
     mock_git_diff.return_value = "diff_default_output"
     result = list(await call_tool(GitTools.DIFF.value, {"repo_path": "/tmp/repo"}))
-    assert result[0].text == "Diff with None:\ndiff_default_output"
+    assert result[0].text == "Diff of unstaged changes (worktree vs index):\ndiff_default_output"
 
     # Test GitTools.COMMIT
     mock_git_stage_and_commit.return_value = "Commit successful"

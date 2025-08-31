@@ -1464,9 +1464,10 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     repo = git.Repo(repo_path)
                     target = arguments.get("target")
                     diff = git_diff(repo, target)
+                    diff_header = f"Diff with {target}:" if target else "Diff of unstaged changes (worktree vs index):"
                     return [TextContent(
                         type="text",
-                        text=f"Diff with {target}:\n{diff}"
+                        text=f"{diff_header}\n{diff}"
                     )]
                 case GitTools.STAGE_AND_COMMIT:
                     repo = git.Repo(repo_path)
