@@ -473,15 +473,6 @@ class ExecuteCommand(BaseModel):
     repo_path: str = Field(description="The absolute path to the directory where the command should be executed.")
     command: str = Field(description="The shell command string to execute (e.g., 'ls -l', 'npm install').")
 
-class EditFormat(str, Enum):
-    """
-    An enumeration of supported Aider edit formats.
-    """
-    DIFF = "diff"
-    DIFF_FENCED = "diff-fenced"
-    UDIFF = "udiff"
-    WHOLE = "whole"
-
 class AiEdit(BaseModel):
     """
     Represents the input schema for the `ai_edit` tool.
@@ -490,20 +481,9 @@ class AiEdit(BaseModel):
     message: str = Field(description="A detailed natural language message describing the code changes to make. Be specific about files, desired behavior, and any constraints.")
     files: List[str] = Field(description="A list of file paths (relative to the repository root) that Aider should operate on. This argument is mandatory.")
     continue_thread: bool = Field(description="Required. Whether to continue the Aider thread by restoring chat history. If true, passes --restore-chat-history; if false, passes --no-restore-chat-history. Clients must explicitly choose.")
-    options: Optional[List[str]] = Field(
+    options: list[str] | None = Field(
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
-    )
-    edit_format: EditFormat = Field(
-        EditFormat.DIFF,
-        description=(
-            "Optional. The format Aider should use for edits. "
-            "If not explicitly provided, the default is selected based on the model name: "
-            "if the model includes 'gemini', defaults to 'diff-fenced'; "
-            "if the model includes 'gpt', defaults to 'udiff'; "
-            "otherwise defaults to 'diff'. "
-            "Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
-        ),
     )
 
 class AiderStatus(BaseModel):
@@ -952,9 +932,8 @@ async def ai_edit(
     message: str,
     session: ServerSession,
     files: List[str],
-    options: Optional[list[str]],
+    options: list[str] | None,
     continue_thread: bool,
-    edit_format: EditFormat = EditFormat.DIFF,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -964,7 +943,6 @@ async def ai_edit(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
     aider_path = aider_path or "aider"
-    edit_format_str = edit_format.value
 
     logger.info(f"Running aider in directory: {repo_path}")
     logger.debug(f"Message length: {len(message)} characters")
@@ -998,24 +976,6 @@ async def ai_edit(
             except OSError as e:
                 logger.warning(f"[ai_edit] Failed to clear Aider chat history: {e}")
 
-    # Determine the default edit format based on the model if not explicitly provided.
-    # Aider will handle loading its own config to determine the model.
-    # We only set the format if it's explicitly passed, otherwise let Aider decide.
-    if edit_format != EditFormat.DIFF:
-        edit_format_str = edit_format.value
-    else:
-        # This logic is a fallback in case Aider's config doesn't specify a model.
-        # It remains here to preserve behavior for clients not relying on .aider.conf.yml.
-        model_name = aider_options.get("model", "").lower() # This will now be empty unless passed in `options`
-        if "gemini" in model_name:
-            edit_format_str = EditFormat.DIFF_FENCED.value
-        elif "gpt" in model_name:
-            edit_format_str = EditFormat.UDIFF.value
-        else:
-            edit_format_str = EditFormat.DIFF.value
-
-
-    aider_options["edit_format"] = edit_format_str
     # Pass the message directly as a command-line option
     aider_options["message"] = message
 
@@ -1611,7 +1571,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         files=files,
                         options=options,
                         continue_thread=continue_thread,
-                        edit_format=EditFormat(arguments.get("edit_format", EditFormat.DIFF.value)),
                     )
                     return [TextContent(
                         type="text",
