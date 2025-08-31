@@ -387,9 +387,10 @@ class GitBranch(BaseModel):
     Input schema for the `git_branch` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    action: str = Field(description="The branch operation to perform: 'create' or 'checkout'.")
-    branch_name: str = Field(description="The name of the branch to create or checkout.")
+    action: str = Field(description="The branch operation to perform: 'create', 'checkout', 'rename', or 'list'.")
+    branch_name: Optional[str] = Field(None, description="The name of the branch to create, checkout, or rename. Required for 'create', 'checkout', and 'rename' actions; optional for 'list'.")
     base_branch: Optional[str] = Field(None, description="Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD.")
+    new_name: Optional[str] = Field(None, description="Optional. The new name for the branch when action='rename'.")
 
 class GitShow(BaseModel):
     """
@@ -1273,7 +1274,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.BRANCH,
-            description="Create or checkout a Git branch. Action may be 'create' with optional base_branch, or 'checkout'.",
+            description="Create, checkout, rename, or list Git branches. Action may be 'create' with optional base_branch, 'checkout', 'rename' with new_name, or 'list' to show all branches with current marked by '*'.",
             inputSchema=GitBranch.model_json_schema(),
         ),
         Tool(
@@ -1493,8 +1494,9 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     result = git_branch(
                         repo,
                         arguments["action"],
-                        arguments["branch_name"],
-                        arguments.get("base_branch")
+                        arguments.get("branch_name"),
+                        arguments.get("base_branch"),
+                        arguments.get("new_name")
                     )
                     return [TextContent(
                         type="text",

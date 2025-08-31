@@ -178,6 +178,23 @@ def test_git_branch_checkout(temp_git_repo):
     assert "Switched to branch 'checkout_branch'" in result
     assert repo.active_branch.name == 'checkout_branch'
 
+def test_git_branch_rename(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    git_branch(repo, 'create', 'old')
+    result = git_branch(repo, 'rename', 'old', new_name='new')
+    assert "Renamed branch 'old' to 'new'" in result
+    assert 'new' in [h.name for h in repo.heads]
+    assert 'old' not in [h.name for h in repo.heads]
+
+def test_git_branch_list(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    git_branch(repo, 'create', 'a')
+    git_branch(repo, 'create', 'b')
+    git_branch(repo, 'checkout', 'b')
+    listing = git_branch(repo, 'list')
+    assert 'a' in listing and 'b' in listing
+    assert '* b' in listing or '*  b' in listing or '* b' in listing.replace('  ', ' ')
+
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
     commit_sha = repo.head.commit.hexsha
@@ -502,6 +519,16 @@ async def test_call_tool(
     mock_git_branch.return_value = "Checked out"
     result = list(await call_tool(GitTools.BRANCH.value, {"repo_path": "/tmp/repo", "action": "checkout", "branch_name": "dev"})) # Cast to list
     assert result[0].text == "Checked out"
+
+    # Test GitTools.BRANCH rename
+    mock_git_branch.return_value = "Renamed"
+    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path":"/tmp/repo","action":"rename","branch_name":"old","new_name":"new"}))
+    assert result[0].text == "Renamed"
+
+    # Test GitTools.BRANCH list
+    mock_git_branch.return_value = "Branches:\n* main\n  dev"
+    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path":"/tmp/repo","action":"list"}))
+    assert result[0].text.startswith("Branches:\n")
 
     # Test GitTools.SHOW
     mock_git_show.return_value = "Show output"

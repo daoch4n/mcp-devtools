@@ -337,7 +337,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `git_branch`
-- **Description:** Create or checkout a Git branch. Action may be 'create' with optional base_branch, or 'checkout'.
+- **Description:** Create, checkout, rename, or list Git branches. Action may be 'create' with optional base_branch, 'checkout', 'rename' with new_name, or 'list' to show all branches with current marked by '*'.
 - **Input Schema:**
   ```json
   {
@@ -349,26 +349,32 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       },
       "action": {
         "type": "string",
-        "description": "The branch operation to perform: 'create' or 'checkout'.",
+        "description": "The branch operation to perform: 'create', 'checkout', 'rename', or 'list'.",
         "enum": [
           "create",
-          "checkout"
+          "checkout",
+          "rename",
+          "list"
         ]
       },
       "branch_name": {
         "type": "string",
-        "description": "The name of the branch to create or checkout."
+        "description": "The name of the branch to create, checkout, or rename. Required for 'create', 'checkout', and 'rename' actions; optional for 'list'."
       },
       "base_branch": {
         "type": "string",
         "nullable": true,
         "description": "Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD."
+      },
+      "new_name": {
+        "type": "string",
+        "nullable": true,
+        "description": "Optional. The new name for the branch when action='rename'."
       }
     },
     "required": [
       "repo_path",
-      "action",
-      "branch_name"
+      "action"
     ]
   }
   ```
