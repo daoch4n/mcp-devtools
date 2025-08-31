@@ -313,6 +313,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   }
   ```
 
+### `git_log`
 - **Description:** Shows the commit history for the repository, listing recent commits with their hash, author, date, and message. The number of commits can be limited.
 - **Input Schema:**
   ```json
