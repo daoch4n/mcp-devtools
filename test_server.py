@@ -204,6 +204,30 @@ def test_git_show(temp_git_repo):
     assert "Modify show_file" in range_result
     assert ("+modified" in range_result or "-original" in range_result)
 
+    # Test path filter on single commit
+    res_path = git_show(repo, commit2.hexsha, path='show_file.txt')
+    assert '+modified' in res_path
+
+    # Test metadata-only on single commit
+    res_meta = git_show(repo, commit2.hexsha, show_metadata_only=True)
+    assert 'Commit:' in res_meta
+    assert '+modified' not in res_meta
+
+    # Test diff-only on single commit
+    res_diff = git_show(repo, commit2.hexsha, show_diff_only=True)
+    assert 'Commit:' not in res_diff
+    assert '+modified' in res_diff
+
+    # Test range metadata-only
+    res_range_meta = git_show(repo, f"{commit1.hexsha}..{commit2.hexsha}", show_metadata_only=True)
+    assert 'Modify show_file' in res_range_meta
+    assert '+modified' not in res_range_meta
+
+    # Test range diff-only
+    res_range_diff = git_show(repo, f"{commit1.hexsha}..{commit2.hexsha}", show_diff_only=True)
+    assert 'commit ' not in res_range_diff.lower()  # Check that commit headers are not included
+    assert '+modified' in res_range_diff
+
 def test_git_read_file(temp_git_repo):
     repo, repo_path = temp_git_repo
     file_content = "This is a test file content."

@@ -402,6 +402,18 @@ class GitShow(BaseModel):
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     revision: str = Field(description="The commit hash/reference or range (e.g., 'HEAD', 'abc1234', 'rev1..rev2', or 'rev1...rev2') to show.")
+    path: Optional[str] = Field(
+        None,
+        description="Optional. Filter the output to show only changes for a specific file path."
+    )
+    show_metadata_only: bool = Field(
+        False,
+        description="Optional. If true, only show commit metadata (author, date, message) without diff content. Defaults to false."
+    )
+    show_diff_only: bool = Field(
+        False,
+        description="Optional. If true, only show diff content without commit metadata. Defaults to false. If both show_metadata_only and show_diff_only are true, both sections will be included."
+    )
 
 class GitApplyDiff(BaseModel):
     """
@@ -607,7 +619,7 @@ def git_checkout(repo: git.Repo, branch_name: str) -> str:
     repo.git.checkout(branch_name)
     return f"Switched to branch '{branch_name}'"
 
-def git_show(repo: git.Repo, revision: str) -> str:
+def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
     Shows the contents (metadata and diff) of a specific commit or range of commits.
     For commit ranges (e.g., "A..B" or "A...B"), returns the raw git show output.
@@ -615,35 +627,71 @@ def git_show(repo: git.Repo, revision: str) -> str:
     Args:
         repo: The Git repository object.
         revision: The commit hash/reference or range to show.
+        path: Optional. Filter the output to show only changes for a specific file path.
+        show_metadata_only: If true, only show commit metadata without diff content.
+        show_diff_only: If true, only show diff content without commit metadata.
 
     Returns:
         A string containing the commit details and its diff, or raw git show output for ranges.
     """
     if ".." in revision:
         # Handle commit ranges with raw git show
-        return repo.git.show(revision)
+        args = [revision]
+        
+        # Apply flags based on options
+        if show_metadata_only and not show_diff_only:
+            args.append("--no-patch")  # Only show commit metadata
+        elif show_diff_only and not show_metadata_only:
+            args.append("--format=")   # Suppress commit metadata, show only diff
+        
+        # Add path filter if provided
+        if path:
+            args.extend(["--", path])
+            
+        return repo.git.show(*args)
     else:
         # Handle single commit with structured output
         commit = repo.commit(revision)
-        output = [
+        
+        # Build metadata section
+        metadata = [
             f"Commit: {commit.hexsha}\n"
             f"Author: {commit.author}\n"
             f"Date: {commit.authored_datetime}\n"
             f"Message: {str(commit.message)}\n"
         ]
+        metadata_str = "".join(metadata)
+        
+        # If only metadata requested, return early
+        if show_metadata_only and not show_diff_only:
+            return metadata_str
+        
+        # Compute diff section
         if commit.parents:
             parent = commit.parents[0]
-            diff = parent.diff(commit, create_patch=True)
+            diff = parent.diff(commit, create_patch=True, paths=path)
         else:
-            diff = commit.diff(git.NULL_TREE, create_patch=True)
+            diff = commit.diff(git.NULL_TREE, create_patch=True, paths=path)
+        
+        diff_lines = []
         for d in diff:
-            output.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
-            if d.diff is not None:
-                if isinstance(d.diff, bytes):
-                    output.append(d.diff.decode('utf-8'))
-                else:
-                    output.append(str(d.diff))
-        return "".join(output)
+            # Only include file headers if not filtering by path or if this is the requested path
+            if path is None or d.a_path == path or d.b_path == path:
+                diff_lines.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
+                if d.diff is not None:
+                    if isinstance(d.diff, bytes):
+                        diff_lines.append(d.diff.decode('utf-8'))
+                    else:
+                        diff_lines.append(str(d.diff))
+        diff_str = "".join(diff_lines)
+        
+        # Return based on options
+        if show_diff_only and not show_metadata_only:
+            return diff_str
+        elif show_metadata_only and show_diff_only:
+            return metadata_str + diff_str
+        else:
+            return metadata_str + diff_str
 
 async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
     """
@@ -1255,7 +1303,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.SHOW,
-            description="Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit. Supports commit ranges like 'A..B' or 'A...B' as well.",
+            description="Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit. Supports commit ranges like 'A..B' or 'A...B' as well. Optional path filter and metadata/diff-only options available.",
             inputSchema=GitShow.model_json_schema(),
         ),
         Tool(
@@ -1482,7 +1530,13 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )]
                 case GitTools.SHOW:
                     repo = git.Repo(repo_path)
-                    result = git_show(repo, arguments["revision"])
+                    result = git_show(
+                        repo, 
+                        arguments["revision"],
+                        path=arguments.get("path"),
+                        show_metadata_only=arguments.get("show_metadata_only", False),
+                        show_diff_only=arguments.get("show_diff_only", False)
+                    )
                     return [TextContent(
                         type="text",
                         text=result
