@@ -984,11 +984,9 @@ async def ai_edit(
         logger.error(error_message)
         return error_message
 
-    load_aider_config(directory_path, config_file)
-    load_dotenv_file(directory_path, env_file)
-
-    aider_options: Dict[str, Any] = {}
-    aider_options["yes_always"] = True
+    aider_options: Dict[str, Any] = {
+        "yes_always": True,
+    }
 
     # Prune Aider chat history if not continuing thread
     if not continue_thread:
@@ -1000,15 +998,22 @@ async def ai_edit(
             except OSError as e:
                 logger.warning(f"[ai_edit] Failed to clear Aider chat history: {e}")
 
-    # Determine the default edit format based on the model if not explicitly provided
-    if edit_format == EditFormat.DIFF:
-        model_name = aider_options.get("model", "").lower()
+    # Determine the default edit format based on the model if not explicitly provided.
+    # Aider will handle loading its own config to determine the model.
+    # We only set the format if it's explicitly passed, otherwise let Aider decide.
+    if edit_format != EditFormat.DIFF:
+        edit_format_str = edit_format.value
+    else:
+        # This logic is a fallback in case Aider's config doesn't specify a model.
+        # It remains here to preserve behavior for clients not relying on .aider.conf.yml.
+        model_name = aider_options.get("model", "").lower() # This will now be empty unless passed in `options`
         if "gemini" in model_name:
             edit_format_str = EditFormat.DIFF_FENCED.value
         elif "gpt" in model_name:
             edit_format_str = EditFormat.UDIFF.value
         else:
             edit_format_str = EditFormat.DIFF.value
+
 
     aider_options["edit_format"] = edit_format_str
     # Pass the message directly as a command-line option
@@ -1670,6 +1675,10 @@ async def handle_sse(request: Request):
     Returns:
         A Starlette Response object for the SSE connection.
     """
+    # The `_send` attribute is marked as protected, but accessing it is the
+    # intended way to integrate with the SseServerTransport according to the
+    # mcp library's design for Starlette integration. Suppressing the warning
+    # here is safe and necessary for the SSE transport to function correctly.
     async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream): # type: ignore[protected-access]
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
