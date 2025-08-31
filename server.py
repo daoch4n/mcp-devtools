@@ -417,6 +417,7 @@ class GitMerge(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     source: str = Field(description="The source branch or commit to merge from.")
     target: Optional[str] = Field(None, description="Optional. The target branch to merge into. If omitted, merges into the current branch.")
+    ff_only: bool = Field(False, description="If true, enforce fast-forward only (passes --ff-only); takes precedence over no_ff.")
     no_ff: bool = Field(False, description="If true, create a merge commit even if the merge could be resolved as a fast-forward (passes --no-ff).")
     squash: bool = Field(False, description="If true, perform a squash merge (passes --squash). If commit_message is provided, a commit will be created after the squash.")
     commit_message: Optional[str] = Field(None, description="Optional. Commit message to use when creating a merge commit (ignored for fast-forward). If squash=true and a message is provided, it will be used for the post-squash commit.")
