@@ -84,51 +84,68 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         last_anchor_pos = history_content.rfind(anchor)
         session_content = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
 
-        # Find the last assistant block
-        last_assistant_pos = session_content.rfind("####")
-        if last_assistant_pos == -1:
-            return None # No assistant block found
-
-        assistant_content = session_content[last_assistant_pos:]
+        # In architect mode, the reply is a mix of prose and large code blocks.
+        # The goal is to extract all text content while discarding only the
+        # fenced code blocks. A line-by-line parser is more robust than a
+        # single large regex for this.
         
-        # Remove the diff block
-        diff_start = assistant_content.find("<<<<<<< SEARCH")
-        diff_end = assistant_content.rfind(">>>>>>> REPLACE")
+        lines = session_content.split('\n')
         
-        if diff_start != -1 and diff_end != -1:
-            reply_without_diff = assistant_content[:diff_start] + assistant_content[diff_end + len(">>>>>>> REPLACE"):]
-        else:
-            reply_without_diff = assistant_content
+        # Isolate the assistant's reply by finding the start of the last message
+        # that is NOT part of the user's command prompt.
+        
+        # Find the last occurrence of '####' which indicates the start of an assistant message.
+        last_message_start = -1
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip().startswith('####'):
+                last_message_start = i
+                break
+        
+        # If no '####' is found, fallback to the first non-prompt line.
+        if last_message_start == -1:
+            for i, line in enumerate(lines):
+                if not line.startswith('> '):
+                    last_message_start = i
+                    break
+        
+        relevant_lines = lines[last_message_start:]
+        
+        final_text_lines = []
+        in_code_block = False
+        
+        for line in relevant_lines:
+            # Toggle state when a code fence is encountered.
+            if line.strip().startswith('```'):
+                in_code_block = not in_code_block
+                continue # Exclude the fence line itself from the output.
             
-        # Clean up the remaining text
-        lines = reply_without_diff.split('\n')
-        cleaned_lines: List[str] = []
-        for line in lines:
+            # Ignore lines that are inside a code block.
+            if in_code_block:
+                continue
+                
             stripped = line.strip()
             
-            # Remove metadata lines
-            if stripped.startswith('> Tokens:') or stripped.startswith('> Applied edit to') or stripped.startswith('> Commit'):
+            # Filter out metadata and leftover artifacts.
+            if stripped.startswith('> Tokens:'):
                 continue
-                
-            # Remove file names that sometimes appear on their own line
             if re.fullmatch(r'[\w\-\./]+\.[\w\-\./]+', stripped):
                 continue
-                
-            # Remove the initial prompt line
-            if stripped.startswith('####'):
-                continue
-
-            # Remove code fences
-            if stripped.startswith('```'):
-                continue
             
-            # Skip empty lines
-            if not stripped:
-                continue
-                
-            cleaned_lines.append(line)
+            # Append the cleaned, relevant line.
+            final_text_lines.append(line)
             
-        return '\n'.join(cleaned_lines).strip()
+        # Post-process the collected lines to remove any trailing blank lines
+        # that were preserved.
+        while final_text_lines and not final_text_lines[-1].strip():
+            final_text_lines.pop()
+        
+        # Join the collected lines and perform final cleanup.
+        full_reply = '\n'.join(final_text_lines)
+        
+        # Remove any remaining "####" markdown headers, keeping the text.
+        full_reply = re.sub(r'####\s?', '', full_reply)
+        
+        return full_reply.strip()
 
     except Exception as e:
         logger.debug(f"Failed to get Aider chat history: {e}")
