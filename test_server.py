@@ -38,7 +38,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 # Import functions and classes from server.py
 from server import (
-    git_status, git_diff_all, git_diff, git_stage_and_commit,
+    git_status, git_diff, git_stage_and_commit,
     git_reset, git_log, git_create_branch, git_checkout, git_show,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable,
@@ -95,7 +95,7 @@ def test_git_status(temp_git_repo):
 def test_git_diff_unstaged(temp_git_repo):
     repo, repo_path = temp_git_repo
     (repo_path / "initial_file.txt").write_text("modified content")
-    diff = git_diff_all(repo)
+    diff = git_diff(repo, None)
     assert "-initial content" in diff
     assert "+modified content" in diff
 
@@ -371,7 +371,6 @@ async def test_list_tools():
 @pytest.mark.asyncio
 @patch('server.git.Repo')
 @patch('server.git_status')
-@patch('server.git_diff_all')
 @patch('server.git_diff')
 @patch('server.git_stage_and_commit')
 @patch('server.git_reset')
@@ -387,7 +386,7 @@ async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
     mock_git_checkout, mock_git_create_branch, mock_git_log, mock_git_reset,
-    mock_git_stage_and_commit, mock_git_diff, mock_git_diff_all, mock_git_status, mock_git_repo
+    mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
     mock_repo_instance = MagicMock()
     mock_git_repo.return_value = mock_repo_instance
@@ -398,17 +397,15 @@ async def test_call_tool(
     assert result[0].text == "Repository status:\nclean"
     mock_git_status.assert_called_with(mock_repo_instance)
 
-    # Test GitTools.DIFF_ALL
-    mock_git_diff_all.return_value = "diff_all_output"
-    result = list(await call_tool(GitTools.DIFF_ALL.value, {"repo_path": "/tmp/repo"})) # Cast to list
-    assert result[0].text == "All changes (staged and unstaged):\ndiff_all_output"
-
-    # Removed test for GitTools.DIFF_STAGED as the tool no longer exists
-
-    # Test GitTools.DIFF
+    # Test GitTools.DIFF with target
     mock_git_diff.return_value = "diff_target_output"
     result = list(await call_tool(GitTools.DIFF.value, {"repo_path": "/tmp/repo", "target": "main"})) # Cast to list
     assert result[0].text == "Diff with main:\ndiff_target_output"
+    
+    # Test GitTools.DIFF without target
+    mock_git_diff.return_value = "diff_default_output"
+    result = list(await call_tool(GitTools.DIFF.value, {"repo_path": "/tmp/repo"}))
+    assert result[0].text == "Diff with None:\ndiff_default_output"
 
     # Test GitTools.COMMIT
     mock_git_stage_and_commit.return_value = "Commit successful"

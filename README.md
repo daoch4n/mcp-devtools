@@ -10,7 +10,7 @@ https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
   -  🤖 AI-assisted file operations (`ai_edit`(uses [Aider](https://github.com/Aider-AI/aider)) 
   -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
   -  📂 Direct file operations (`write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
-  -  🎋 Git management operations (`git_diff_all`(compares to HEAD, `git_diff`(compares to specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_create_branch`, `git_checkout`, `git_reset`)
+  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_create_branch`, `git_checkout`, `git_reset`)
   -  🖥️ Terminal commands execution (`execute_command`) [⚠️ Automation-Related Security](#-automation-related-security-considerations)
 
 <details>
@@ -261,26 +261,8 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 
-### `git_diff_all`
-- **Description:** Shows all changes in the working directory, including both staged and unstaged modifications, compared to the HEAD commit. This provides a comprehensive view of all local changes.
-- **Input Schema:**
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "repo_path": {
-        "type": "string",
-        "description": "The absolute path to the Git repository's working directory."
-      }
-    },
-    "required": [
-      "repo_path"
-    ]
-  }
-  ```
-
 ### `git_diff`
-- **Description:** Shows differences between the current working directory and a specified Git target (e.g., another branch, a specific commit hash, or a tag).
+- **Description:** Shows differences in the working directory. By default (without target), shows worktree vs index like `git diff`. Pass target='HEAD' for previous 'all changes vs HEAD' behavior.
 - **Input Schema:**
   ```json
   {
@@ -292,12 +274,11 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       },
       "target": {
         "type": "string",
-        "description": "The target (e.g., branch name, commit hash, tag) to diff against. For example, 'main', 'HEAD~1', or a full commit SHA."
+        "description": "Optional. If omitted, behaves like `git diff` (worktree vs index). Pass 'HEAD' or another ref to compare against a commit or branch."
       }
     },
     "required": [
-      "repo_path",
-      "target"
+      "repo_path"
     ]
   }
   ```
