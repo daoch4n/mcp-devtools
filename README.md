@@ -10,7 +10,7 @@ https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
   -  🤖 AI-assisted file operations (`ai_edit`(uses [Aider](https://github.com/Aider-AI/aider)) 
   -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
   -  📂 Direct file operations (`write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
-  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`, `git_merge`, `git_merge_abort`)
+  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`, `git_merge`)
   -  🖥️ Terminal commands execution (`execute_command`) [⚠️ Automation-Related Security](#-automation-related-security-considerations)
 
 <details>
@@ -380,7 +380,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `git_merge`
-- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. On conflicts, returns MERGE_CONFLICT with a list of files.
+- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. Set abort=True to abort an in-progress merge instead. On conflicts, returns MERGE_CONFLICT with a list of files.
 - **Input Schema:**
   ```json
   {
@@ -417,29 +417,15 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       "dry_run": {
         "type": "boolean",
         "description": "If true, preview the merge without changing the repo. Reports whether fast-forward or a merge commit is needed; may indicate potential conflicts."
+      },
+      "abort": {
+        "type": "boolean",
+        "description": "If true, abort an in-progress merge (runs `git merge --abort`) and return status; no-op if none."
       }
     },
     "required": [
       "repo_path",
       "source"
-    ]
-  }
-  ```
-
-### `git_merge_abort`
-- **Description:** Abort a merge in progress and restore the working tree. Non-destructive; no effect if no merge is in progress.
-- **Input Schema:**
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "repo_path": {
-        "type": "string",
-        "description": "The absolute path to the Git repository's working directory."
-      }
-    },
-    "required": [
-      "repo_path"
     ]
   }
   ```

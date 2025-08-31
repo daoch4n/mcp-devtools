@@ -422,11 +422,9 @@ class GitMerge(BaseModel):
     squash: bool = Field(False, description="If true, perform a squash merge (passes --squash). If commit_message is provided, a commit will be created after the squash.")
     commit_message: Optional[str] = Field(None, description="Optional. Commit message to use when creating a merge commit (ignored for fast-forward). If squash=true and a message is provided, it will be used for the post-squash commit.")
     dry_run: bool = Field(False, description="If true, preview the merge without changing the repo. Reports whether fast-forward or a merge commit is needed; may indicate potential conflicts.")
+    abort: bool = Field(False, description="If true, abort an in-progress merge (runs `git merge --abort`) and return status; no-op if none.")
 
 
-class GitMergeAbort(BaseModel):
-    """Input schema for the `git_merge_abort` tool."""
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
 
 class GitApplyDiff(BaseModel):
     """
@@ -524,7 +522,6 @@ class GitTools(str, Enum):
     AI_EDIT = "ai_edit"
     AIDER_STATUS = "aider_status"
     MERGE = "git_merge"
-    MERGE_ABORT = "git_merge_abort"
 
 def git_status(repo: git.Repo) -> str:
     """
@@ -657,15 +654,31 @@ def git_merge(
     squash: bool = False,
     commit_message: Optional[str] = None,
     dry_run: bool = False,
+    abort: bool = False,
 ) -> str:
     """Merge a source ref into the current or specified target branch.
 
     Behavior:
     - If target is provided, checkout that branch first.
     - Supports --ff-only, --no-ff, --squash, and an optional commit_message. For squash, if commit_message is provided, a commit will be created after the squash.
+    - If abort is True, abort an in-progress merge instead.
     - Returns a descriptive message. On errors (e.g., conflicts), returns a string starting with 'MERGE_ERROR:' or 'MERGE_CONFLICT:'.
     """
-    if dry_run:
+    if abort:
+        # Abort merge mode - abort an in-progress merge
+        try:
+            merge_head = Path(repo.working_dir) / '.git' / 'MERGE_HEAD'
+            if not merge_head.exists():
+                return "MERGE_ABORT: No merge in progress."
+            repo.git.merge('--abort')
+            # Verify MERGE_HEAD removed and index cleaned
+            if (Path(repo.working_dir) / '.git' / 'MERGE_HEAD').exists():
+                return "MERGE_ABORT_ERROR: Merge abort reported success but MERGE_HEAD still present."
+            return "MERGE_ABORT: Merge aborted and working tree restored."
+        except git.GitCommandError as e:
+            err = getattr(e, 'stderr', None) or str(e)
+            return f"MERGE_ABORT_ERROR: {err}"
+    elif dry_run:
         # Dry run mode - preview merge without changing repo
         try:
             # Determine target reference
@@ -753,20 +766,6 @@ def git_merge(
                 return f"MERGE_ERROR: {err}"
 
 
-def git_merge_abort(repo: git.Repo) -> str:
-    """Abort an in-progress merge if present; otherwise no-op with message."""
-    try:
-        merge_head = Path(repo.working_dir) / '.git' / 'MERGE_HEAD'
-        if not merge_head.exists():
-            return "MERGE_ABORT: No merge in progress."
-        repo.git.merge('--abort')
-        # Verify MERGE_HEAD removed and index cleaned
-        if (Path(repo.working_dir) / '.git' / 'MERGE_HEAD').exists():
-            return "MERGE_ABORT_ERROR: Merge abort reported success but MERGE_HEAD still present."
-        return "MERGE_ABORT: Merge aborted and working tree restored."
-    except git.GitCommandError as e:
-        err = getattr(e, 'stderr', None) or str(e)
-        return f"MERGE_ABORT_ERROR: {err}"
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
@@ -1501,13 +1500,8 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.MERGE,
-            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome.",
+            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. Set abort=True to abort an in-progress merge instead.",
             inputSchema=GitMerge.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.MERGE_ABORT,
-            description="Abort a merge in progress and restore the working tree. Non-destructive; no effect if no merge is in progress.",
-            inputSchema=GitMergeAbort.model_json_schema(),
         )
     ]
 
@@ -1772,15 +1766,9 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         arguments.get("no_ff", False),
                         arguments.get("squash", False),
                         arguments.get("commit_message"),
-                        arguments.get("dry_run", False)
+                        arguments.get("dry_run", False),
+                        arguments.get("abort", False)
                     )
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.MERGE_ABORT:
-                    repo = git.Repo(repo_path)
-                    result = git_merge_abort(repo)
                     return [TextContent(
                         type="text",
                         text=result
