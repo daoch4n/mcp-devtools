@@ -1277,7 +1277,7 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]
+mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]  # Server's generic signature is not compatible with the expected type due to type system limitations.
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
