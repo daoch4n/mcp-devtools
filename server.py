@@ -670,7 +670,10 @@ def git_merge(
             src = repo.commit(source)
             
             # Compute merge base
-            base = repo.git.merge_base(tgt.hexsha, src.hexsha).split()[0]
+            bases = repo.merge_base(tgt, src)
+            if not bases:
+                return f"DRY_RUN_ERROR: No common ancestor found between '{source}' and '{target_ref}'."
+            base = bases[0].hexsha
             
             # Determine relationship using merge-base --is-ancestor
             try:
@@ -695,8 +698,12 @@ def git_merge(
                 conflicts_detected = ('<<<<<<<' in out or '>>>>>>>' in out)
                 suffix = 'conflicts detected' if conflicts_detected else 'no conflicts detected'
                 return f"DRY_RUN: Merge commit required to merge {source} into {target_ref}; {suffix}."
+        except git.GitCommandError as e:
+            err_msg = getattr(e, 'stderr', None) or str(e)
+            return f"DRY_RUN_ERROR: Failed to preview merge due to a Git error: {err_msg}"
         except Exception as e:
-            return f"DRY_RUN_ERROR: Failed to preview merge: {e}"
+            logger.error(f"Unexpected error during git_merge dry run: {e}", exc_info=True)
+            return f"DRY_RUN_ERROR: An unexpected error occurred while previewing the merge: {e}"
     else:
         # Normal merge mode
         try:

@@ -318,6 +318,49 @@ def test_git_merge_dry_run_conflicts(temp_git_repo):
     with open(repo_path / 'conflict2.txt', 'r') as f:
         assert '<<<<<<<' not in f.read()
 
+def test_git_merge_no_ff_forces_merge_commit(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    base = repo.active_branch.name
+    repo.git.checkout('-b', 'feat_noff')
+    (repo_path / 'noff.txt').write_text('work')
+    repo.index.add(['noff.txt'])
+    repo.index.commit('feat no-ff')
+    repo.git.checkout(base)
+    # This would normally be a fast-forward; --no-ff should force a merge commit with 2 parents
+    msg = git_merge(repo, 'feat_noff', no_ff=True)
+    assert 'Merged feat_noff into' in msg
+    assert len(repo.head.commit.parents) == 2
+
+def test_git_merge_squash_without_commit(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    base = repo.active_branch.name
+    repo.git.checkout('-b', 'squash_branch')
+    (repo_path / 'squash.txt').write_text('squash work')
+    repo.index.add(['squash.txt'])
+    repo.index.commit('squash change')
+    repo.git.checkout(base)
+    head_before = repo.head.commit.hexsha
+    msg = git_merge(repo, 'squash_branch', squash=True)
+    assert 'Merged squash_branch into' in msg and 'squash' in msg
+    # No commit created automatically without commit_message
+    assert repo.head.commit.hexsha == head_before
+    # But the working tree should contain the changes
+    assert (repo_path / 'squash.txt').exists()
+
+def test_git_merge_squash_with_commit_message(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    base = repo.active_branch.name
+    repo.git.checkout('-b', 'squash_branch2')
+    (repo_path / 'squash2.txt').write_text('squash work 2')
+    repo.index.add(['squash2.txt'])
+    repo.index.commit('squash change 2')
+    repo.git.checkout(base)
+    msg = git_merge(repo, 'squash_branch2', squash=True, commit_message='Squash commit msg')
+    assert 'Merged squash_branch2 into' in msg and 'squash' in msg
+    # A commit should have been created with the provided message
+    assert repo.head.commit.message.startswith('Squash commit msg')
+    assert (repo_path / 'squash2.txt').exists()
+
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
     commit_sha = repo.head.commit.hexsha
@@ -674,6 +717,11 @@ async def test_call_tool(
     mock_git_merge.return_value = 'DRY_RUN: Fast-forward merge would apply dev into main.'
     result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","dry_run": True}))
     assert result[0].text == 'DRY_RUN: Fast-forward merge would apply dev into main.'
+
+    # Test GitTools.MERGE with squash
+    mock_git_merge.return_value = 'Squash merge successful'
+    result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","squash": True}))
+    assert result[0].text == 'Squash merge successful'
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock
