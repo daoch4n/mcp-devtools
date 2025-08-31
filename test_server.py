@@ -404,6 +404,8 @@ def test_git_merge_status_with_conflicts(temp_git_repo):
     assert msg.startswith('MERGE_STATUS:')
     assert '- in_progress: true' in msg
     assert 'stat.txt' in msg
+    # Check that stage information is included
+    assert ('ours' in msg) or ('theirs' in msg)
     # Check that hints are included
     assert 'Hints:' in msg
     assert 'continue=true' in msg

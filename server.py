@@ -686,9 +686,16 @@ def git_merge(
         in_progress = merge_head.exists()
         current = repo.active_branch.name if hasattr(repo, 'active_branch') else '(detached)'
         conflicts_map = repo.index.unmerged_blobs()
-        conflicts_list = sorted(conflicts_map.keys()) if conflicts_map else []
-        conflicts_str = ', '.join(conflicts_list) if conflicts_list else 'none'
-        return f"MERGE_STATUS:\n- in_progress: {str(in_progress).lower()}\n- branch: {current}\n- conflicts: {conflicts_str}" + _merge_hints()
+        if not conflicts_map:
+            conflicts_str = 'conflicts: none'
+        else:
+            stages_names = {1: 'base', 2: 'ours', 3: 'theirs'}
+            lines = []
+            for path, entries in sorted(conflicts_map.items()):
+                stage_set = sorted({stages_names.get(stage, str(stage)) for stage, _ in entries})
+                lines.append(f"- {path}: {', '.join(stage_set)}")
+            conflicts_str = 'conflicts:\n' + '\n'.join(lines)
+        return f"MERGE_STATUS:\n- in_progress: {str(in_progress).lower()}\n- branch: {current}\n- {conflicts_str}" + _merge_hints()
     if abort:
         # Abort merge mode - abort an in-progress merge
         try:
