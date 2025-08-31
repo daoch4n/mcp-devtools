@@ -10,7 +10,7 @@ https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
   -  🤖 AI-assisted file operations (`ai_edit`(uses [Aider](https://github.com/Aider-AI/aider)) 
   -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
   -  📂 Direct file operations (`write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
-  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_create_branch`, `git_checkout`)
+  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
   -  🖥️ Terminal commands execution (`execute_command`) [⚠️ Automation-Related Security](#-automation-related-security-considerations)
 
 <details>
@@ -336,8 +336,8 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   }
   ```
 
-### `git_create_branch`
-- **Description:** Creates a new Git branch with the specified name. Optionally, you can base the new branch on an existing branch or commit, otherwise it defaults to the current active branch.
+### `git_branch`
+- **Description:** Create or checkout a Git branch. Action may be 'create' with optional base_branch, or 'checkout'.
 - **Input Schema:**
   ```json
   {
@@ -347,41 +347,27 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
         "type": "string",
         "description": "The absolute path to the Git repository's working directory."
       },
+      "action": {
+        "type": "string",
+        "description": "The branch operation to perform: 'create' or 'checkout'.",
+        "enum": [
+          "create",
+          "checkout"
+        ]
+      },
       "branch_name": {
         "type": "string",
-        "description": "The name of the new branch to create."
+        "description": "The name of the branch to create or checkout."
       },
       "base_branch": {
         "type": "string",
         "nullable": true,
-        "description": "Optional. The name of the branch or commit hash to base the new branch on. If not provided, the new branch will be based on the current active branch."
+        "description": "Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD."
       }
     },
     "required": [
       "repo_path",
-      "branch_name"
-    ]
-  }
-  ```
-
-### `git_checkout`
-- **Description:** Switches the current active branch to the specified branch name. This updates the working directory to reflect the state of the target branch.
-- **Input Schema:**
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "repo_path": {
-        "type": "string",
-        "description": "The absolute path to the Git repository's working directory."
-      },
-      "branch_name": {
-        "type": "string",
-        "description": "The name of the branch to checkout."
-      }
-    },
-    "required": [
-      "repo_path",
+      "action",
       "branch_name"
     ]
   }

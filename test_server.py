@@ -39,7 +39,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 # Import functions and classes from server.py
 from server import (
     git_status, git_diff, git_stage_and_commit,
-    git_log, git_create_branch, git_checkout, git_show,
+    git_log, git_branch, git_show,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
@@ -162,22 +162,21 @@ def test_git_log(temp_git_repo):
     log_all = git_log(repo)
     assert len(log_all) == 2 # Initial commit + Second commit
 
-def test_git_create_branch(temp_git_repo):
+def test_git_branch_create(temp_git_repo):
     repo, repo_path = temp_git_repo
-    result = git_create_branch(repo, "new_branch")
+    result = git_branch(repo, 'create', 'new_branch')
     assert "Created branch 'new_branch'" in result
-    assert "new_branch" in repo.heads
-
-    result = git_create_branch(repo, "another_branch", base_branch="new_branch")
+    assert 'new_branch' in repo.heads
+    result = git_branch(repo, 'create', 'another_branch', base_branch='new_branch')
     assert "Created branch 'another_branch' from 'new_branch'" in result
-    assert "another_branch" in repo.heads
+    assert 'another_branch' in repo.heads
 
-def test_git_checkout(temp_git_repo):
+def test_git_branch_checkout(temp_git_repo):
     repo, repo_path = temp_git_repo
-    repo.create_head("checkout_branch")
-    result = git_checkout(repo, "checkout_branch")
+    repo.create_head('checkout_branch')
+    result = git_branch(repo, 'checkout', 'checkout_branch')
     assert "Switched to branch 'checkout_branch'" in result
-    assert repo.active_branch.name == "checkout_branch"
+    assert repo.active_branch.name == 'checkout_branch'
 
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -440,8 +439,7 @@ async def test_list_tools():
 @patch('server.git_diff')
 @patch('server.git_stage_and_commit')
 @patch('server.git_log')
-@patch('server.git_create_branch')
-@patch('server.git_checkout')
+@patch('server.git_branch')
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.git_read_file')
@@ -450,7 +448,7 @@ async def test_list_tools():
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
-    mock_git_checkout, mock_git_create_branch, mock_git_log,
+    mock_git_branch, mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
     mock_repo_instance = MagicMock()
@@ -495,14 +493,14 @@ async def test_call_tool(
     result = list(await call_tool(GitTools.LOG.value, {"repo_path": "/tmp/repo", "max_count": 1})) # Cast to list
     assert result[0].text == "Commit history:\nlog1\nlog2"
 
-    # Test GitTools.CREATE_BRANCH
-    mock_git_create_branch.return_value = "Branch created"
-    result = list(await call_tool(GitTools.CREATE_BRANCH.value, {"repo_path": "/tmp/repo", "branch_name": "new_branch"})) # Cast to list
+    # Test GitTools.BRANCH create
+    mock_git_branch.return_value = "Branch created"
+    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path": "/tmp/repo", "action": "create", "branch_name": "new_branch"})) # Cast to list
     assert result[0].text == "Branch created"
 
-    # Test GitTools.CHECKOUT
-    mock_git_checkout.return_value = "Checked out"
-    result = list(await call_tool(GitTools.CHECKOUT.value, {"repo_path": "/tmp/repo", "branch_name": "dev"})) # Cast to list
+    # Test GitTools.BRANCH checkout
+    mock_git_branch.return_value = "Checked out"
+    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path": "/tmp/repo", "action": "checkout", "branch_name": "dev"})) # Cast to list
     assert result[0].text == "Checked out"
 
     # Test GitTools.SHOW
