@@ -266,6 +266,32 @@ def test_git_read_file(temp_git_repo):
 #     large_diff_output = await _generate_diff_output(large_original, large_new, file_path)
 #     assert "Diff was too large (over 1000 lines)." in large_diff_output
 
+def test_git_diff_path_filter(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    
+    # Create and modify two files
+    (repo_path / "a.txt").write_text("content a")
+    (repo_path / "b.txt").write_text("content b")
+    repo.index.add(["a.txt", "b.txt"])
+    repo.index.commit("Add files")
+    
+    # Modify both files
+    (repo_path / "a.txt").write_text("modified content a")
+    (repo_path / "b.txt").write_text("modified content b")
+    
+    # Test diff with path filter for a.txt (unstaged changes)
+    diff_a = git_diff(repo, None, path="a.txt")
+    assert "+modified content a" in diff_a
+    assert "b.txt" not in diff_a
+    
+    # Stage a.txt
+    repo.index.add(["a.txt"])
+    
+    # Test diff with path filter for a.txt against HEAD (staged changes)
+    diff_a_staged = git_diff(repo, "HEAD", path="a.txt")
+    assert "+modified content a" in diff_a_staged
+    assert "b.txt" not in diff_a_staged
+
 @pytest.mark.asyncio
 async def test_generate_diff_output_empty_diff():
     from server import _generate_diff_output
@@ -445,6 +471,11 @@ async def test_call_tool(
     mock_git_diff.return_value = "diff_default_output"
     result = list(await call_tool(GitTools.DIFF.value, {"repo_path": "/tmp/repo"}))
     assert result[0].text == "Diff of unstaged changes (worktree vs index):\ndiff_default_output"
+
+    # Test GitTools.DIFF without target but with path
+    mock_git_diff.return_value = "diff_path_output"
+    result = list(await call_tool(GitTools.DIFF.value, {"repo_path": "/tmp/repo", "path": "foo.txt"}))
+    assert result[0].text == "Diff of unstaged changes (worktree vs index) for path foo.txt:\ndiff_path_output"
 
     # Test GitTools.COMMIT
     mock_git_stage_and_commit.return_value = "Commit successful"
