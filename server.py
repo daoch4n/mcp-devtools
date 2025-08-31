@@ -1051,6 +1051,7 @@ async def ai_edit(
 
     original_dir = os.getcwd()
     pre_aider_commit_hash = None
+    result_message = ""
     try:
         # Capture the current HEAD commit hash before Aider runs
         try:
@@ -1113,7 +1114,7 @@ async def ai_edit(
         return_code = process.returncode
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
-            return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
+            result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
             result_message = "Aider process completed."
             if "Applied edit to" in stdout:
@@ -1171,21 +1172,20 @@ async def ai_edit(
                  result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
                                      f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
                                      f"STDOUT:\n{stdout}")
-            
-            # Append the last Aider reply from chat history in all cases
-            last_reply = _get_last_aider_reply(directory_path)
-            if last_reply:
-                result_message += f"\n\nAider's last reply:\n{last_reply}"
-
-            return result_message
 
     except Exception as e:
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
-        return ai_hint_ai_edit_unexpected(e)
+        result_message = ai_hint_ai_edit_unexpected(e)
     finally:
         if os.getcwd() != original_dir:
             os.chdir(original_dir)
             logger.debug(f"Restored working directory to: {original_dir}")
+        
+        last_reply = _get_last_aider_reply(directory_path)
+        if last_reply:
+            result_message += f"\n\nAider's last reply:\n{last_reply}"
+        
+        return result_message
 
 async def get_aider_status(
     repo_path: str,
