@@ -34,7 +34,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 
 # Import functions and classes from server.py
 from server import (
@@ -45,7 +45,7 @@ from server import (
     write_to_file_content, execute_custom_command,
     Starlette, Route, Mount, Response, ServerSession, ClientCapabilities, RootsCapability, ListRootsResult, TextContent,
     handle_sse, handle_post_message,
-    list_tools, call_tool, list_repos, GitTools
+    list_tools, call_tool, list_repos, GitTools, ai_edit_files
 )
 import git
 from git.exc import GitCommandError
@@ -1013,3 +1013,63 @@ def test_git_read_file_error_cases(monkeypatch):
     result = git_read_file(repo, "nofile.txt")
     assert "UNEXPECTED_ERROR: Failed to read file 'nofile.txt': fail" in result
     assert "UNEXPECTED_ERROR:" in result
+
+
+@pytest.mark.asyncio
+@patch("git.Repo")
+@patch("os.path.isfile", return_value=True)
+@patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
+@patch("asyncio.create_subprocess_shell")
+async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subprocess, mock_get_reply, mock_isfile, mock_repo, tmp_path):
+    """
+    Tests that ai_edit_files appends Aider's last reply when the outcome is unclear.
+    """
+    # Create a mock process that returns stdout without "Applied edit to"
+    mock_process = AsyncMock()
+    mock_process.communicate.return_value = (b"Aider did something.", b"")
+    mock_process.returncode = 0
+    mock_create_subprocess.return_value = mock_process
+
+    repo_path = str(tmp_path)
+    message = "test message"
+    files = ["file.txt"]
+    mock_session = AsyncMock()
+    options = []
+
+    result_text = await ai_edit_files(
+        repo_path, message, mock_session, files, options, continue_thread=False
+    )
+
+    last_reply = "Last reply from Aider."
+    assert result_text.count(last_reply) == 1, "The last reply should be appended once for unclear outcomes."
+
+@pytest.mark.asyncio
+@patch("git.Repo")
+@patch("os.path.isfile", return_value=True)
+@patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
+@patch("asyncio.create_subprocess_shell")
+async def test_ai_edit_files_does_not_append_reply_on_success(mock_create_subprocess, mock_get_reply, mock_isfile, mock_repo, tmp_path):
+    """
+    Tests that ai_edit_files does NOT append Aider's last reply on a clear success.
+    """
+    # Create a mock process that returns stdout with "Applied edit to"
+    mock_process = AsyncMock()
+    mock_process.communicate.return_value = (b"Applied edit to file.txt", b"")
+    mock_process.returncode = 0
+    mock_create_subprocess.return_value = mock_process
+
+    repo_path = str(tmp_path)
+    message = "test message"
+    files = ["file.txt"]
+    mock_session = AsyncMock()
+    options = []
+
+    result_text = await ai_edit_files(
+        repo_path, message, mock_session, files, options, continue_thread=False
+    )
+
+    last_reply = "Last reply from Aider."
+    assert result_text.count(last_reply) == 0, "The last reply should NOT be appended on success."
+    
+    # Assert that the formatted success message is present instead of raw output
+    assert "Code changes completed and committed successfully" in result_text
