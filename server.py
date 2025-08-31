@@ -1295,6 +1295,27 @@ async def ai_edit_files(
                     else:
                         result_message += "\n\nNo new commit detected or no changes made by Aider."
 
+                    # Append the last Aider reply from chat history
+                    try:
+                        history_path = Path(directory_path) / ".aider.chat.history.md"
+                        if history_path.exists():
+                            history_content = history_path.read_text(encoding="utf-8", errors="ignore")
+                            # Extract the last session by finding the last occurrence of the anchor string
+                            anchor = "# aider chat started at"
+                            last_anchor_pos = history_content.rfind(anchor)
+                            if last_anchor_pos != -1:
+                                snippet = history_content[last_anchor_pos:]
+                            else:
+                                snippet = history_content
+                            
+                            # Remove SEARCH/REPLACE noise blocks
+                            snippet = re.sub(r"<<<<<<< SEARCH.*?>>>>>>> REPLACE", "", snippet, flags=re.DOTALL)
+                            
+                            if snippet.strip():
+                                result_message += f"\n\nAider last reply (from chat log):\n{snippet}"
+                    except Exception as e:
+                        logger.debug(f"Failed to append Aider chat history: {e}")
+
                 except git.InvalidGitRepositoryError:
                     result_message += "\n\nCould not access Git repository to get diff after Aider run."
                 except Exception as e:
@@ -1303,6 +1324,27 @@ async def ai_edit_files(
                  result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
                                      f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
                                      f"STDOUT:\n{stdout}")
+            
+            # Append the last Aider reply from chat history
+            try:
+                history_path = Path(directory_path) / ".aider.chat.history.md"
+                if history_path.exists():
+                    history_content = history_path.read_text(encoding="utf-8", errors="ignore")
+                    # Extract the last session by finding the last occurrence of the anchor string
+                    anchor = "# aider chat started at"
+                    last_anchor_pos = history_content.rfind(anchor)
+                    if last_anchor_pos != -1:
+                        snippet = history_content[last_anchor_pos:]
+                    else:
+                        snippet = history_content
+                    
+                    # Remove SEARCH/REPLACE noise blocks
+                    snippet = re.sub(r"<<<<<<< SEARCH.*?>>>>>>> REPLACE", "", snippet, flags=re.DOTALL)
+                    
+                    if snippet.strip():
+                        result_message += f"\n\nAider last reply (from chat log):\n{snippet}"
+            except Exception as e:
+                logger.debug(f"Failed to append Aider chat history: {e}")
             
             return result_message
 
