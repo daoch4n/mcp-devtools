@@ -1277,7 +1277,7 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")
+mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -1670,7 +1670,7 @@ async def handle_sse(request: Request):
     Returns:
         A Starlette Response object for the SSE connection.
     """
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream): # type: ignore[protected-access]
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
