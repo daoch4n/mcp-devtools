@@ -430,7 +430,7 @@ class WriteToFile(BaseModel):
     Represents the input schema for the `write_to_file` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    file_path: str = Field(description="The path to the file to write to, relative to the repository's working directory. The file will be created if it doesn't exist, or overwritten if it does.")
+    file_path: str = Field(description="The path to the file to write to, relative to the repository's working directory. The file will be created if it doesn't exist. Existing files are never overwritten unless overwrite=true is explicitly provided.")
     content: str = Field(description="The string content to write to the specified file.")
     overwrite: bool = Field(
         default=False,
@@ -805,7 +805,7 @@ async def _run_tsc_if_applicable(repo_path: str, file_path: str) -> str:
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str, overwrite: bool = False) -> str:
     """
-    Writes content to a specified file, creating it if it doesn't exist or overwriting it if it does.
+    Writes content to a specified file, creating it if it doesn't exist.
     Includes a check to ensure the content was written correctly and generates a diff.
 
     Args:
@@ -822,11 +822,11 @@ async def write_to_file_content(repo_path: str, file_path: str, content: str, ov
         full_file_path = Path(repo_path) / file_path
         
         # Check if file exists and overwrite protection is enabled
-        if full_file_path.exists() and not overwrite:
+        file_existed = full_file_path.exists()
+        if file_existed and not overwrite:
             return f"OVERWRITE_PROTECTED: File already exists: {file_path}. Pass overwrite=true to overwrite."
         
         original_content = ""
-        file_existed = full_file_path.exists()
         if file_existed:
             with open(full_file_path, 'r') as f:
                 original_content = f.read()
