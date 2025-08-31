@@ -40,7 +40,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 from server import (
     git_status, git_diff, git_stage_and_commit,
     git_log, git_branch, git_show,
-    git_merge,
+    git_merge, git_merge_abort,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
@@ -361,6 +361,37 @@ def test_git_merge_squash_with_commit_message(temp_git_repo):
     assert repo.head.commit.message.startswith('Squash commit msg')
     assert (repo_path / 'squash2.txt').exists()
 
+
+def test_git_merge_abort_no_merge_in_progress(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    msg = git_merge_abort(repo)
+    assert msg == 'MERGE_ABORT: No merge in progress.'
+
+
+def test_git_merge_abort_after_conflict(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    # Create conflict
+    (repo_path / 'ab.txt').write_text('line\n')
+    repo.index.add(['ab.txt'])
+    repo.index.commit('init ab')
+    repo.git.checkout('-b', 'feat_ab')
+    (repo_path / 'ab.txt').write_text('feat\n')
+    repo.index.add(['ab.txt'])
+    repo.index.commit('feat change')
+    repo.git.checkout('main')
+    (repo_path / 'ab.txt').write_text('main\n')
+    repo.index.add(['ab.txt'])
+    repo.index.commit('main change')
+    # Merge to cause conflict
+    _ = git_merge(repo, 'feat_ab')
+    merge_head = Path(repo.working_dir) / '.git' / 'MERGE_HEAD'
+    assert merge_head.exists()
+    # Abort
+    msg = git_merge_abort(repo)
+    assert msg.startswith('MERGE_ABORT:')
+    assert not merge_head.exists()
+    assert not repo.index.unmerged_blobs()
+
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
     commit_sha = repo.head.commit.hexsha
@@ -624,6 +655,7 @@ async def test_list_tools():
 @patch('server.git_log')
 @patch('server.git_branch')
 @patch('server.git_merge')
+@patch('server.git_merge_abort')
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.git_read_file')
@@ -632,6 +664,7 @@ async def test_list_tools():
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
+    mock_git_merge_abort,
     mock_git_merge,
     mock_git_branch, mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
@@ -722,6 +755,11 @@ async def test_call_tool(
     mock_git_merge.return_value = 'Squash merge successful'
     result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","target":"main","squash": True}))
     assert result[0].text == 'Squash merge successful'
+
+    # Test GitTools.MERGE_ABORT
+    mock_git_merge_abort.return_value = 'MERGE_ABORT: Merge aborted and working tree restored.'
+    result = list(await call_tool(GitTools.MERGE_ABORT.value, {"repo_path":"/tmp/repo"}))
+    assert result[0].text == 'MERGE_ABORT: Merge aborted and working tree restored.'
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock
