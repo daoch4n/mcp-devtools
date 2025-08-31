@@ -24,7 +24,7 @@ Key Components:
 
 import logging
 from pathlib import Path, PurePath
-from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Type
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -50,7 +50,6 @@ import re
 import difflib
 import shlex
 import json
-import subprocess
 import yaml
 
 logging.basicConfig(level=logging.DEBUG)
@@ -741,7 +740,7 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         any new diff generated and TSC output if applicable, or an error message.
     """
     tmp_file_path = None
-    affected_file_path = None
+    full_affected_path = None
     original_content = ""
 
     # Attempt to extract affected file path from the diff content
@@ -752,6 +751,8 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         match = re.search(r"\+\+\+ b/(.+)", diff_content)
         if match:
             affected_file_path = match.group(1).strip()
+        else:
+            affected_file_path = None
 
     if affected_file_path:
         full_affected_path = Path(repo.working_dir) / affected_file_path
@@ -774,7 +775,7 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
             
         result_message = "Diff applied successfully"
 
-        if affected_file_path:
+        if affected_file_path and full_affected_path:
             with open(full_affected_path, 'r') as f:
                 new_content = f.read()
 
@@ -983,7 +984,7 @@ async def ai_edit(
         logger.error(error_message)
         return error_message
 
-    aider_config = load_aider_config(directory_path, config_file)
+    load_aider_config(directory_path, config_file)
     load_dotenv_file(directory_path, env_file)
 
     aider_options: Dict[str, Any] = {}
@@ -1110,14 +1111,14 @@ async def ai_edit(
 
         await session.send_progress_notification(
             "ai_edit",
-            f"AIDER STDOUT:\n{stdout}",
-            0.5
+            0.5,
+            f"AIDER STDOUT:\n{stdout}"
         )
         if stderr:
             await session.send_progress_notification(
                 "ai_edit",
-                f"AIDER STDERR:\n{stderr}",
-                0.5
+                0.5,
+                f"AIDER STDERR:\n{stderr}"
             )
 
         return_code = process.returncode
@@ -1224,7 +1225,7 @@ async def get_aider_status(
     
     try:
         command = [aider_path, "--version"]
-        stdout, stderr, returncode = await run_command(command)
+        stdout, stderr, _ = await run_command(command)
         
         version_info = stdout.strip() if stdout else "Unknown version"
         logger.info(f"Detected Aider version: {version_info}")
@@ -1287,7 +1288,7 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server: Server[ServerSession] = Server("mcp-git")
+mcp_server = Server("mcp-git")
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -1393,9 +1394,6 @@ async def list_repos() -> Sequence[str]:
         A sequence of strings, where each string is the absolute path to a Git repository.
     """
     async def by_roots() -> Sequence[str]:
-        if not isinstance(mcp_server.request_context.session, ServerSession):
-            raise TypeError("mcp_server.request_context.session must be a ServerSession")
-
         if not mcp_server.request_context.session.check_client_capability(
             ClientCapabilities(roots=RootsCapability())
         ):
@@ -1683,7 +1681,7 @@ async def handle_sse(request: Request):
     Returns:
         A Starlette Response object for the SSE connection.
     """
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+    async with sse_transport.connect_sse(request.scope, request.receive, cast(Send, request._send)) as (read_stream, write_stream):
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
@@ -1699,12 +1697,12 @@ async def handle_post_message(scope: Scope, receive: Receive, send: Send):
     """
     await sse_transport.handle_post_message(scope, receive, send)
 
-routes = [
+routes: List[Union[Route, Mount]] = [
     Route("/sse", endpoint=handle_sse, methods=["GET"]),
     Mount(POST_MESSAGE_ENDPOINT, app=handle_post_message),
 ]
 
-app = Starlette(routes=routes)
+app = Starlette(routes=cast(Any, routes))
 
 if __name__ == "__main__":
     # To run the server, you would typically use uvicorn:
