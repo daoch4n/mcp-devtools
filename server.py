@@ -1178,11 +1178,6 @@ async def ai_edit_files(
                     else:
                         result_message += "\n\nNo new commit detected or no changes made by Aider."
 
-                    # Append the last Aider reply from chat history
-                    last_reply = _get_last_aider_reply(directory_path)
-                    if last_reply:
-                        result_message += f"\n\nAider's last reply:\n{last_reply}"
-
                 except git.InvalidGitRepositoryError:
                     result_message += "\n\nCould not access Git repository to get diff after Aider run."
                 except Exception as e:
