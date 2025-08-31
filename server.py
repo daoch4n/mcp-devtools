@@ -579,7 +579,7 @@ def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]
         A string indicating the success of the staging and commit operation.
     """
     if files:
-        repo.index.add(files)
+        repo.index.add(files)  # type: ignore
         staged_message = f"Files {', '.join(files)} staged successfully."
     else:
         repo.git.add(A=True)
@@ -1111,14 +1111,14 @@ async def ai_edit(
 
         await session.send_progress_notification(
             "ai_edit",
-            f"AIDER STDOUT:\n{stdout}",
-            0.5
+            0.5,
+            None
         )
         if stderr:
             await session.send_progress_notification(
                 "ai_edit",
-                f"AIDER STDERR:\n{stderr}",
-                0.5
+                0.5,
+                None
             )
 
         return_code = process.returncode
@@ -1288,7 +1288,7 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server: Server = Server("mcp-git")
+mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:

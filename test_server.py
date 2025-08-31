@@ -40,12 +40,12 @@ from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 from server import (
     git_status, git_diff, git_stage_and_commit,
     git_log, git_branch, git_show,
-    git_apply_diff, git_read_file,
+    git_apply_diff, read_file_content,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
     Starlette, Route, Mount, Response, ServerSession, ClientCapabilities, RootsCapability, ListRootsResult, TextContent,
     handle_sse, handle_post_message,
-    list_tools, call_tool, list_repos, GitTools, ai_edit_files
+    list_tools, call_tool, list_repos, GitTools, ai_edit
 )
 import git
 from git.exc import GitCommandError
@@ -244,15 +244,15 @@ def test_git_show(temp_git_repo):
     assert 'commit ' not in res_range_diff.lower()  # Check that commit headers are not included
     assert '+modified' in res_range_diff
 
-def test_git_read_file(temp_git_repo):
+def test_read_file_content(temp_git_repo):
     repo, repo_path = temp_git_repo
     file_content = "This is a test file content."
     (repo_path / "read_me.txt").write_text(file_content)
     
-    result = git_read_file(repo, "read_me.txt")
+    result = read_file_content(repo, "read_me.txt")
     assert f"Content of read_me.txt:\n{file_content}" in result
 
-    result_not_found = git_read_file(repo, "non_existent_file.txt")
+    result_not_found = read_file_content(repo, "non_existent_file.txt")
     assert "Error: file wasn't found or out of cwd" in result_not_found
 
 # Removed test_git_stage_all since git_stage_all no longer exists and staging is now handled via git_stage_and_commit
@@ -459,12 +459,12 @@ async def test_list_tools():
 @patch('server.git_branch')
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
-@patch('server.git_read_file')
+@patch('server.read_file_content')
 @patch('server.write_to_file_content', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
-    mock_git_read_file, mock_git_apply_diff, mock_git_show,
+    mock_read_file_content, mock_git_apply_diff, mock_git_show,
     mock_git_branch, mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
@@ -542,7 +542,7 @@ async def test_call_tool(
     assert result[0].text == "Diff applied"
 
     # Test GitTools.READ_FILE
-    mock_git_read_file.return_value = "File content"
+    mock_read_file_content.return_value = "File content"
     result = list(await call_tool(GitTools.READ_FILE.value, {"repo_path": "/tmp/repo", "file_path": "file.txt"})) # Cast to list
     assert result[0].text == "File content"
 
@@ -872,19 +872,22 @@ async def test_run_command_success_and_failure(monkeypatch):
     monkeypatch.setattr(asyncio, "create_subprocess_exec", dummy_create_subprocess_exec)
 
     # Success without input
-    out, err = await run_command(["echo", "ok"])
+    out, err, code = await run_command(["echo", "ok"])
     assert out == "ok"
     assert err == ""
+    assert code == 0
 
     # Success with input
-    out, err = await run_command(["stdin"], input_data="data")
+    out, err, code = await run_command(["stdin"], input_data="data")
     assert out == "stdin-ok"
     assert err == ""
+    assert code == 0
 
     # Failure
-    out, err = await run_command(["fail"])
+    out, err, code = await run_command(["fail"])
     assert out == ""
     assert err == "fail"
+    assert code == 1
 def test_prepare_aider_command_various_cases():
     from server import prepare_aider_command
 
@@ -987,7 +990,7 @@ async def test_git_apply_diff_cases(monkeypatch, tmp_path):
         in result
     )
 def test_git_read_file_error_cases(monkeypatch):
-    from server import git_read_file
+    from server import read_file_content
     import types
 
     class DummyRepo:
@@ -1000,7 +1003,7 @@ def test_git_read_file_error_cases(monkeypatch):
     def fake_open_notfound(*a, **kw):
         raise FileNotFoundError()
     monkeypatch.setattr("builtins.open", fake_open_notfound)
-    result = git_read_file(repo, "nofile.txt")
+    result = read_file_content(repo, "nofile.txt")
     assert (
         "file wasn't found" in result
         or "UNEXPECTED_ERROR: Failed to read file 'nofile.txt':" in result
@@ -1010,7 +1013,7 @@ def test_git_read_file_error_cases(monkeypatch):
     def fake_open_exc(*a, **kw):
         raise Exception("fail")
     monkeypatch.setattr("builtins.open", fake_open_exc)
-    result = git_read_file(repo, "nofile.txt")
+    result = read_file_content(repo, "nofile.txt")
     assert "UNEXPECTED_ERROR: Failed to read file 'nofile.txt': fail" in result
     assert "UNEXPECTED_ERROR:" in result
 
@@ -1018,9 +1021,9 @@ def test_git_read_file_error_cases(monkeypatch):
 @pytest.mark.asyncio
 @patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
 @patch("asyncio.create_subprocess_shell")
-async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subprocess, mock_get_reply, tmp_path):
+async def test_ai_edit_appends_reply_on_unclear_outcome(mock_create_subprocess, mock_get_reply, tmp_path):
     """
-    Tests that ai_edit_files appends Aider's last reply when the outcome is unclear.
+    Tests that ai_edit appends Aider's last reply when the outcome is unclear.
     """
     # Create a mock process that returns stdout without "Applied edit to"
     mock_process = AsyncMock()
@@ -1034,7 +1037,7 @@ async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subpro
     mock_session = AsyncMock()
     options = []
 
-    result_text = await ai_edit_files(
+    result_text = await ai_edit(
         repo_path, message, mock_session, files, options, continue_thread=False
     )
 
@@ -1044,9 +1047,9 @@ async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subpro
 @pytest.mark.asyncio
 @patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
 @patch("asyncio.create_subprocess_shell")
-async def test_ai_edit_files_appends_reply_on_success(mock_create_subprocess, mock_get_reply, tmp_path):
+async def test_ai_edit_appends_reply_on_success(mock_create_subprocess, mock_get_reply, tmp_path):
     """
-    Tests that ai_edit_files appends Aider's last reply on a clear success.
+    Tests that ai_edit appends Aider's last reply on a clear success.
     """
     # Create a mock process that returns stdout with "Applied edit to"
     mock_process = AsyncMock()
@@ -1060,7 +1063,7 @@ async def test_ai_edit_files_appends_reply_on_success(mock_create_subprocess, mo
     mock_session = AsyncMock()
     options = []
 
-    result_text = await ai_edit_files(
+    result_text = await ai_edit(
         repo_path, message, mock_session, files, options, continue_thread=False
     )
 
