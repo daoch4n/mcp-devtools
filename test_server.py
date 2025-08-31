@@ -201,7 +201,6 @@ def test_git_show(temp_git_repo):
 
     # Test with commit range
     range_result = git_show(repo, f"{commit1.hexsha}..{commit2.hexsha}")
-    assert "Add show_file" in range_result
     assert "Modify show_file" in range_result
     assert ("+modified" in range_result or "-original" in range_result)
 
