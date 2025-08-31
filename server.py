@@ -424,6 +424,7 @@ class GitMerge(BaseModel):
     dry_run: bool = Field(False, description="If true, preview the merge without changing the repo. Reports whether fast-forward or a merge commit is needed; may indicate potential conflicts.")
     abort: bool = Field(False, description="If true, abort an in-progress merge (runs `git merge --abort`) and return status; no-op if none.")
     status: bool = Field(False, description="If true, preview merge status without changing the repo: reports whether a merge is in progress and conflicted files.")
+    continue_: bool = Field(False, alias="continue", description="If true, finalize a merge after conflicts have been resolved. Requires that a merge is in progress and all conflicts are staged.")
 
 
 
@@ -657,6 +658,7 @@ def git_merge(
     dry_run: bool = False,
     abort: bool = False,
     status: bool = False,
+    continue_merge: bool = False,
 ) -> str:
     """Merge a source ref into the current or specified target branch.
 
@@ -664,9 +666,21 @@ def git_merge(
     - If target is provided, checkout that branch first.
     - Supports --ff-only, --no-ff, --squash, and an optional commit_message. For squash, if commit_message is provided, a commit will be created after the squash.
     - If abort is True, abort an in-progress merge instead.
+    - If continue_merge is True, finalize a merge after conflicts have been resolved.
     - If status is True, preview merge status without changing the repo.
+    - If dry_run is True, preview the merge without changing the repo.
     - Returns a descriptive message. On errors (e.g., conflicts), returns a string starting with 'MERGE_ERROR:' or 'MERGE_CONFLICT:'.
     """
+    
+    def _merge_hints():
+        return "\n".join([
+            "",
+            "Hints:",
+            "- To abort the merge: call git_merge with abort=true.",
+            "- To finalize after resolving conflicts: call git_merge with continue=true and optionally commit_message.",
+            "- To preview the merge outcome: call git_merge with dry_run=true.",
+            "- To check merge status: call git_merge with status=true.",
+        ])
     if status:
         merge_head = Path(repo.working_dir) / '.git' / 'MERGE_HEAD'
         in_progress = merge_head.exists()
@@ -674,7 +688,7 @@ def git_merge(
         conflicts_map = repo.index.unmerged_blobs()
         conflicts_list = sorted(conflicts_map.keys()) if conflicts_map else []
         conflicts_str = ', '.join(conflicts_list) if conflicts_list else 'none'
-        return f"MERGE_STATUS:\n- in_progress: {str(in_progress).lower()}\n- branch: {current}\n- conflicts: {conflicts_str}"
+        return f"MERGE_STATUS:\n- in_progress: {str(in_progress).lower()}\n- branch: {current}\n- conflicts: {conflicts_str}" + _merge_hints()
     if abort:
         # Abort merge mode - abort an in-progress merge
         try:
@@ -689,6 +703,30 @@ def git_merge(
         except git.GitCommandError as e:
             err = getattr(e, 'stderr', None) or str(e)
             return f"MERGE_ABORT_ERROR: {err}"
+    if continue_merge:
+        # Continue merge mode - finalize a merge after conflicts have been resolved
+        try:
+            merge_head = Path(repo.working_dir) / '.git' / 'MERGE_HEAD'
+            if not merge_head.exists():
+                return "MERGE_CONTINUE_ERROR: No merge in progress."
+            
+            # Check for unresolved conflicts
+            conflicts = repo.index.unmerged_blobs()
+            if conflicts:
+                files = ", ".join(sorted(conflicts.keys()))
+                return f"MERGE_CONTINUE_ERROR: Unresolved conflicts remain: {files}"
+            
+            # Get the source ref for the commit message
+            with open(merge_head, 'r') as f:
+                source_ref = f.read().strip()[:7]  # First 7 chars of the commit hash
+            
+            current = repo.active_branch.name if hasattr(repo, 'active_branch') else '(detached)'
+            msg = commit_message or f"Merge {source_ref} into {current}"
+            commit = repo.index.commit(msg)
+            sha = commit.hexsha[:7]
+            return f"MERGE_CONTINUE: Merge completed on branch {current} with commit {sha}: {msg}"
+        except Exception as e:
+            return f"MERGE_CONTINUE_ERROR: {e}"
     elif dry_run:
         # Dry run mode - preview merge without changing repo
         try:
@@ -702,7 +740,7 @@ def git_merge(
             # Compute merge base
             bases = repo.merge_base(tgt, src)
             if not bases:
-                return f"DRY_RUN_ERROR: No common ancestor found between '{source}' and '{target_ref}'."
+                return f"DRY_RUN_ERROR: No common ancestor found between '{source}' and '{target_ref}'." + _merge_hints()
             base = bases[0].hexsha
             
             # Determine relationship using merge-base --is-ancestor
@@ -719,21 +757,21 @@ def git_merge(
                 up_to_date = False
                 
             if up_to_date:
-                return f"DRY_RUN: Already up to date on {target_ref}."
+                return f"DRY_RUN: Already up to date on {target_ref}." + _merge_hints()
             elif fast_forward:
-                return f"DRY_RUN: Fast-forward merge would apply {source} into {target_ref}."
+                return f"DRY_RUN: Fast-forward merge would apply {source} into {target_ref}." + _merge_hints()
             else:
                 # Use merge-tree to probe for conflicts without changing repo
                 out = repo.git.execute(['git', 'merge-tree', base, tgt.hexsha, src.hexsha])
                 conflicts_detected = ('<<<<<<<' in out or '>>>>>>>' in out)
                 suffix = 'conflicts detected' if conflicts_detected else 'no conflicts detected'
-                return f"DRY_RUN: Merge commit required to merge {source} into {target_ref}; {suffix}."
+                return f"DRY_RUN: Merge commit required to merge {source} into {target_ref}; {suffix}." + _merge_hints()
         except git.GitCommandError as e:
             err_msg = getattr(e, 'stderr', None) or str(e)
-            return f"DRY_RUN_ERROR: Failed to preview merge due to a Git error: {err_msg}"
+            return f"DRY_RUN_ERROR: Failed to preview merge due to a Git error: {err_msg}" + _merge_hints()
         except Exception as e:
             logger.error(f"Unexpected error during git_merge dry run: {e}", exc_info=True)
-            return f"DRY_RUN_ERROR: An unexpected error occurred while previewing the merge: {e}"
+            return f"DRY_RUN_ERROR: An unexpected error occurred while previewing the merge: {e}" + _merge_hints()
     else:
         # Normal merge mode
         try:
@@ -1511,7 +1549,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.MERGE,
-            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. Set abort=True to abort an in-progress merge instead. A non-destructive status preview is available via status=true.",
+            description="Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. Set abort=True to abort an in-progress merge instead. Set continue=True to finalize a merge after resolving conflicts. A non-destructive status preview is available via status=true. Both status and dry_run outputs include helpful hints.",
             inputSchema=GitMerge.model_json_schema(),
         )
     ]
@@ -1779,7 +1817,8 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         arguments.get("commit_message"),
                         arguments.get("dry_run", False),
                         arguments.get("abort", False),
-                        arguments.get("status", False)
+                        arguments.get("status", False),
+                        arguments.get("continue", False)
                     )
                     return [TextContent(
                         type="text",

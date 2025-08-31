@@ -380,7 +380,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `git_merge`
-- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. Set abort=True to abort an in-progress merge instead. A non-destructive status preview is available via status=true. On conflicts, returns MERGE_CONFLICT with a list of files.
+- **Description:** Merge a source branch/ref into the current or specified target branch. Supports --ff-only, --no-ff and --squash. Optionally provide commit_message; for squash, a commit will be created if a message is provided. Supports dry_run for safe preview of merge outcome. Set abort=True to abort an in-progress merge instead. Set continue=True to finalize a merge after resolving conflicts. A non-destructive status preview is available via status=true. Both status and dry_run outputs include helpful hints. On conflicts, returns MERGE_CONFLICT with a list of files.
 - **Input Schema:**
   ```json
   {
@@ -425,6 +425,10 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
       "status": {
         "type": "boolean",
         "description": "If true, preview merge status without changing the repo: reports whether a merge is in progress and conflicted files."
+      },
+      "continue": {
+        "type": "boolean",
+        "description": "If true, finalize a merge after conflicts have been resolved. Requires that a merge is in progress and all conflicts are staged."
       }
     },
     "required": [

@@ -224,6 +224,9 @@ def test_git_merge_dry_run_fast_forward(temp_git_repo):
     assert 'Fast-forward' in msg
     # Ensure no changes applied in dry run
     assert not (repo_path / 'feat_only.txt').exists()
+    # Check that hints are included
+    assert 'Hints:' in msg
+    assert 'status=true' in msg
 
 def test_git_merge_into_target(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -255,6 +258,9 @@ def test_git_merge_dry_run_merge_required(temp_git_repo):
     assert 'Merge commit required' in msg
     # Repo unchanged for dry run
     assert not (repo_path / 'dev.txt').exists()
+    # Check that hints are included
+    assert 'Hints:' in msg
+    assert 'abort=true' in msg
 
 def test_git_merge_ff_only_non_ff_fails(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -317,6 +323,9 @@ def test_git_merge_dry_run_conflicts(temp_git_repo):
     # Ensure no changes applied
     with open(repo_path / 'conflict2.txt', 'r') as f:
         assert '<<<<<<<' not in f.read()
+    # Check that hints are included
+    assert 'Hints:' in msg
+    assert 'continue=true' in msg
 
 def test_git_merge_no_ff_forces_merge_commit(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -370,6 +379,9 @@ def test_git_merge_status_no_merge(temp_git_repo):
     assert '- branch:' in msg
     # No conflicts in a clean repo
     assert 'conflicts: none' in msg
+    # Check that hints are included
+    assert 'Hints:' in msg
+    assert 'abort=true' in msg
 
 def test_git_merge_status_with_conflicts(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -392,6 +404,9 @@ def test_git_merge_status_with_conflicts(temp_git_repo):
     assert msg.startswith('MERGE_STATUS:')
     assert '- in_progress: true' in msg
     assert 'stat.txt' in msg
+    # Check that hints are included
+    assert 'Hints:' in msg
+    assert 'continue=true' in msg
 
 def test_git_merge_abort_no_merge_in_progress(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -422,6 +437,47 @@ def test_git_merge_abort_after_conflict(temp_git_repo):
     assert msg.startswith('MERGE_ABORT:')
     assert not merge_head.exists()
     assert not repo.index.unmerged_blobs()
+
+def test_git_merge_continue_after_resolve(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    # Create conflict scenario
+    (repo_path / 'continue.txt').write_text('base content\n')
+    repo.index.add(['continue.txt'])
+    repo.index.commit('init continue')
+    
+    # Create feature branch and modify file
+    repo.git.checkout('-b', 'featc')
+    (repo_path / 'continue.txt').write_text('feature content\n')
+    repo.index.add(['continue.txt'])
+    repo.index.commit('feature change')
+    
+    # Go back to main and modify same file differently
+    repo.git.checkout('main')
+    (repo_path / 'continue.txt').write_text('main content\n')
+    repo.index.add(['continue.txt'])
+    repo.index.commit('main change')
+    
+    # Attempt merge to cause conflict
+    msg = git_merge(repo, 'featc')
+    assert msg.startswith('MERGE_CONFLICT:')
+    assert 'continue.txt' in msg
+    
+    # Resolve conflict by writing resolved content and staging
+    (repo_path / 'continue.txt').write_text('resolved content\n')
+    repo.index.add(['continue.txt'])
+    
+    # Continue merge with a custom commit message
+    msg = git_merge(repo, 'featc', continue_merge=True, commit_message='Resolved merge conflict')
+    assert msg.startswith('MERGE_CONTINUE:')
+    assert 'Merge completed' in msg
+    assert 'Resolved merge conflict' in msg
+    
+    # Verify MERGE_HEAD is removed
+    merge_head = Path(repo.working_dir) / '.git' / 'MERGE_HEAD'
+    assert not merge_head.exists()
+    
+    # Verify the commit message
+    assert repo.head.commit.message.startswith('Resolved merge conflict')
 
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -794,6 +850,11 @@ async def test_call_tool(
     mock_git_merge.return_value = 'MERGE_STATUS:\n- in_progress: false\n- branch: main\n- conflicts: none'
     result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","status": True}))
     assert result[0].text.startswith('MERGE_STATUS:')
+
+    # Test GitTools.MERGE with continue flag
+    mock_git_merge.return_value = 'MERGE_CONTINUE: Merge completed'
+    result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","source":"dev","continue": True}))
+    assert result[0].text == 'MERGE_CONTINUE: Merge completed'
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock
