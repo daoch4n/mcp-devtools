@@ -74,12 +74,43 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         if not history_path.exists():
             return None
         history_content = history_path.read_text(encoding="utf-8", errors="ignore")
+        
+        # Find the last session
         anchor = "# aider chat started at"
         last_anchor_pos = history_content.rfind(anchor)
-        snippet = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
-        # Remove SEARCH/REPLACE noise blocks
-        snippet = re.sub(r"<<<<<<< SEARCH.*?>>>>>>> REPLACE", "", snippet, flags=re.DOTALL)
-        return snippet.strip() or None
+        session_content = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
+        
+        # Find the last ASSISTANT block in the session
+        assistant_blocks = re.findall(r"## ASSISTANT.*?(?=\n## |\Z)", session_content, re.DOTALL)
+        if assistant_blocks:
+            # Use the last ASSISTANT block
+            snippet = assistant_blocks[-1]
+        else:
+            # Fallback to the entire session if no ASSISTANT block found
+            snippet = session_content
+        
+        # Remove noisy lines but keep useful ones
+        lines = snippet.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # Remove session header
+            if line.startswith("# aider chat started at"):
+                continue
+            # Remove command invocation lines
+            if line.startswith("> ") and ("/aider" in line or "Aider v" in line or "Git repo:" in line):
+                continue
+            # Keep useful lines
+            if "> Model:" in line or "> Tokens:" in line or "> Commit" in line:
+                cleaned_lines.append(line)
+            # Remove SEARCH/REPLACE noise blocks
+            elif "<<<<<<< SEARCH" in line or ">>>>>>> REPLACE" in line:
+                continue
+            else:
+                cleaned_lines.append(line)
+        
+        result = '\n'.join(cleaned_lines).strip()
+        return result or None
     except Exception as e:
         logger.debug(f"Failed to get Aider chat history: {e}")
         return None
@@ -1146,11 +1177,6 @@ async def ai_edit_files(
                     else:
                         result_message += "\n\nNo new commit detected or no changes made by Aider."
 
-                    # Append the last Aider reply from chat history
-                    last_reply = _get_last_aider_reply(directory_path)
-                    if last_reply:
-                        result_message += f"\n\nAider last reply (from chat log):\n{last_reply}"
-
                 except git.InvalidGitRepositoryError:
                     result_message += "\n\nCould not access Git repository to get diff after Aider run."
                 except Exception as e:
@@ -1159,12 +1185,10 @@ async def ai_edit_files(
                  result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
                                      f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
                                      f"STDOUT:\n{stdout}")
-            
-            # Append the last Aider reply from chat history
-            last_reply = _get_last_aider_reply(directory_path)
-            if last_reply:
-                result_message += f"\n\nAider last reply (from chat log):\n{last_reply}"
-            
+                 last_reply = _get_last_aider_reply(directory_path)
+                 if last_reply:
+                    result_message += f"\n\nAider's last reply:\n{last_reply}"
+
             return result_message
 
     except Exception as e:
