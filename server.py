@@ -1038,8 +1038,6 @@ async def ai_edit_files(
             logger.error(f"Aider process exited with code {return_code}")
             return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
-            logger.info("Aider process completed.")
-            
             result_message = "Aider process completed."
             if "Applied edit to" in stdout:
                 result_message = "Code changes completed and committed successfully."
