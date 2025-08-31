@@ -349,18 +349,16 @@ class GitStatus(BaseModel):
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
 
-class GitDiffAll(BaseModel):
-    """
-    Represents the input schema for the `git_diff_all` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
 
 class GitDiff(BaseModel):
     """
     Represents the input schema for the `git_diff` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    target: str = Field(description="The target (e.g., branch name, commit hash, tag) to diff against. For example, 'main', 'HEAD~1', or a full commit SHA.")
+    target: Optional[str] = Field(
+        None,
+        description="Optional. If omitted, behaves like `git diff` (worktree vs index). Pass 'HEAD' or another ref to compare against a commit or branch."
+    )
 
 class GitCommit(BaseModel):
     """
@@ -495,7 +493,6 @@ class GitTools(str, Enum):
     An enumeration of all available Git and related tools.
     """
     STATUS = "git_status"
-    DIFF_ALL = "git_diff_all"
     DIFF = "git_diff"
     STAGE_AND_COMMIT = "git_stage_and_commit"
     RESET = "git_reset"
@@ -522,30 +519,21 @@ def git_status(repo: git.Repo) -> str:
     """
     return repo.git.status()
 
-def git_diff_all(repo: git.Repo) -> str:
+
+def git_diff(repo: git.Repo, target: Optional[str] = None) -> str:
     """
-    Shows all changes in the working directory (staged and unstaged, compared to HEAD).
+    Shows differences in the working directory. If target is None, shows worktree vs index.
+    If target is provided, shows differences against that target.
 
     Args:
         repo: The Git repository object.
+        target: Optional. The target (branch, commit hash, etc.) to diff against.
+                If None, behaves like `git diff` (worktree vs index).
 
     Returns:
-        A string representing the output of `git diff HEAD`.
+        A string representing the output of `git diff` or `git diff <target>`.
     """
-    return repo.git.diff("HEAD")
-
-def git_diff(repo: git.Repo, target: str) -> str:
-    """
-    Shows differences between branches or commits.
-
-    Args:
-        repo: The Git repository object.
-        target: The target (branch, commit hash, etc.) to diff against.
-
-    Returns:
-        A string representing the output of `git diff <target>`.
-    """
-    return repo.git.diff(target)
+    return repo.git.diff() if target is None else repo.git.diff(target)
 
 def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
     """
@@ -1257,13 +1245,8 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitStatus.model_json_schema(),
         ),
         Tool(
-            name=GitTools.DIFF_ALL,
-            description="Shows all changes in the working directory, including both staged and unstaged modifications, compared to the HEAD commit. This provides a comprehensive view of all local changes.",
-            inputSchema=GitDiffAll.model_json_schema(),
-        ),
-        Tool(
             name=GitTools.DIFF,
-            description="Shows differences between the current working directory and a specified Git target (e.g., another branch, a specific commit hash, or a tag).",
+            description="Shows differences in the working directory. By default (without target), shows worktree vs index like `git diff`. Pass target='HEAD' for previous 'all changes vs HEAD' behavior.",
             inputSchema=GitDiff.model_json_schema(),
         ),
         Tool(
@@ -1477,19 +1460,14 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                         type="text",
                         text=f"Repository status:\n{status}"
                     )]
-                case GitTools.DIFF_ALL:
-                    repo = git.Repo(repo_path)
-                    diff = git_diff_all(repo)
-                    return [TextContent(
-                        type="text",
-                        text=f"All changes (staged and unstaged):\n{diff}"
-                    )]
                 case GitTools.DIFF:
                     repo = git.Repo(repo_path)
-                    diff = git_diff(repo, arguments["target"])
+                    target = arguments.get("target")
+                    diff = git_diff(repo, target)
+                    diff_header = f"Diff with {target}:" if target else "Diff of unstaged changes (worktree vs index):"
                     return [TextContent(
                         type="text",
-                        text=f"Diff with {arguments['target']}:\n{diff}"
+                        text=f"{diff_header}\n{diff}"
                     )]
                 case GitTools.STAGE_AND_COMMIT:
                     repo = git.Repo(repo_path)
