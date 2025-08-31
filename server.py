@@ -24,7 +24,7 @@ Key Components:
 
 import logging
 from pathlib import Path, PurePath
-from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -37,11 +37,11 @@ from mcp.types import (
     ListRootsResult,
     RootsCapability,
 )
-Content: TypeAlias = TextContent | ImageContent | EmbeddedResource # type: ignore
+Content: TypeAlias = Union[TextContent, ImageContent, EmbeddedResource]
 
 from enum import Enum
 import git # type: ignore
-from git.exc import GitCommandError
+from git.exc import GitCommandError # type: ignore
 from pydantic import BaseModel, Field
 import asyncio
 import tempfile
@@ -50,14 +50,18 @@ import re
 import difflib
 import shlex
 import json
-import subprocess
 import yaml
+
+# Git constant for the empty tree SHA, used for diffing initial commits.
+EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
 from starlette.routing import Route, Mount
 from starlette.responses import Response
+from starlette.requests import Request
+from starlette.types import Scope, Receive, Send
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -66,20 +70,83 @@ logging.getLogger().setLevel(logging.DEBUG)
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
     """
-    Read the Aider chat history, extract the last session, clean SEARCH/REPLACE noise,
-    and return the snippet or None if unavailable.
+    Read the Aider chat history, extract the last session, clean it,
+    and return the last assistant reply.
     """
     try:
         history_path = Path(directory_path) / ".aider.chat.history.md"
         if not history_path.exists():
             return None
         history_content = history_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Find the last session
         anchor = "# aider chat started at"
         last_anchor_pos = history_content.rfind(anchor)
-        snippet = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
-        # Remove SEARCH/REPLACE noise blocks
-        snippet = re.sub(r"<<<<<<< SEARCH.*?>>>>>>> REPLACE", "", snippet, flags=re.DOTALL)
-        return snippet.strip() or None
+        session_content = history_content[last_anchor_pos:] if last_anchor_pos != -1 else history_content
+
+        # In architect mode, the reply is a mix of prose and large code blocks.
+        # The goal is to extract all text content while discarding only the
+        # fenced code blocks. A line-by-line parser is more robust than a
+        # single large regex for this.
+        
+        lines = session_content.split('\n')
+        
+        # Isolate the assistant's reply by finding the start of the last message
+        # that is NOT part of the user's command prompt.
+        
+        # Find the last occurrence of '####' which indicates the start of an assistant message.
+        last_message_start = -1
+        for i in range(len(lines) - 1, -1, -1):
+            if lines[i].strip().startswith('####'):
+                last_message_start = i
+                break
+        
+        # If no '####' is found, fallback to the first non-prompt line.
+        if last_message_start == -1:
+            for i, line in enumerate(lines):
+                if not line.startswith('> '):
+                    last_message_start = i
+                    break
+        
+        relevant_lines = lines[last_message_start:]
+        
+        final_text_lines: List[str] = []
+        in_code_block = False
+        
+        for line in relevant_lines:
+            # Toggle state when a code fence is encountered.
+            if line.strip().startswith('```'):
+                in_code_block = not in_code_block
+                continue # Exclude the fence line itself from the output.
+            
+            # Ignore lines that are inside a code block.
+            if in_code_block:
+                continue
+                
+            stripped = line.strip()
+            
+            # Filter out metadata and leftover artifacts.
+            if stripped.startswith('> Tokens:'):
+                continue
+            if re.fullmatch(r'[\w\-\./]+\.[\w\-\./]+', stripped):
+                continue
+            
+            # Append the cleaned, relevant line.
+            final_text_lines.append(line)
+            
+        # Post-process the collected lines to remove any trailing blank lines
+        # that were preserved.
+        while final_text_lines and not final_text_lines[-1].strip():
+            final_text_lines.pop()
+        
+        # Join the collected lines and perform final cleanup.
+        full_reply = '\n'.join(final_text_lines)
+        
+        # Remove any remaining "####" markdown headers, keeping the text.
+        full_reply = re.sub(r'####\s?', '', full_reply)
+        
+        return full_reply.strip()
+
     except Exception as e:
         logger.debug(f"Failed to get Aider chat history: {e}")
         return None
@@ -87,7 +154,7 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
 # === AI_HINT helper builders (keep terse, agent-friendly) ===
 
 def ai_hint_git_apply_diff_error(stderr: str | None, affected_file_path: str | None) -> str:
-    extra = []
+    extra: List[str] = []
     low = (stderr or "").lower()
     if "patch failed" in low or "could not apply" in low:
         extra.append("The diff may not match the current repo state. Ensure the working tree is clean and the diff was created against the current HEAD.")
@@ -171,8 +238,8 @@ def load_aider_config(repo_path: Optional[str] = None, config_file: Optional[str
     Returns:
         A dictionary containing the merged Aider configuration.
     """
-    config = {}
-    search_paths = []
+    config: Dict[str, Any] = {}
+    search_paths: List[str] = []
     repo_path = os.path.abspath(repo_path or os.getcwd())
     
     logger.debug(f"Searching for Aider configuration in and around: {repo_path}")
@@ -226,8 +293,8 @@ def load_dotenv_file(repo_path: Optional[str] = None, env_file: Optional[str] = 
     Returns:
         A dictionary containing the loaded environment variables.
     """
-    env_vars = {}
-    search_paths = []
+    env_vars: Dict[str, str] = {}
+    search_paths: List[str] = []
     repo_path = os.path.abspath(repo_path or os.getcwd())
     
     logger.debug(f"Searching for .env files in and around: {repo_path}")
@@ -274,7 +341,7 @@ def load_dotenv_file(repo_path: Optional[str] = None, env_file: Optional[str] = 
     logger.debug(f"Loaded environment variables: {list(env_vars.keys())}")
     return env_vars
 
-async def run_command(command: List[str], input_data: Optional[str] = None) -> Tuple[str, str]:
+async def run_command(command: List[str], input_data: Optional[str] = None) -> Tuple[str, str, int]:
     """
     Executes a shell command asynchronously.
 
@@ -297,7 +364,7 @@ async def run_command(command: List[str], input_data: Optional[str] = None) -> T
     else:
         stdout, stderr = await process.communicate()
     
-    return stdout.decode(), stderr.decode()
+    return stdout.decode(), stderr.decode(), cast(int, process.returncode)
 
 def prepare_aider_command(
     base_command: List[str], 
@@ -328,7 +395,7 @@ def prepare_aider_command(
                     command.append(f"--no-{arg_key}")
             
             elif isinstance(value, list):
-                for item in value:
+                for item in cast(List[Any], value):
                     command.append(f"--{arg_key}")
                     command.append(str(item))
             
@@ -364,7 +431,7 @@ class GitDiff(BaseModel):
         description="Optional. Limit the diff to a specific file or directory path."
     )
 
-class GitCommit(BaseModel):
+class GitStageAndCommit(BaseModel):
     """
     Represents the input schema for the `git_stage_and_commit` tool.
     """
@@ -420,7 +487,7 @@ class GitApplyDiff(BaseModel):
 
 class GitReadFile(BaseModel):
     """
-    Represents the input schema for the `git_read_file` tool.
+    Represents the input schema for the `read_file` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     file_path: str = Field(description="The path to the file to read, relative to the repository's working directory.")
@@ -444,15 +511,6 @@ class ExecuteCommand(BaseModel):
     repo_path: str = Field(description="The absolute path to the directory where the command should be executed.")
     command: str = Field(description="The shell command string to execute (e.g., 'ls -l', 'npm install').")
 
-class EditFormat(str, Enum):
-    """
-    An enumeration of supported Aider edit formats.
-    """
-    DIFF = "diff"
-    DIFF_FENCED = "diff-fenced"
-    UDIFF = "udiff"
-    WHOLE = "whole"
-
 class AiEdit(BaseModel):
     """
     Represents the input schema for the `ai_edit` tool.
@@ -461,23 +519,9 @@ class AiEdit(BaseModel):
     message: str = Field(description="A detailed natural language message describing the code changes to make. Be specific about files, desired behavior, and any constraints.")
     files: List[str] = Field(description="A list of file paths (relative to the repository root) that Aider should operate on. This argument is mandatory.")
     continue_thread: bool = Field(description="Required. Whether to continue the Aider thread by restoring chat history. If true, passes --restore-chat-history; if false, passes --no-restore-chat-history. Clients must explicitly choose.")
-    options: Optional[List[str]] = Field(
+    options: list[str] | None = Field(
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
-    )
-    edit_format: str = Field(
-        "diff",
-        description=(
-            "Optional. The format Aider should use for edits. "
-            "If not explicitly provided, the default is selected based on the model name: "
-            "if the model includes 'gemini', defaults to 'diff-fenced'; "
-            "if the model includes 'gpt', defaults to 'udiff'; "
-            "otherwise defaults to 'diff'. "
-            "Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
-        ),
-        json_schema_extra={
-            "enum": ["diff", "diff-fenced", "udiff", "whole"]
-        }
     )
 
 class AiderStatus(BaseModel):
@@ -501,7 +545,7 @@ class GitTools(str, Enum):
     BRANCH = "git_branch"
     SHOW = "git_show"
     APPLY_DIFF = "git_apply_diff"
-    READ_FILE = "git_read_file"
+    READ_FILE = "read_file"
     WRITE_TO_FILE = "write_to_file"
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
@@ -553,7 +597,7 @@ def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]
         A string indicating the success of the staging and commit operation.
     """
     if files:
-        repo.index.add(files)
+        repo.index.add(files)  # type: ignore
         staged_message = f"Files {', '.join(files)} staged successfully."
     else:
         repo.git.add(A=True)
@@ -574,7 +618,7 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
         A list of strings, where each string represents a formatted commit entry.
     """
     commits = list(repo.iter_commits(max_count=max_count))
-    log = []
+    log: List[str] = []
     for commit in commits:
         log.append(
             f"Commit: {commit.hexsha}\n"
@@ -614,7 +658,7 @@ def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base
         repo.git.branch('-m', branch_name, new_name)
         return f"Renamed branch '{branch_name}' to '{new_name}'"
     elif action == 'list':
-        branches = []
+        branches: List[str] = []
         try:
             current_branch = repo.active_branch.name
         except TypeError:  # detached HEAD
@@ -683,7 +727,7 @@ def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_met
         else:
             diff = commit.diff(git.NULL_TREE, create_patch=True, paths=path)
         
-        diff_lines = []
+        diff_lines: List[str] = []
         for d in diff:
             diff_lines.append(f"\n--- {d.a_path}\n+++ {d.b_path}\n")
             if d.diff is not None:
@@ -714,7 +758,7 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         any new diff generated and TSC output if applicable, or an error message.
     """
     tmp_file_path = None
-    affected_file_path = None
+    full_affected_path = None
     original_content = ""
 
     # Attempt to extract affected file path from the diff content
@@ -725,6 +769,8 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         match = re.search(r"\+\+\+ b/(.+)", diff_content)
         if match:
             affected_file_path = match.group(1).strip()
+        else:
+            affected_file_path = None
 
     if affected_file_path:
         full_affected_path = Path(repo.working_dir) / affected_file_path
@@ -747,7 +793,7 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
             
         result_message = "Diff applied successfully"
 
-        if affected_file_path:
+        if affected_file_path and full_affected_path:
             with open(full_affected_path, 'r') as f:
                 new_content = f.read()
 
@@ -763,7 +809,7 @@ async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.unlink(tmp_file_path)
 
-def git_read_file(repo: git.Repo, file_path: str) -> str:
+def read_file_content(repo: git.Repo, file_path: str) -> str:
     """
     Reads the content of a specified file within the repository.
 
@@ -919,14 +965,13 @@ async def execute_custom_command(repo_path: str, command: str) -> str:
     except Exception as e:
         return ai_hint_exec_error(repo_path, command, e)
 
-async def ai_edit_files(
+async def ai_edit(
     repo_path: str,
     message: str,
     session: ServerSession,
     files: List[str],
-    options: Optional[list[str]],
+    options: list[str] | None,
     continue_thread: bool,
-    edit_format: EditFormat = EditFormat.DIFF,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -936,7 +981,6 @@ async def ai_edit_files(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
     aider_path = aider_path or "aider"
-    edit_format_str = edit_format.value
 
     logger.info(f"Running aider in directory: {repo_path}")
     logger.debug(f"Message length: {len(message)} characters")
@@ -956,11 +1000,9 @@ async def ai_edit_files(
         logger.error(error_message)
         return error_message
 
-    aider_config = load_aider_config(directory_path, config_file)
-    load_dotenv_file(directory_path, env_file)
-
-    aider_options: Dict[str, Any] = {}
-    aider_options["yes_always"] = True
+    aider_options: Dict[str, Any] = {
+        "yes_always": True,
+    }
 
     # Prune Aider chat history if not continuing thread
     if not continue_thread:
@@ -968,21 +1010,10 @@ async def ai_edit_files(
         if history_path.is_file():
             try:
                 history_path.write_text("", encoding="utf-8")
-                logger.info(f"[ai_edit_files] Cleared Aider chat history at: {history_path}")
+                logger.info(f"[ai_edit] Cleared Aider chat history at: {history_path}")
             except OSError as e:
-                logger.warning(f"[ai_edit_files] Failed to clear Aider chat history: {e}")
+                logger.warning(f"[ai_edit] Failed to clear Aider chat history: {e}")
 
-    # Determine the default edit format based on the model if not explicitly provided
-    if edit_format == EditFormat.DIFF:
-        model_name = aider_options.get("model", "").lower()
-        if "gemini" in model_name:
-            edit_format_str = EditFormat.DIFF_FENCED.value
-        elif "gpt" in model_name:
-            edit_format_str = EditFormat.UDIFF.value
-        else:
-            edit_format_str = EditFormat.DIFF.value
-
-    aider_options["edit_format"] = edit_format_str
     # Pass the message directly as a command-line option
     aider_options["message"] = message
 
@@ -1019,10 +1050,11 @@ async def ai_edit_files(
     for fname in files:
         fpath = os.path.join(directory_path, fname)
         if not os.path.isfile(fpath):
-            logger.error(f"[ai_edit_files] Provided file not found in repo: {fname}. Aider may fail.")
+            logger.error(f"[ai_edit] Provided file not found in repo: {fname}. Aider may fail.")
 
     original_dir = os.getcwd()
     pre_aider_commit_hash = None
+    result_message = ""
     try:
         # Capture the current HEAD commit hash before Aider runs
         try:
@@ -1064,7 +1096,7 @@ async def ai_edit_files(
         )
         command_str = ' '.join(shlex.quote(part) for part in command_list)
         
-        logger.info(f"[ai_edit_files] Files passed to aider: {files}")
+        logger.info(f"[ai_edit] Files passed to aider: {files}")
         logger.info(f"Running aider command: {command_str}")
 
         logger.debug("Executing Aider with the instructions...")
@@ -1081,22 +1113,11 @@ async def ai_edit_files(
         stdout = stdout_bytes.decode('utf-8')
         stderr = stderr_bytes.decode('utf-8')
 
-        await session.send_progress_notification(
-            progress_token="ai_edit",
-            progress=0.5,
-            message=f"AIDER STDOUT:\n{stdout}"
-        )
-        if stderr:
-            await session.send_progress_notification(
-                progress_token="ai_edit",
-                progress=0.5,
-                message=f"AIDER STDERR:\n{stderr}"
-            )
 
         return_code = process.returncode
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
-            return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
+            result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
             result_message = "Aider process completed."
             if "Applied edit to" in stdout:
@@ -1137,19 +1158,14 @@ async def ai_edit_files(
                         else:
                             result_message += "\n\nNo diff generated between pre and post Aider commits (perhaps no changes were made or it's an empty commit)."
                     elif not pre_aider_commit_hash and post_aider_commit_hash:
-                        # Case: Repo was empty before, now has commits. Diff against NULL_TREE.
-                        diff_output = repo.git.diff(git.NULL_TREE, post_aider_commit_hash)
+                        # Case: Repo was empty before, now has commits. Diff against empty tree.
+                        diff_output = repo.git.diff(EMPTY_TREE_SHA, post_aider_commit_hash)
                         if diff_output:
                             result_message += f"\n\nDiff of changes made by Aider (initial commit):\n```diff\n{diff_output}\n```"
                         else:
                             result_message += "\n\nNo diff generated for the initial commit (perhaps no changes were made or it's an empty commit)."
                     else:
                         result_message += "\n\nNo new commit detected or no changes made by Aider."
-
-                    # Append the last Aider reply from chat history
-                    last_reply = _get_last_aider_reply(directory_path)
-                    if last_reply:
-                        result_message += f"\n\nAider last reply (from chat log):\n{last_reply}"
 
                 except git.InvalidGitRepositoryError:
                     result_message += "\n\nCould not access Git repository to get diff after Aider run."
@@ -1159,23 +1175,22 @@ async def ai_edit_files(
                  result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
                                      f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
                                      f"STDOUT:\n{stdout}")
-            
-            # Append the last Aider reply from chat history
-            last_reply = _get_last_aider_reply(directory_path)
-            if last_reply:
-                result_message += f"\n\nAider last reply (from chat log):\n{last_reply}"
-            
-            return result_message
 
     except Exception as e:
-        logger.error(f"An unexpected error occurred during ai_edit_files: {e}")
-        return ai_hint_ai_edit_unexpected(e)
+        logger.error(f"An unexpected error occurred during ai_edit: {e}")
+        result_message = ai_hint_ai_edit_unexpected(e)
     finally:
         if os.getcwd() != original_dir:
             os.chdir(original_dir)
             logger.debug(f"Restored working directory to: {original_dir}")
+        
+        last_reply = _get_last_aider_reply(directory_path)
+        if last_reply:
+            result_message += f"\n\nAider's last reply:\n{last_reply}"
+        
+        return result_message
 
-async def aider_status_tool(
+async def get_aider_status(
     repo_path: str,
     check_environment: bool = True,
     aider_path: Optional[str] = None,
@@ -1202,7 +1217,7 @@ async def aider_status_tool(
     
     try:
         command = [aider_path, "--version"]
-        stdout, stderr = await run_command(command)
+        stdout, stderr, _ = await run_command(command)
         
         version_info = stdout.strip() if stdout else "Unknown version"
         logger.info(f"Detected Aider version: {version_info}")
@@ -1232,11 +1247,11 @@ async def aider_status_tool(
                 os.chdir(directory_path)
                 
                 name_cmd = ["git", "config", "--get", "remote.origin.url"]
-                name_stdout, _ = await run_command(name_cmd)
+                name_stdout, _, _ = await run_command(name_cmd)
                 result["git"]["remote_url"] = name_stdout.strip() if name_stdout else None
                 
                 branch_cmd = ["git", "branch", "--show-current"]
-                branch_stdout, _ = await run_command(branch_cmd)
+                branch_stdout, _, _ = await run_command(branch_cmd)
                 result["git"]["current_branch"] = branch_stdout.strip() if branch_stdout else None
                 
                 os.chdir(original_dir)
@@ -1265,7 +1280,7 @@ async def aider_status_tool(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server: Server = Server("mcp-git")
+mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]  # Server's generic signature is not compatible with the expected type due to type system limitations.
 
 @mcp_server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -1290,7 +1305,7 @@ async def list_tools() -> list[Tool]:
         Tool(
             name=GitTools.STAGE_AND_COMMIT,
             description="Stages specified files (or all changes if no files are specified) and then commits them to the repository with a given message. This creates a new commit in the Git history.",
-            inputSchema=GitCommit.model_json_schema(),
+            inputSchema=GitStageAndCommit.model_json_schema(),
         ),
         Tool(
             name=GitTools.LOG,
@@ -1371,9 +1386,6 @@ async def list_repos() -> Sequence[str]:
         A sequence of strings, where each string is the absolute path to a Git repository.
     """
     async def by_roots() -> Sequence[str]:
-        if not isinstance(mcp_server.request_context.session, ServerSession):
-            raise TypeError("mcp_server.request_context.session must be a ServerSession")
-
         if not mcp_server.request_context.session.check_client_capability(
             ClientCapabilities(roots=RootsCapability())
         ):
@@ -1381,7 +1393,7 @@ async def list_repos() -> Sequence[str]:
 
         roots_result: ListRootsResult = await mcp_server.request_context.session.list_roots()
         logger.debug(f"Roots result: {roots_result}")
-        repo_paths = []
+        repo_paths: List[str] = []
         for root in roots_result.roots:
             path = root.uri.path
             try:
@@ -1394,7 +1406,7 @@ async def list_repos() -> Sequence[str]:
     return await by_roots()
 
 @mcp_server.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[Content]:
+async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
     """
     Executes a requested tool based on its name and arguments.
     This is the main entry point for clients to interact with the server's tools.
@@ -1549,7 +1561,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )]
                 case GitTools.READ_FILE:
                     repo = git.Repo(repo_path)
-                    result = git_read_file(repo, arguments["file_path"])
+                    result = read_file_content(repo, arguments["file_path"])
                     return [TextContent(
                         type="text",
                         text=result
@@ -1590,14 +1602,13 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                             )
                         )]
                     continue_thread = bool(arguments["continue_thread"])
-                    result = await ai_edit_files(
+                    result = await ai_edit(
                         repo_path=str(repo_path),
                         message=message,
                         session=mcp_server.request_context.session,
                         files=files,
                         options=options,
                         continue_thread=continue_thread,
-                        edit_format=EditFormat(arguments.get("edit_format", EditFormat.DIFF.value)),
                     )
                     return [TextContent(
                         type="text",
@@ -1605,7 +1616,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     )]
                 case GitTools.AIDER_STATUS:
                     check_environment = arguments.get("check_environment", True)
-                    result = await aider_status_tool(
+                    result = await get_aider_status(
                         repo_path=str(repo_path),
                         check_environment=check_environment
                     )
@@ -1650,7 +1661,7 @@ POST_MESSAGE_ENDPOINT = "/messages/"
 
 sse_transport = SseServerTransport(POST_MESSAGE_ENDPOINT)
 
-async def handle_sse(request):
+async def handle_sse(request: Request):
     """
     Handles Server-Sent Events (SSE) connections from MCP clients.
     Establishes a communication channel for the MCP server to send events.
@@ -1661,12 +1672,16 @@ async def handle_sse(request):
     Returns:
         A Starlette Response object for the SSE connection.
     """
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
+    # The `_send` attribute is marked as protected, but accessing it is the
+    # intended way to integrate with the SseServerTransport according to the
+    # mcp library's design for Starlette integration. Suppressing the warning
+    # here is safe and necessary for the SSE transport to function correctly.
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream): # type: ignore[protected-access]
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
 
-async def handle_post_message(scope, receive, send):
+async def handle_post_message(scope: Scope, receive: Receive, send: Send):
     """
     Handles incoming POST messages from MCP clients, typically used for client-to-server communication.
 
@@ -1677,15 +1692,14 @@ async def handle_post_message(scope, receive, send):
     """
     await sse_transport.handle_post_message(scope, receive, send)
 
-routes = [
+routes: List[Union[Route, Mount]] = [
     Route("/sse", endpoint=handle_sse, methods=["GET"]),
     Mount(POST_MESSAGE_ENDPOINT, app=handle_post_message),
 ]
 
-app = Starlette(routes=routes)
+app = Starlette(routes=cast(Any, routes))
 
 if __name__ == "__main__":
     # To run the server, you would typically use uvicorn:
-    # import uvicorn
-    # uvicorn.run(app, host="0.0.0.0", port=8000)
-    pass
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

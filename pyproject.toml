@@ -4,18 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-devtools"
-version = "1.7.7"
+version = "1.9.0"
 authors = [
   { name="daoch4n", email="daoch4n@gmail.com" },
 ]
-description = "A short description of your project."
+description = "multi-functional MCP-devtools server over SSE"
 readme = "README.md"
 requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
-license = { text = "MIT" } # Updated license
+license = { text = "Unlicense" }
 dependencies = [
     "fastapi",
     "uvicorn",
