@@ -1016,11 +1016,9 @@ def test_git_read_file_error_cases(monkeypatch):
 
 
 @pytest.mark.asyncio
-@patch("git.Repo")
-@patch("os.path.isfile", return_value=True)
 @patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
 @patch("asyncio.create_subprocess_shell")
-async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subprocess, mock_get_reply, mock_isfile, mock_repo, tmp_path):
+async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subprocess, mock_get_reply, tmp_path):
     """
     Tests that ai_edit_files appends Aider's last reply when the outcome is unclear.
     """
@@ -1044,11 +1042,9 @@ async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subpro
     assert result_text.count(last_reply) == 1, "The last reply should be appended once for unclear outcomes."
 
 @pytest.mark.asyncio
-@patch("git.Repo")
-@patch("os.path.isfile", return_value=True)
 @patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
 @patch("asyncio.create_subprocess_shell")
-async def test_ai_edit_files_appends_reply_on_success(mock_create_subprocess, mock_get_reply, mock_isfile, mock_repo, tmp_path):
+async def test_ai_edit_files_appends_reply_on_success(mock_create_subprocess, mock_get_reply, tmp_path):
     """
     Tests that ai_edit_files appends Aider's last reply on a clear success.
     """
