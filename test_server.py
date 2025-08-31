@@ -1048,9 +1048,9 @@ async def test_ai_edit_files_appends_reply_on_unclear_outcome(mock_create_subpro
 @patch("os.path.isfile", return_value=True)
 @patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
 @patch("asyncio.create_subprocess_shell")
-async def test_ai_edit_files_does_not_append_reply_on_success(mock_create_subprocess, mock_get_reply, mock_isfile, mock_repo, tmp_path):
+async def test_ai_edit_files_appends_reply_on_success(mock_create_subprocess, mock_get_reply, mock_isfile, mock_repo, tmp_path):
     """
-    Tests that ai_edit_files does NOT append Aider's last reply on a clear success.
+    Tests that ai_edit_files appends Aider's last reply on a clear success.
     """
     # Create a mock process that returns stdout with "Applied edit to"
     mock_process = AsyncMock()
@@ -1069,7 +1069,7 @@ async def test_ai_edit_files_does_not_append_reply_on_success(mock_create_subpro
     )
 
     last_reply = "Last reply from Aider."
-    assert result_text.count(last_reply) == 0, "The last reply should NOT be appended on success."
+    assert result_text.count(last_reply) == 1, "The last reply should be appended once on success."
     
     # Assert that the formatted success message is present instead of raw output
     assert "Code changes completed and committed successfully" in result_text
