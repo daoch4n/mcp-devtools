@@ -39,7 +39,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 # Import functions and classes from server.py
 from server import (
     git_status, git_diff, git_stage_and_commit,
-    git_reset, git_log, git_create_branch, git_checkout, git_show,
+    git_log, git_create_branch, git_checkout, git_show,
     git_apply_diff, git_read_file,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
@@ -148,18 +148,6 @@ def test_git_stage_and_commit(temp_git_repo):
     result = git_stage_and_commit(repo, "Test commit message")
     assert "Changes committed successfully" in result
     assert "Test commit message" in repo.head.commit.message
-
-def test_git_reset(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    (repo_path / "reset_file.txt").write_text("content")
-    repo.index.add(["reset_file.txt"])
-    # Correct assertion for Diff objects
-    diffs_before_reset = repo.index.diff("HEAD")
-    assert any(d.a_path == "reset_file.txt" for d in diffs_before_reset)
-    result = git_reset(repo)
-    assert "All staged changes reset" in result
-    diffs_after_reset = repo.index.diff("HEAD")
-    assert not any(d.a_path == "reset_file.txt" for d in diffs_after_reset)
 
 def test_git_log(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -396,7 +384,6 @@ async def test_list_tools():
 @patch('server.git_status')
 @patch('server.git_diff')
 @patch('server.git_stage_and_commit')
-@patch('server.git_reset')
 @patch('server.git_log')
 @patch('server.git_create_branch')
 @patch('server.git_checkout')
@@ -408,7 +395,7 @@ async def test_list_tools():
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
-    mock_git_checkout, mock_git_create_branch, mock_git_log, mock_git_reset,
+    mock_git_checkout, mock_git_create_branch, mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
     mock_repo_instance = MagicMock()
@@ -442,11 +429,6 @@ async def test_call_tool(
         raise AssertionError("Unexpected result type for GitTools.STAGE_AND_COMMIT")
 
     # Removed test for GitTools.ADD as the tool no longer exists
-
-    # Test GitTools.RESET
-    mock_git_reset.return_value = "Reset done"
-    result = list(await call_tool(GitTools.RESET.value, {"repo_path": "/tmp/repo"})) # Cast to list
-    assert result[0].text == "Reset done"
 
     # Test GitTools.LOG
     mock_git_log.return_value = ["log1", "log2"]

@@ -371,12 +371,6 @@ class GitCommit(BaseModel):
         description="An optional list of specific file paths (relative to the repository root) to stage before committing. If not provided, all changes will be staged."
     )
 
-class GitReset(BaseModel):
-    """
-    Represents the input schema for the `git_reset` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-
 class GitLog(BaseModel):
     """
     Represents the input schema for the `git_log` tool.
@@ -495,7 +489,6 @@ class GitTools(str, Enum):
     STATUS = "git_status"
     DIFF = "git_diff"
     STAGE_AND_COMMIT = "git_stage_and_commit"
-    RESET = "git_reset"
     LOG = "git_log"
     CREATE_BRANCH = "git_create_branch"
     CHECKOUT = "git_checkout"
@@ -556,19 +549,6 @@ def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]
 
     commit = repo.index.commit(message)
     return f"{staged_message}\nChanges committed successfully with hash {commit.hexsha}"
-
-def git_reset(repo: git.Repo) -> str:
-    """
-    Unstages all staged changes in the repository.
-
-    Args:
-        repo: The Git repository object.
-
-    Returns:
-        A string indicating that all staged changes have been reset.
-    """
-    repo.index.reset()
-    return "All staged changes reset"
 
 def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
     """
@@ -1058,9 +1038,9 @@ async def ai_edit_files(
             logger.error(f"Aider process exited with code {return_code}")
             return f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
-            logger.info("Aider process completed successfully")
+            logger.info("Aider process completed.")
             
-            result_message = "Aider completed successfully."
+            result_message = "Aider process completed."
             if "Applied edit to" in stdout:
                 result_message = "Code changes completed and committed successfully."
                 
@@ -1253,11 +1233,6 @@ async def list_tools() -> list[Tool]:
             name=GitTools.STAGE_AND_COMMIT,
             description="Stages specified files (or all changes if no files are specified) and then commits them to the repository with a given message. This creates a new commit in the Git history.",
             inputSchema=GitCommit.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.RESET,
-            description="Unstages all currently staged changes in the repository, moving them back to the working directory without discarding modifications. This is equivalent to `git reset` without arguments.",
-            inputSchema=GitReset.model_json_schema(),
         ),
         Tool(
             name=GitTools.LOG,
@@ -1472,13 +1447,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 case GitTools.STAGE_AND_COMMIT:
                     repo = git.Repo(repo_path)
                     result = git_stage_and_commit(repo, arguments["message"], arguments.get("files"))
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.RESET:
-                    repo = git.Repo(repo_path)
-                    result = git_reset(repo)
                     return [TextContent(
                         type="text",
                         text=result
