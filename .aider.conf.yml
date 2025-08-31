@@ -167,7 +167,7 @@ dirty-commits: false
 #commit: false
 
 ## Specify a custom prompt for generating commit messages
-commit-prompt: "append cute kaomoji as trailer to express your feelings about this commit"
+#commit-prompt: "append one (and only one) cute kaomoji to express what you feel about this commit"
 
 ## Perform a dry run without modifying files (default: False)
 #dry-run: false
