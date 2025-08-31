@@ -1499,7 +1499,7 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                     diff = git_diff(repo, target, path)
                     diff_header = f"Diff with {target}:" if target else "Diff of unstaged changes (worktree vs index):"
                     if path:
-                        diff_header = diff_header[:-1] + f" for path {path}:"
+                        diff_header = f"Diff with {target} for path {path}:" if target else f"Diff of unstaged changes (worktree vs index) for path {path}:"
                     return [TextContent(
                         type="text",
                         text=f"{diff_header}\n{diff}"
