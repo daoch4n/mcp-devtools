@@ -41,11 +41,11 @@ from server import (
     git_status, git_diff_all, git_diff, git_stage_and_commit,
     git_reset, git_log, git_create_branch, git_checkout, git_show,
     git_apply_diff, git_read_file,
-    _generate_diff_output, _run_tsc_if_applicable, _search_and_replace_python_logic,
-    search_and_replace_in_file, write_to_file_content, execute_custom_command,
-    GitTools, list_tools, call_tool, list_repos,
+    _generate_diff_output, _run_tsc_if_applicable,
+    write_to_file_content, execute_custom_command,
     Starlette, Route, Mount, Response, ServerSession, ClientCapabilities, RootsCapability, ListRootsResult, TextContent,
-    handle_sse, handle_post_message
+    handle_sse, handle_post_message,
+    list_tools, call_tool, list_repos, GitTools
 )
 import git
 from git.exc import GitCommandError
@@ -352,197 +352,6 @@ async def test_execute_custom_command_exception(monkeypatch, tmp_path):
     assert "UNEXPECTED_ERROR: Failed to execute command 'echo fail': subprocess error" in result
     assert "UNEXPECTED_ERROR:" in result
 
-@patch('server._generate_diff_output', new_callable=AsyncMock)
-@patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
-@patch('server.execute_custom_command', new_callable=AsyncMock)
-@pytest.mark.asyncio
-async def test_search_and_replace_in_file_sed_success(
-    mock_execute_custom_command, mock_run_tsc_if_applicable, mock_generate_diff_output, temp_git_repo
-):
-    repo, repo_path = temp_git_repo
-    file_path = "test_sed.txt"
-    (repo_path / file_path).write_text("line1\nsearch_term\nline3")
-
-    # Simulate sed success with no output, which will cause fallback to Python logic
-    mock_execute_custom_command.return_value = "" 
-    mock_generate_diff_output.return_value = "\nDiff:\n-search_term\n+replace_term"
-    mock_run_tsc_if_applicable.return_value = ""
-
-    result = await search_and_replace_in_file(
-        str(repo_path), "search_term", "replace_term", file_path, False, None, None
-    )
-    # The assertion should now expect the fallback message
-    assert "Successfully replaced 'search_term' with 'replace_term' in test_sed.txt using literal search." in result
-    assert (repo_path / file_path).read_text() == "line1\nreplace_term\nline3"
-    mock_execute_custom_command.assert_called_once()
-    assert "sed -i 's#search_term#replace_term#g'" in mock_execute_custom_command.call_args[0][1]
-
-@pytest.mark.asyncio
-@patch('server._generate_diff_output', new_callable=AsyncMock)
-@patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
-@patch('server.execute_custom_command', new_callable=AsyncMock)
-async def test_search_and_replace_in_file_sed_fallback_to_python_failure(
-    mock_execute_custom_command, mock_run_tsc_if_applicable, mock_generate_diff_output, temp_git_repo
-):
-    repo, repo_path = temp_git_repo
-    file_path = "test_fallback.txt"
-    (repo_path / file_path).write_text("line1\nsearch_term\nline3")
-
-    # Simulate sed failure
-    mock_execute_custom_command.return_value = "Command failed with exit code 1"
-    mock_generate_diff_output.return_value = "\nDiff:\n-search_term\n+replace_term"
-    mock_run_tsc_if_applicable.return_value = ""
-
-    result = await search_and_replace_in_file(
-        str(repo_path), "search_term", "replace_term", file_path, False, None, None
-    )
-    assert "Successfully replaced 'search_term' with 'replace_term' in test_fallback.txt using literal search." in result
-    assert (repo_path / file_path).read_text() == "line1\nreplace_term\nline3"
-    mock_execute_custom_command.assert_called_once() # Sed was attempted
-
-@pytest.mark.asyncio
-@patch('server._generate_diff_output', new_callable=AsyncMock)
-@patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
-async def test_search_and_replace_python_literal(
-    mock_run_tsc_if_applicable, mock_generate_diff_output, temp_git_repo
-):
-    repo, repo_path = temp_git_repo
-    file_path = "test_literal.txt"
-    (repo_path / file_path).write_text("Hello World\nhello world\nGoodbye World")
-
-    mock_generate_diff_output.return_value = "\nDiff:\n-Hello World\n+Hi World"
-    mock_run_tsc_if_applicable.return_value = ""
-
-    result = await _search_and_replace_python_logic(
-        str(repo_path), "Hello World", "Hi World", file_path, False, None, None
-    )
-    assert "Successfully replaced 'Hello World' with 'Hi World' in test_literal.txt using literal search." in result
-    assert (repo_path / file_path).read_text() == "Hi World\nhello world\nGoodbye World"
-
-    # Test ignore case
-    (repo_path / file_path).write_text("Hello World\nhello world\nGoodbye World")
-    result_case_insensitive = await _search_and_replace_python_logic(
-        str(repo_path), "hello world", "hi there", file_path, True, None, None
-    )
-    assert "Successfully replaced 'hello world' with 'hi there' in test_literal.txt using literal search." in result_case_insensitive
-    assert (repo_path / file_path).read_text() == "hi there\nhi there\nGoodbye World"
-
-@pytest.mark.asyncio
-@patch('server._generate_diff_output', new_callable=AsyncMock)
-@patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
-async def test_search_and_replace_python_regex(
-    mock_run_tsc_if_applicable, mock_generate_diff_output, temp_git_repo
-):
-    repo, repo_path = temp_git_repo
-    file_path = "test_regex.txt"
-    (repo_path / file_path).write_text("apple 123 banana 456")
-
-    mock_generate_diff_output.return_value = "\nDiff:\n-123\n+XXX"
-    mock_run_tsc_if_applicable.return_value = ""
-
-    result = await _search_and_replace_python_logic(
-        str(repo_path), r"\d+", "XXX", file_path, False, None, None
-    )
-    assert "Successfully replaced '\\d+' with 'XXX' in test_regex.txt using regex search." in result
-    assert (repo_path / file_path).read_text() == "apple XXX banana XXX"
-
-    # Test no changes
-    result_no_change = await _search_and_replace_python_logic(
-        str(repo_path), "nonexistent", "new", file_path, False, None, None
-    )
-    assert "No changes made. 'nonexistent' not found" in result_no_change
-
-    # Test invalid regex
-    result_invalid_regex = await _search_and_replace_python_logic(
-        str(repo_path), r"[", "new", file_path, False, None, None
-    )
-    assert "Error: Invalid regex pattern" in result_invalid_regex
-
-    # Test generic Exception branch
-    import builtins
-    real_open = builtins.open
-    def raise_exception(*a, **kw):
-        raise Exception("unexpected error")
-    builtins.open = raise_exception
-    try:
-        result_exception = await _search_and_replace_python_logic(
-            str(repo_path), "foo", "bar", file_path, False, None, None
-        )
-        assert (
-            "UNEXPECTED_ERROR: An unexpected error occurred during search and replace: unexpected error. AI_HINT: Check your search/replace patterns and review server logs for more details."
-            in result_exception
-        )
-    finally:
-        builtins.open = real_open
-
-@pytest.mark.asyncio
-@patch('server._generate_diff_output', new_callable=AsyncMock)
-@patch('server._run_tsc_if_applicable', new_callable=AsyncMock)
-async def test_search_and_replace_python_line_range(
-    mock_run_tsc_if_applicable, mock_generate_diff_output, temp_git_repo
-):
-    repo, repo_path = temp_git_repo
-    file_path = "test_range.txt"
-    content = "line1 search\nline2 search\nline3 search\nline4 search"
-    (repo_path / file_path).write_text(content)
-
-    mock_generate_diff_output.return_value = "\nDiff:\n-line2 search\n+line2 replaced"
-    mock_run_tsc_if_applicable.return_value = ""
-
-    # Test start_line and end_line
-    result = await _search_and_replace_python_logic(
-        str(repo_path), "search", "replaced", file_path, False, 2, 3
-    )
-    assert "Successfully replaced 'search' with 'replaced'" in result
-    expected_content = "line1 search\nline2 replaced\nline3 replaced\nline4 search"
-    assert (repo_path / file_path).read_text() == expected_content
-
-    # Test only start_line
-    (repo_path / file_path).write_text(content)
-    result_start = await _search_and_replace_python_logic(
-        str(repo_path), "search", "X", file_path, False, 3, None
-    )
-    assert "Successfully replaced 'search' with 'X'" in result_start
-    expected_content_start = "line1 search\nline2 search\nline3 X\nline4 X"
-    assert (repo_path / file_path).read_text() == expected_content_start
-
-    # Test only end_line
-    (repo_path / file_path).write_text(content)
-    result_end = await _search_and_replace_python_logic(
-        str(repo_path), "search", "Y", file_path, False, None, 2
-    )
-    assert "Successfully replaced 'search' with 'Y'" in result_end
-    expected_content_end = "line1 Y\nline2 Y\nline3 search\nline4 search"
-    assert (repo_path / file_path).read_text() == expected_content_end
-
-@pytest.mark.asyncio
-async def test_search_and_replace_in_file_fallback_on_exception(tmp_path, monkeypatch):
-    from server import search_and_replace_in_file
-    import builtins
-
-    # Create a file to operate on
-    file_path = tmp_path / "exc_file.txt"
-    file_path.write_text("foo bar baz")
-
-    # Monkeypatch open to raise Exception only on the first call (sed attempt)
-    real_open = builtins.open
-    call_count = {"n": 0}
-    def raise_once(*a, **kw):
-        if call_count["n"] == 0:
-            call_count["n"] += 1
-            raise Exception("sed open error")
-        return real_open(*a, **kw)
-    monkeypatch.setattr(builtins, "open", raise_once)
-
-    # Should fallback to Python logic and succeed
-    result = await search_and_replace_in_file(
-        str(tmp_path), "foo", "qux", "exc_file.txt", False, None, None
-    )
-    assert "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: sed open error" in result
-    assert "UNEXPECTED_ERROR:" in result
-    # The file should remain unchanged due to the error
-    assert (file_path).read_text() == "foo bar baz"
-
 # Test cases for MCP server integration (list_tools, call_tool)
 
 @pytest.mark.asyncio
@@ -566,11 +375,10 @@ async def test_list_tools():
 @patch('server.git_show')
 @patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.git_read_file')
-@patch('server.search_and_replace_in_file', new_callable=AsyncMock)
 @patch('server.write_to_file_content', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
 async def test_call_tool(
-    mock_execute_custom_command, mock_write_to_file_content, mock_search_and_replace_in_file,
+    mock_execute_custom_command, mock_write_to_file_content,
     mock_git_read_file, mock_git_apply_diff, mock_git_show,
     mock_git_checkout, mock_git_create_branch, mock_git_log, mock_git_reset,
     mock_git_stage_and_commit, mock_git_diff, mock_git_diff_all, mock_git_status, mock_git_repo
@@ -647,12 +455,6 @@ async def test_call_tool(
 
     # Removed test for GitTools.STAGE_ALL as the tool no longer exists
 
-    # Test GitTools.SEARCH_AND_REPLACE
-    mock_search_and_replace_in_file.return_value = "Search and replace done"
-    result = list(await call_tool(GitTools.SEARCH_AND_REPLACE.value, { # Cast to list
-        "repo_path": "/tmp/repo", "file_path": "f.txt", "search_string": "s", "replace_string": "r"
-    }))
-    assert result[0].text == "Search and replace done"
 
     # Test GitTools.WRITE_TO_FILE
     mock_write_to_file_content.return_value = "File written"

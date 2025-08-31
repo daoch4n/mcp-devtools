@@ -108,13 +108,6 @@ def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception)
         "Ensure the file exists and is readable, and that you passed an absolute repo_path."
     )
 
-def ai_hint_sed_error(e: Exception) -> str:
-    return (
-        "UNEXPECTED_ERROR: An unexpected error occurred during sed-based search and replace: "
-        f"{e}. If your pattern contains special characters, prefer simpler patterns or rely on Python fallback. "
-        "Ensure the file exists and is writable, and pass an absolute repo_path."
-    )
-
 def ai_hint_write_error(repo_path: str, file_path: str, e: Exception) -> str:
     return (
         "UNEXPECTED_ERROR: Failed to write to file "
@@ -432,24 +425,6 @@ class GitReadFile(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     file_path: str = Field(description="The path to the file to read, relative to the repository's working directory.")
 
-class SearchAndReplace(BaseModel):
-    """
-    Represents the input schema for the `search_and_replace` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    file_path: str = Field(description="The path to the file to modify, relative to the repository's working directory.")
-    search_string: str = Field(description="The string or regex pattern to search for within the file.")
-    replace_string: str = Field(description="The string to replace all matches of the search string with.")
-    ignore_case: bool = Field(False, description="If true, the search will be case-insensitive. Defaults to false.")
-    start_line: Optional[int] = Field(
-        None,
-        description="Optional. The 1-based starting line number for the search and replace operation (inclusive). If not provided, search starts from the beginning of the file."
-    )
-    end_line: Optional[int] = Field(
-        None,
-        description="Optional. The 1-based ending line number for the search and replace operation (inclusive). If not provided, search continues to the end of the file."
-    )
-
 class WriteToFile(BaseModel):
     """
     Represents the input schema for the `write_to_file` tool.
@@ -526,7 +501,6 @@ class GitTools(str, Enum):
     SHOW = "git_show"
     APPLY_DIFF = "git_apply_diff"
     READ_FILE = "git_read_file"
-    SEARCH_AND_REPLACE = "search_and_replace"
     WRITE_TO_FILE = "write_to_file"
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
@@ -824,185 +798,6 @@ async def _run_tsc_if_applicable(repo_path: str, file_path: str) -> str:
         return f"\n\nTSC Output for {file_path}:\n{tsc_output}"
     return ""
 
-async def _search_and_replace_python_logic(
-    repo_path: str,
-    search_string: str,
-    replace_string: str,
-    file_path: str,
-    ignore_case: bool,
-    start_line: Optional[int],
-    end_line: Optional[int]
-) -> str:
-    """
-    Performs search and replace in a file using Python's re module.
-    Attempts literal search first, then falls back to regex search if no changes are made.
-
-    Args:
-        repo_path: The path to the repository's working directory.
-        search_string: The string or regex pattern to search for.
-        replace_string: The string to replace matches with.
-        file_path: The path to the file to modify.
-        ignore_case: If True, the search is case-insensitive.
-        start_line: Optional. The 1-based starting line number for the search.
-        end_line: Optional. The 1-based ending line number for the search.
-
-    Returns:
-        A string indicating the result of the operation, including diff and TSC output,
-        or an error message.
-    """
-    try:
-        full_file_path = Path(repo_path) / file_path
-        with open(full_file_path, 'r') as f:
-            lines = f.readlines()
-
-        flags = 0
-        if ignore_case:
-            flags |= re.IGNORECASE
-
-        literal_search_string = re.escape(search_string)
-        logging.info(f"Attempting literal search with: {literal_search_string}")
-
-        modified_lines_literal = []
-        changes_made_literal = 0
-
-        for i, line in enumerate(lines):
-            line_num = i + 1
-            if (start_line is None or line_num >= start_line) and \
-               (end_line is None or line_num <= end_line):
-                new_line, num_subs = re.subn(literal_search_string, replace_string, line, flags=flags)
-                
-                if new_line != line:
-                    changes_made_literal += num_subs
-                    modified_lines_literal.append(new_line)
-                else:
-                    modified_lines_literal.append(line)
-            else:
-                modified_lines_literal.append(line)
-
-        if changes_made_literal > 0:
-            original_content = "".join(lines)
-            with open(full_file_path, 'w') as f:
-                f.writelines(modified_lines_literal)
-            
-            result_message = f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using literal search. Total changes: {changes_made_literal}."
-            result_message += await _generate_diff_output(original_content, "".join(modified_lines_literal), file_path)
-            result_message += await _run_tsc_if_applicable(repo_path, file_path)
-            return result_message
-        else:
-            logging.info(f"Literal search failed. Attempting regex search with: {search_string}")
-            modified_lines_regex = []
-            changes_made_regex = 0
-            
-            for i, line in enumerate(lines):
-                line_num = i + 1
-                if (start_line is None or line_num >= start_line) and \
-                   (end_line is None or line_num <= end_line):
-                    new_line, num_subs = re.subn(search_string, replace_string, line, flags=flags)
-                    
-                    if new_line != line:
-                        changes_made_regex += num_subs
-                        modified_lines_regex.append(new_line)
-                    else:
-                        modified_lines_regex.append(line)
-                else:
-                    modified_lines_regex.append(line)
-
-            if changes_made_regex > 0:
-                original_content = "".join(lines)
-                with open(full_file_path, 'w') as f:
-                    f.writelines(modified_lines_regex)
-                
-                result_message = f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using regex search. Total changes: {changes_made_regex}."
-                result_message += await _generate_diff_output(original_content, "".join(modified_lines_regex), file_path)
-                result_message += await _run_tsc_if_applicable(repo_path, file_path)
-                return result_message
-            else:
-                return f"No changes made. '{search_string}' not found in {file_path} within the specified range using either literal or regex search."
-
-    except FileNotFoundError:
-        return f"Error: File not found at {full_file_path}"
-    except re.error as e:
-        return f"Error: Invalid regex pattern '{search_string}': {e}"
-    except Exception as e:
-        return f"UNEXPECTED_ERROR: An unexpected error occurred during search and replace: {e}. AI_HINT: Check your search/replace patterns and review server logs for more details."
-
-async def search_and_replace_in_file(
-    repo_path: str,
-    search_string: str,
-    replace_string: str,
-    file_path: str,
-    ignore_case: bool,
-    start_line: Optional[int],
-    end_line: Optional[int]
-) -> str:
-    """
-    Searches for a string or regex pattern in a file and replaces it with another string.
-    Attempts to use `sed` for efficiency, falling back to Python logic if `sed` fails or makes no changes.
-
-    Args:
-        repo_path: The path to the repository's working directory.
-        search_string: The string or regex pattern to search for.
-        replace_string: The string to replace matches with.
-        file_path: The path to the file to modify.
-        ignore_case: If True, the search is case-insensitive.
-        start_line: Optional. The 1-based starting line number for the search.
-        end_line: Optional. The 1-based ending line number for the search.
-
-    Returns:
-        A string indicating the result of the operation, including diff and TSC output,
-        or an error message.
-    """
-    full_file_path = Path(repo_path) / file_path
-
-    sed_command_parts = ["sed", "-i"]
-
-    # Escape sed special characters in search and replacement strings
-    sed_pattern = search_string.replace('#', r'\#')
-    sed_replacement = replace_string.replace('#', r'\#').replace('&', r'\&').replace('\\', r'\\\\')
-
-    sed_flags = "g"
-    if ignore_case:
-        sed_flags += "i"
-
-    sed_sub_command = f"s#{sed_pattern}#{sed_replacement}#{sed_flags}"
-
-    if start_line is not None and end_line is not None:
-        sed_sub_command = f"{start_line},{end_line}{sed_sub_command}"
-    elif start_line is not None:
-        sed_sub_command = f"{start_line},${sed_sub_command}"
-    elif end_line is not None:
-        sed_sub_command = f"1,{end_line}{sed_sub_command}"
-
-    sed_full_command = f"{' '.join(sed_command_parts)} '{sed_sub_command}' {shlex.quote(str(full_file_path))}"
-
-    try:
-        with open(full_file_path, 'r') as f:
-            original_content = f.read()
-
-        sed_result = await execute_custom_command(repo_path, sed_full_command)
-        logging.info(f"Sed command result: {sed_result}")
-
-        if "Command failed with exit code" in sed_result or "Error executing command" in sed_result:
-            logging.warning(f"Sed command failed: {sed_result}. Falling back to Python logic.")
-            return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
-        
-        with open(full_file_path, 'r') as f:
-            modified_content_sed = f.read()
-
-        if original_content != modified_content_sed:
-            result_message = f"Successfully replaced '{search_string}' with '{replace_string}' in {file_path} using sed."
-            result_message += await _generate_diff_output(original_content, modified_content_sed, file_path)
-            result_message += await _run_tsc_if_applicable(repo_path, file_path)
-            return result_message
-        else:
-            logging.info(f"Sed command executed but made no changes. Falling back to Python logic.")
-            return await _search_and_replace_python_logic(repo_path, search_string, replace_string, file_path, ignore_case, start_line, end_line)
-
-    except FileNotFoundError:
-        return f"Error: File not found at {full_file_path}"
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during sed attempt: {e}. Falling back to Python logic.")
-        return ai_hint_sed_error(e)
 
 async def write_to_file_content(repo_path: str, file_path: str, content: str) -> str:
     """
@@ -1503,11 +1298,6 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitReadFile.model_json_schema(),
         ),
         Tool(
-            name=GitTools.SEARCH_AND_REPLACE,
-            description="Searches for a specified string or regex pattern within a file and replaces all occurrences with a new string. Supports case-insensitive search and line-range restrictions. It attempts to use `sed` for efficiency, falling back to Python logic if `sed` fails or makes no changes.",
-            inputSchema=SearchAndReplace.model_json_schema(),
-        ),
-        Tool(
             name=GitTools.WRITE_TO_FILE,
             description="Writes the provided content to a specified file within the repository. If the file does not exist, it will be created. If it exists, its content will be completely overwritten. Includes a check to ensure content was written correctly and generates a diff.",
             inputSchema=WriteToFile.model_json_schema(),
@@ -1748,20 +1538,6 @@ async def call_tool(name: str, arguments: dict) -> list[Content]:
                 case GitTools.READ_FILE:
                     repo = git.Repo(repo_path)
                     result = git_read_file(repo, arguments["file_path"])
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.SEARCH_AND_REPLACE:
-                    result = await search_and_replace_in_file(
-                        repo_path=str(repo_path),
-                        file_path=arguments["file_path"],
-                        search_string=arguments["search_string"],
-                        replace_string=arguments["replace_string"],
-                        ignore_case=arguments.get("ignore_case", False),
-                        start_line=arguments.get("start_line"),
-                        end_line=arguments.get("end_line")
-                    )
                     return [TextContent(
                         type="text",
                         text=result
