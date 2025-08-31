@@ -362,6 +362,37 @@ def test_git_merge_squash_with_commit_message(temp_git_repo):
     assert (repo_path / 'squash2.txt').exists()
 
 
+def test_git_merge_status_no_merge(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    msg = git_merge(repo, repo.active_branch.name, status=True)
+    assert msg.startswith('MERGE_STATUS:')
+    assert '- in_progress: false' in msg
+    assert '- branch:' in msg
+    # No conflicts in a clean repo
+    assert 'conflicts: none' in msg
+
+def test_git_merge_status_with_conflicts(temp_git_repo):
+    repo, repo_path = temp_git_repo
+    # Create conflict scenario
+    (repo_path / 'stat.txt').write_text('a\n')
+    repo.index.add(['stat.txt'])
+    repo.index.commit('init stat')
+    repo.git.checkout('-b', 'feat_stat')
+    (repo_path / 'stat.txt').write_text('feat\n')
+    repo.index.add(['stat.txt'])
+    repo.index.commit('feat stat')
+    repo.git.checkout('main')
+    (repo_path / 'stat.txt').write_text('main\n')
+    repo.index.add(['stat.txt'])
+    repo.index.commit('main stat')
+    # Perform merge to get into conflict state
+    _ = git_merge(repo, 'feat_stat')
+    # Status should reflect in-progress and conflicted file
+    msg = git_merge(repo, 'feat_stat', status=True)
+    assert msg.startswith('MERGE_STATUS:')
+    assert '- in_progress: true' in msg
+    assert 'stat.txt' in msg
+
 def test_git_merge_abort_no_merge_in_progress(temp_git_repo):
     repo, repo_path = temp_git_repo
     msg = git_merge(repo, repo.active_branch.name, abort=True)
@@ -758,6 +789,11 @@ async def test_call_tool(
     mock_git_merge.return_value = 'MERGE_ABORT: Merge aborted and working tree restored.'
     result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","abort": True}))
     assert result[0].text == 'MERGE_ABORT: Merge aborted and working tree restored.'
+
+    # Test GitTools.MERGE with status flag
+    mock_git_merge.return_value = 'MERGE_STATUS:\n- in_progress: false\n- branch: main\n- conflicts: none'
+    result = list(await call_tool(GitTools.MERGE.value, {"repo_path":"/tmp/repo","status": True}))
+    assert result[0].text.startswith('MERGE_STATUS:')
 
     # Test GitTools.APPLY_DIFF
     mock_git_apply_diff.return_value = "Diff applied" # Simplified mock
