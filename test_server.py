@@ -1095,3 +1095,65 @@ async def test_ai_edit_uses_no_auto_commit_and_returns_diff(mock_create_subproce
     assert "```diff" in result_text
     assert "-initial content" in result_text
     assert "+edited by aider" in result_text
+
+
+@pytest.mark.asyncio
+@patch("asyncio.create_subprocess_shell")
+async def test_ai_edit_filters_pre_existing_untracked_files(mock_create_subprocess, temp_git_repo):
+    """
+    Tests that ai_edit correctly filters out pre-existing untracked files
+    from the final diff report, only including new untracked files created
+    during the Aider run.
+    """
+    repo, repo_path = temp_git_repo
+    
+    # 1. Create a pre-existing untracked file
+    pre_existing_untracked_file = "pre_existing.log"
+    (repo_path / pre_existing_untracked_file).write_text("this file was already here")
+
+    # 2. Define the files for Aider to "work on"
+    tracked_file = "initial_file.txt"
+    new_untracked_file = "newly_created.txt"
+
+    # 3. Mock the Aider process
+    async def mock_aider_run(*args, **kwargs):
+        # Simulate Aider modifying a tracked file
+        (repo_path / tracked_file).write_text("content modified by aider")
+        # Simulate Aider creating a new untracked file
+        (repo_path / new_untracked_file).write_text("a new file from aider")
+        
+        # Return a successful Aider run message
+        process = AsyncMock()
+        process.communicate.return_value = (f"Applied edit to {tracked_file}".encode(), b"")
+        process.returncode = 0
+        return process
+
+    mock_create_subprocess.side_effect = mock_aider_run
+
+    # 4. Call ai_edit
+    result_text = await ai_edit(
+        repo_path=str(repo_path),
+        message="test filtering",
+        session=AsyncMock(),
+        files=[tracked_file],
+        options=[],
+        continue_thread=False
+    )
+
+    # 5. Assertions
+    # The report should contain the structured sections
+    assert "### Applied Changes (Diff)" in result_text
+    
+    # Assert that the diff for the MODIFIED tracked file is present
+    assert f"--- a/{tracked_file}" in result_text
+    assert "-initial content" in result_text
+    assert "+content modified by aider" in result_text
+    
+    # Assert that the diff for the NEW untracked file is present
+    assert f"--- /dev/null" in result_text
+    assert f"+++ b/{new_untracked_file}" in result_text
+    assert "+a new file from aider" in result_text
+
+    # CRITICAL: Assert that the PRE-EXISTING untracked file is NOT in the diff
+    assert pre_existing_untracked_file not in result_text
+    assert "this file was already here" not in result_text
