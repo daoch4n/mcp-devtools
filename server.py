@@ -1159,20 +1159,22 @@ async def ai_edit(
                             except Exception as e:
                                 logger.error(f"[ai_edit] Error reading untracked file {untracked_file}: {e}")
                     
+                    all_diff_parts = []
+                    if final_diff:
+                        all_diff_parts.append(final_diff)
+                    
                     if untracked_diffs:
-                        untracked_diff_str = "\n".join(untracked_diffs)
-                        # Combine with existing diff if it exists
-                        if final_diff.strip():
-                            final_diff = final_diff.strip() + "\n" + untracked_diff_str.strip()
-                        else:
-                            final_diff = untracked_diff_str.strip()
+                        all_diff_parts.extend(untracked_diffs)
+                    
+                    # Join all parts with a newline. This ensures separation between diff blocks.
+                    final_diff_combined = "\n".join(all_diff_parts).strip()
 
                     # Log the final diff length and a preview for diagnostics
-                    preview = (final_diff[:1000] + "…") if len(final_diff) > 1000 else final_diff
-                    logger.debug(f"[ai_edit] Final diff length: {len(final_diff)}; preview:\n{preview}")
+                    preview = (final_diff_combined[:1000] + "…") if len(final_diff_combined) > 1000 else final_diff_combined
+                    logger.debug(f"[ai_edit] Final diff length: {len(final_diff_combined)}; preview:\n{preview}")
 
-                    if final_diff.strip():
-                        applied_changes = f"```diff\n{final_diff.strip()}\n```"
+                    if final_diff_combined:
+                        applied_changes = f"```diff\n{final_diff_combined}\n```"
                     else:
                         applied_changes = "No changes detected in the working directory or index."
                 except git.InvalidGitRepositoryError:
