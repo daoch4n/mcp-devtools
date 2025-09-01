@@ -1099,6 +1099,7 @@ async def ai_edit(
             result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
             result_message = "Aider process completed."
+            applied_changes = ""
             if "Applied edit to" in stdout:
                 # Build a structured report with Aider's plan and the diff
                 try:
@@ -1109,33 +1110,21 @@ async def ai_edit(
                     applied_changes = "Could not access Git repository to get diff after Aider run."
                 except Exception as e:
                     applied_changes = f"Error generating diff for Aider changes: {e}"
-
-                last_reply = _get_last_aider_reply(directory_path) or ""
-                result_message = (
-                    "### Aider's Plan\n" +
-                    f"{last_reply}\n\n" +
-                    "### Applied Changes (Diff)\n" +
-                    f"{applied_changes}\n\n" +
-                    "### Verification Result\n" +
-                    "⏳ Not yet implemented.\n\n" +
-                    "### Next Steps\n" +
-                    "Please review the changes above. If they are correct, please stage and commit them."
-                )
-                structured_report_built = True
             else:
-                 # Build a structured report indicating no changes were applied
-                 last_reply = _get_last_aider_reply(directory_path) or ""
-                 result_message = (
-                     "### Aider's Plan\n" +
-                     f"{last_reply}\n\n" +
-                     "### Applied Changes (Diff)\n" +
-                     "No changes were applied by Aider.\n\n" +
-                     "### Verification Result\n" +
-                     "⏳ Not yet implemented.\n\n" +
-                     "### Next Steps\n" +
-                     "Please review the changes above. If they are correct, please stage and commit them."
-                 )
-                 structured_report_built = True
+                applied_changes = "No changes were applied by Aider."
+
+            last_reply = _get_last_aider_reply(directory_path) or ""
+            result_message = (
+                "### Aider's Plan\n" +
+                f"{last_reply}\n\n" +
+                "### Applied Changes (Diff)\n" +
+                f"{applied_changes}\n\n" +
+                "### Verification Result\n" +
+                "⏳ Not yet implemented.\n\n" +
+                "### Next Steps\n" +
+                "Please review the changes above. If they are correct, please stage and commit them."
+            )
+            structured_report_built = True
 
     except Exception as e:
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
