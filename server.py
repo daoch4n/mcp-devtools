@@ -1102,14 +1102,71 @@ async def ai_edit(
                 # Build a structured report with Aider's plan and the diff
                 applied_changes = ""
                 try:
+                    # Re-initialize Repo to avoid stale caches after external process (Aider) runs
+                    logger.debug("[ai_edit] Re-initializing git.Repo to refresh state after Aider run.")
                     repo = git.Repo(directory_path)
+
+                    # Log git status to understand staged vs unstaged changes
+                    status_output = ""
                     try:
-                        # First, try to diff against HEAD. This is the standard case.
-                        diff_output = git_diff(repo, target='HEAD')
-                    except GitCommandError:
-                        # If HEAD doesn't exist (empty repo), fall back to the empty tree SHA.
-                        diff_output = git_diff(repo, target=EMPTY_TREE_SHA)
-                    applied_changes = f"```diff\n{diff_output}\n```" if diff_output else "No unstaged changes detected in working directory."
+                        status_output = repo.git.status()
+                        logger.debug(f"[ai_edit] git status after Aider run:\n{status_output}")
+                    except Exception as se:
+                        logger.debug(f"[ai_edit] Failed to get git status: {se}")
+
+                    # Determine if the repo has any commits to select appropriate diff target
+                    has_commits = True
+                    try:
+                        _ = repo.head.commit  # accessing commit will raise in empty repo
+                    except Exception:
+                        has_commits = False
+                    diff_target = "HEAD" if has_commits else EMPTY_TREE_SHA
+                    logger.debug(f"[ai_edit] Diff target determined: {'HEAD' if has_commits else 'EMPTY_TREE_SHA'}")
+
+                    # Smart diff logic:
+                    # 1) Try unstaged diff (worktree vs index)
+                    final_diff = ""
+                    try:
+                        wt_diff = git_diff(repo, target=None)
+                        final_diff = wt_diff
+                    except Exception as de:
+                        logger.debug(f"[ai_edit] Error getting worktree diff: {de}")
+                        final_diff = ""
+
+                    # 2) If no unstaged changes are detected, and there are staged changes, diff against index/HEAD
+                    if not final_diff.strip():
+                        if ("Changes to be committed" in status_output) or ("changes to be committed" in status_output):
+                            try:
+                                final_diff = git_diff(repo, target=diff_target)
+                            except GitCommandError as ge:
+                                logger.debug(f"[ai_edit] git diff against {diff_target} failed: {ge}")
+                                # Fallbacks:
+                                if not has_commits:
+                                    try:
+                                        final_diff = git_diff(repo, target=EMPTY_TREE_SHA)
+                                    except Exception:
+                                        final_diff = ""
+                                else:
+                                    try:
+                                        final_diff = git_diff(repo, target="HEAD")
+                                    except Exception:
+                                        final_diff = ""
+                        else:
+                            # No staged changes reported; still attempt a full diff vs target as a fallback
+                            try:
+                                final_diff = git_diff(repo, target=diff_target)
+                            except Exception as fe:
+                                logger.debug(f"[ai_edit] Fallback diff vs {diff_target} failed: {fe}")
+                                final_diff = ""
+
+                    # Log the final diff length and a preview for diagnostics
+                    preview = (final_diff[:1000] + "…") if len(final_diff) > 1000 else final_diff
+                    logger.debug(f"[ai_edit] Final diff length: {len(final_diff)}; preview:\n{preview}")
+
+                    if final_diff.strip():
+                        applied_changes = f"```diff\n{final_diff}\n```"
+                    else:
+                        applied_changes = "No changes detected in the working directory or index."
                 except git.InvalidGitRepositoryError:
                     applied_changes = "Could not access Git repository to get diff after Aider run."
                 except Exception as e:
