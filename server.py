@@ -1124,47 +1124,55 @@ async def ai_edit(
                     logger.debug(f"[ai_edit] Diff target determined: {'HEAD' if has_commits else 'EMPTY_TREE_SHA'}")
 
                     # Smart diff logic:
-                    # 1) Try unstaged diff (worktree vs index)
+                    # 1) Get diff for all tracked files (staged and unstaged).
                     final_diff = ""
                     try:
-                        wt_diff = git_diff(repo, target=None)
-                        final_diff = wt_diff
-                    except Exception as de:
-                        logger.debug(f"[ai_edit] Error getting worktree diff: {de}")
+                        # This diff will capture both worktree changes and staged changes against HEAD.
+                        final_diff = git_diff(repo, target=diff_target)
+                    except GitCommandError as ge:
+                        logger.debug(f"[ai_edit] git diff against {diff_target} failed: {ge}. This is expected in a new repo.")
+                        # In a new repo with no commits, diff against HEAD fails. Fallback to empty tree.
+                        try:
+                            final_diff = git_diff(repo, target=EMPTY_TREE_SHA)
+                        except Exception as e:
+                            logger.error(f"[ai_edit] Fallback diff against EMPTY_TREE_SHA failed: {e}")
+                            final_diff = ""
+                    except Exception as e:
+                        logger.error(f"[ai_edit] An unexpected error occurred during git diff: {e}")
                         final_diff = ""
-
-                    # 2) If no unstaged changes are detected, and there are staged changes, diff against index/HEAD
-                    if not final_diff.strip():
-                        if ("Changes to be committed" in status_output) or ("changes to be committed" in status_output):
+                    
+                    # 2) Handle untracked files, which are not included in standard diffs.
+                    untracked_diffs = []
+                    if repo.untracked_files:
+                        logger.debug(f"[ai_edit] Found untracked files: {repo.untracked_files}")
+                        for untracked_file in repo.untracked_files:
                             try:
-                                final_diff = git_diff(repo, target=diff_target)
-                            except GitCommandError as ge:
-                                logger.debug(f"[ai_edit] git diff against {diff_target} failed: {ge}")
-                                # Fallbacks:
-                                if not has_commits:
-                                    try:
-                                        final_diff = git_diff(repo, target=EMPTY_TREE_SHA)
-                                    except Exception:
-                                        final_diff = ""
-                                else:
-                                    try:
-                                        final_diff = git_diff(repo, target="HEAD")
-                                    except Exception:
-                                        final_diff = ""
+                                untracked_file_path = Path(directory_path) / untracked_file
+                                # Ensure it's a file and not a directory from .gitignore etc.
+                                if untracked_file_path.is_file():
+                                    with open(untracked_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                        content = f.read()
+                                    # Construct a diff for the new file
+                                    diff_header = f"--- /dev/null\n+++ b/{untracked_file}\n"
+                                    diff_body = "".join([f"+{line}\n" for line in content.splitlines()])
+                                    untracked_diffs.append(diff_header + diff_body)
+                            except Exception as e:
+                                logger.error(f"[ai_edit] Error reading untracked file {untracked_file}: {e}")
+                    
+                    if untracked_diffs:
+                        untracked_diff_str = "\n".join(untracked_diffs)
+                        # Combine with existing diff if it exists
+                        if final_diff.strip():
+                            final_diff = final_diff.strip() + "\n" + untracked_diff_str.strip()
                         else:
-                            # No staged changes reported; still attempt a full diff vs target as a fallback
-                            try:
-                                final_diff = git_diff(repo, target=diff_target)
-                            except Exception as fe:
-                                logger.debug(f"[ai_edit] Fallback diff vs {diff_target} failed: {fe}")
-                                final_diff = ""
+                            final_diff = untracked_diff_str.strip()
 
                     # Log the final diff length and a preview for diagnostics
                     preview = (final_diff[:1000] + "…") if len(final_diff) > 1000 else final_diff
                     logger.debug(f"[ai_edit] Final diff length: {len(final_diff)}; preview:\n{preview}")
 
                     if final_diff.strip():
-                        applied_changes = f"```diff\n{final_diff}\n```"
+                        applied_changes = f"```diff\n{final_diff.strip()}\n```"
                     else:
                         applied_changes = "No changes detected in the working directory or index."
                 except git.InvalidGitRepositoryError:
