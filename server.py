@@ -1134,7 +1134,7 @@ async def ai_edit(
             os.chdir(original_dir)
             logger.debug(f"Restored working directory to: {original_dir}")
         
-        last_reply = _get_last_aider_reply(directory_path)
+        last_reply = _get_last_aider_reply(directory_path) or ""
         if not structured_report_built and last_reply:
             # Legacy append when structured report isn't built
             result_message += f"\n\nAider's last reply:\n{last_reply}"
