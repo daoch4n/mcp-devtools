@@ -1103,7 +1103,12 @@ async def ai_edit(
                 applied_changes = ""
                 try:
                     repo = git.Repo(directory_path)
-                    diff_output = git_diff(repo)
+                    try:
+                        # First, try to diff against HEAD. This is the standard case.
+                        diff_output = git_diff(repo, target='HEAD')
+                    except GitCommandError:
+                        # If HEAD doesn't exist (empty repo), fall back to the empty tree SHA.
+                        diff_output = git_diff(repo, target=EMPTY_TREE_SHA)
                     applied_changes = f"```diff\n{diff_output}\n```" if diff_output else "No unstaged changes detected in working directory."
                 except git.InvalidGitRepositoryError:
                     applied_changes = "Could not access Git repository to get diff after Aider run."
