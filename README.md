@@ -3,6 +3,7 @@
 [![GitHub repository](https://img.shields.io/badge/GitHub-repo-blue?logo=github)](https://github.com/daoch4n/mcp-devtools)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/daoch4n/mcp-devtools/python-package.yml?branch=main)](https://github.com/daoch4n/mcp-devtools/actions/workflows/python-package.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-devtools)](https://pypi.org/project/mcp-devtools)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/mcp-devtools)
 
 - 🔧 `mcp-devtools` server offers a comprehensive suite of software development tools:
   -  🤖 Agentic editing (`ai_edit`)
