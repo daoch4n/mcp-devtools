@@ -205,22 +205,16 @@ You must adhere to the following five-step, iterative workflow:
 
 </details>
 
-## 🎧 Audio Overview
-
-https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
-
 ## 🙈 Security Considerations
 
 - 🛡️ For automated workflows, always run MCP Servers in isolated environments (🐧[Firejail](https://github.com/netblue30/firejail) or 🪟[Sandboxie](https://github.com/sandboxie-plus/Sandboxie))
 - 🗃️ Filesystem access boundaries are maintained via passing `repo_path` to every tool call, so AI assistant only has read/write access to files in the current workspace (relative to any path AI decides to pass as `repo_path` , make sure system prompt is solid on cwd use).
 - ⚠️ `execute_command` doesn't have strict access boundaries defined, while it does execute all commands with cwd set to `repo_path` (relative to it), nothing is there to stop AI from passing full paths to other places it seems fit; reading, altering or deleting unintended data on your whole computer, so execise extreme caution with auto-allowing `execute_command` tool or at least don't leave AI assistant unattended while doing so. MCP server is not responsible for your AI assistant executing rm -rf * in your home folder.
 
-## ⁉️ Known Issues
-
-### 💾 Direct Code Editing vs 🤖 AI-assisted Editing
+## ❔ FAQ
 
 <details>
-<summary> <h4> 📃 Show Issue </h4> </summary>
+<summary> <h4> 💾 Direct Code Editing vs 🤖 AI-assisted Editing </h4> </summary>
 
 **Issue:**
 
@@ -618,3 +612,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   }
 
 </details>
+
+## 🎧
+
+https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
