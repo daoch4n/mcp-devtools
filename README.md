@@ -4,34 +4,40 @@
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/daoch4n/mcp-devtools/python-package.yml?branch=main)](https://github.com/daoch4n/mcp-devtools/actions/workflows/python-package.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-devtools)](https://pypi.org/project/mcp-devtools)
 
-- 🔧 `mcp-devtools` offers a comprehensive suite of software development tools: [ℹ️ Available Tools](#%E2%84%B9%EF%B8%8F-available-tools)
-  -  🤖 AI-assisted file operations (`ai_edit`)
-  -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
-  -  📂 Direct file operations (`write_to_file`)
-  -  🎋 Git management operations (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
-  -  🖥️ Terminal commands execution (`execute_command`)
+- 🔧 `mcp-devtools` server offers a comprehensive suite of software development tools:
+  -  🤖 Agentic editing (`ai_edit`)
+  -  📁 File management (`read_file`, `write_to_file`, `git_apply_diff`)
+  -  🎋 Git management (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
+  -  🖥️ Terminal integration (`execute_command`)
 
-## 1️⃣ Prerequisites
+## 1️⃣ Install
 
-- Python 3.12, [uv](https://github.com/astral-sh/uv)
-- **Aider** (only needed for the `ai_edit` tool)
+- **Python 3.12**, **[uv](https://github.com/astral-sh/uv)**
+  - **Installation:** (🐧 Linux/macOS)
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    ```
+  - **Installation:** (🪟 Windows)
+    ```powershell
+    powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+    ```
+- **[Aider](https://github.com/Aider-AI/aider)** (only needed for the `ai_edit` tool)
   - **Installation:**
     ```bash
     python -m pip install aider-install && aider-install
     ```
-  - **Configuration and Usage:**
+  - 
     <details>
-    <summary> <h4> Recommended Aider configuration </h4> </summary>
+    <summary> <h4> Configuration: </h4> </summary>
     
-    - Create or copy a `.aider.conf.yml` into your repo root (preferred) or your home directory (`~/.aider.conf.yml`).
-    - Start from the `.aider.conf.yml` file in the repository root as a template and adjust to your needs (model, API keys, auto-commit behavior, include/exclude, etc.).
-    - The server automatically loads `.aider.conf.yml` from your workspace; placing it in the repo root or HOME is sufficient for most workflows.
-    - Follow [📄 Official Aider documentation](https://aider.chat/docs/config.html) and for detailed descriptions of each option.
+    - Create or copy provided [.aider.conf.yml](./.aider.conf.yml) into your home directory (🐧`~/.aider.conf.yml`) or your project repo root (make sure to double check if its `.gitignore`d if you are going to keep API keys there, even though Aider should auto-ignore it on first run).  
+    - Adjust Aider options to your needs (model, provider, base url, API keys, etc.).
+    - Follow [📄 official Aider documentation](https://aider.chat/docs/config.html) for detailed descriptions of each available option.
     
     </details>
-    
+  - 
     <details>
-    <summary> <h4> `ai_edit` usage guide </h4> </summary>
+    <summary> <h4> Usage: </h4> </summary>
     
     The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
     
@@ -48,27 +54,15 @@
 
 ---
 
-### 🐧 Linux/macOS
+## 2️⃣ Run
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-### 🪟 Windows
-
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-## 2️⃣ Usage
-
-### 🐍 Running from PyPi
+### 🐍 PyPi:
 
 ```bash
 uvx mcp-devtools -p 1337
 ```
 
-### 🐈‍⬛ Running from GitHub
+### 🐈‍⬛ GitHub:
 
 #### 🐧 Linux/macOS
 
@@ -86,7 +80,7 @@ cd mcp-devtools
 .\server.ps1 -p 1337
 ```
 
-## 3️⃣ MCP Server Configuration
+## 3️⃣ Use
 
 To integrate `mcp-devtools` with your AI assistant, add the following configuration to your MCP settings file:
 
@@ -94,7 +88,7 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 {
   "mcpServers": {
     "devtools": {
-      "url": "http://127.0.0.1:1337/sse"
+      "url": "http://localhost:1337/sse"
     }
   }
 }
@@ -216,13 +210,13 @@ You must adhere to the following five-step, iterative workflow:
 
 https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
-## 🙈 Automation-Related Security Considerations
+## 🙈 Security Considerations
 
 - 🛡️ For automated workflows, always run MCP Servers in isolated environments (🐧[Firejail](https://github.com/netblue30/firejail) or 🪟[Sandboxie](https://github.com/sandboxie-plus/Sandboxie))
 - 🗃️ Filesystem access boundaries are maintained via passing `repo_path` to every tool call, so AI assistant only has read/write access to files in the current workspace (relative to any path AI decides to pass as `repo_path` , make sure system prompt is solid on cwd use).
 - ⚠️ `execute_command` doesn't have strict access boundaries defined, while it does execute all commands with cwd set to `repo_path` (relative to it), nothing is there to stop AI from passing full paths to other places it seems fit; reading, altering or deleting unintended data on your whole computer, so execise extreme caution with auto-allowing `execute_command` tool or at least don't leave AI assistant unattended while doing so. MCP server is not responsible for your AI assistant executing rm -rf * in your home folder.
 
-## ⁉️ Known Issues and Workarounds
+## ⁉️ Known Issues
 
 ### 💾 Direct Code Editing vs 🤖 AI-assisted Editing
 
