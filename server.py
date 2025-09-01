@@ -143,7 +143,7 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         # (e.g., "1. " or "- "), it's likely part of the prompt, so skip it.
         if final_text_lines:
             first_line_stripped = final_text_lines[0].strip()
-            if re.match(r'^\d+\.\s', first_line_stripped) or first_line_stripped.startswith('- '):
+            if re.match(r'^\s*(\d+\.|\-|\*)\s', first_line_stripped):
                 final_text_lines.pop(0)
 
         # Join the collected lines and perform final cleanup.
