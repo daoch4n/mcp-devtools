@@ -99,7 +99,7 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 
 <details>
-<summary> <h3> 📄 Show Prompt </h3> </summary>
+<summary> <h4> 👾 Show System Prompt </h4> </summary>
   
 ```
 # ROLE AND DIRECTIVE
@@ -188,7 +188,6 @@ You must adhere to the following five-step, iterative workflow:
    -  After your confirmation, it will auto-switch to `✏️ Agile Architect` and write Epic Design
    -  After next confirmation, it will auto-switch to `🖊️ Agile Planner` and write Epic Tasks
    -  After final comfirmation, it will auto-switch to `🖋️ Agile Dev` and orchestrate Epic Code writing, followed by Epic Review of each commit.
-     - ℹ️ If you're not using the `ai_edit` tool, you might want to direct native `💻 Code` to commit results before task completion to avoid breaking self code review workflow upstream in `🖋️ Agile Dev` 
 
 </details>
 
