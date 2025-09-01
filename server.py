@@ -1063,6 +1063,15 @@ async def ai_edit(
     original_dir = os.getcwd()
     structured_report_built = False
     result_message = ""
+    pre_existing_untracked: set[str] = set()
+    try:
+        repo_pre = git.Repo(directory_path)
+        pre_existing_untracked = set(repo_pre.untracked_files)
+        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked)}")
+    except git.InvalidGitRepositoryError:
+        logger.debug("[ai_edit] Not a git repository when capturing pre-existing untracked files.")
+    except Exception as e:
+        logger.debug(f"[ai_edit] Failed to capture pre-existing untracked files: {e}")
     try:
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
@@ -1142,17 +1151,22 @@ async def ai_edit(
                         final_diff = ""
                     
                     # 2) Handle untracked files, which are not included in standard diffs.
+                    # 2) Handle untracked files, which are not included in standard diffs.
                     untracked_diffs = []
-                    if repo.untracked_files:
-                        logger.debug(f"[ai_edit] Found untracked files: {repo.untracked_files}")
-                        for untracked_file in repo.untracked_files:
+                    try:
+                        current_untracked = list(repo.untracked_files)
+                    except Exception:
+                        current_untracked = []
+                    # Only include files that became untracked during this Aider run
+                    new_untracked = [f for f in current_untracked if f not in pre_existing_untracked]
+                    if new_untracked:
+                        logger.debug(f"[ai_edit] New untracked files created by Aider: {new_untracked}")
+                        for untracked_file in new_untracked:
                             try:
                                 untracked_file_path = Path(directory_path) / untracked_file
-                                # Ensure it's a file and not a directory from .gitignore etc.
                                 if untracked_file_path.is_file():
                                     with open(untracked_file_path, 'r', encoding='utf-8', errors='ignore') as f:
                                         content = f.read()
-                                    # Construct a diff for the new file
                                     diff_header = f"--- /dev/null\n+++ b/{untracked_file}\n"
                                     diff_body = "".join([f"+{line}\n" for line in content.splitlines()])
                                     untracked_diffs.append(diff_header + diff_body)
