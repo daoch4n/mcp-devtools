@@ -48,26 +48,21 @@ jobs:
       run: |
         python -m build
     - name: Upload distribution packages
-      uses: actions/upload-artifact@v4 # Updated to v4
+      uses: actions/upload-artifact@v4
       with:
         name: python-packages
         path: dist/
   pypi-publish:
     name: Upload release to PyPI
-    needs: build # This job depends on the 'build' job
+    needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Publish on all pushes to main
     environment:
       name: pypi
-      url: https://pypi.org/p/mcp-devtools # Updated project name
+      url: https://pypi.org/p/mcp-devtools
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write  # this permission is mandatory for trusted publishing
     steps:
-    - name: Download all distribution packages
-      uses: actions/download-artifact@v4 # Updated to v4
-      with:
-        name: python-packages
-        path: dist/
     - name: Check if version already exists on PyPI
       id: check_version
       run: |
@@ -87,6 +82,12 @@ jobs:
           echo "should_publish=true" >> $GITHUB_OUTPUT
         fi
       shell: bash
+    - name: Download all distribution packages
+      if: steps.check_version.outputs.should_publish == 'true'
+      uses: actions/download-artifact@v4
+      with:
+        name: python-packages
+        path: dist/
     - name: Publish package distributions to PyPI
       if: steps.check_version.outputs.should_publish == 'true'
       uses: pypa/gh-action-pypi-publish@release/v1
