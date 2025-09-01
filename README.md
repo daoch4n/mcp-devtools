@@ -11,32 +11,42 @@
   -  🎋 Git management operations (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
   -  🖥️ Terminal commands execution (`execute_command`)
 
-<details>
-<summary> <h4> ℹ️ Recommended Aider configuration </h4> </summary>
-
-- Create or copy a `.aider.conf.yml` into your repo root (preferred) or your home directory (`~/.aider.conf.yml`).
-- Start from the `.aider.conf.yml` file in the repository root as a template and adjust to your needs (model, API keys, auto-commit behavior, include/exclude, etc.).
-- The server automatically loads `.aider.conf.yml` from your workspace; placing it in the repo root or HOME is sufficient for most workflows.
-- Follow [📄 Official Aider documentation](https://aider.chat/docs/config.html) and for detailed descriptions of each option.
-
-</details>
-
-## 🤖 `ai_edit` Workflow
-
-The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
-
-### How it Works
-
-1.  **Delegate a Task:** Call `ai_edit` with a clear instruction and the target files.
-2.  **Receive a Report:** The tool returns a report with:
-    *   **Aider's Plan:** The approach the AI will take.
-    *   **Applied Changes (Diff):** The exact changes made to your files.
-    *   **Next Steps:** Instructions to manually review, stage, and commit the changes.
-3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
-
 ## 1️⃣ Prerequisites
 
 - Python 3.12, [uv](https://github.com/astral-sh/uv)
+- **Aider** (only needed for the `ai_edit` tool)
+  - **Installation:**
+    ```bash
+    python -m pip install aider-install && aider-install
+    ```
+  - **Configuration and Usage:**
+    <details>
+    <summary> <h4> Recommended Aider configuration </h4> </summary>
+    
+    - Create or copy a `.aider.conf.yml` into your repo root (preferred) or your home directory (`~/.aider.conf.yml`).
+    - Start from the `.aider.conf.yml` file in the repository root as a template and adjust to your needs (model, API keys, auto-commit behavior, include/exclude, etc.).
+    - The server automatically loads `.aider.conf.yml` from your workspace; placing it in the repo root or HOME is sufficient for most workflows.
+    - Follow [📄 Official Aider documentation](https://aider.chat/docs/config.html) and for detailed descriptions of each option.
+    
+    </details>
+    
+    <details>
+    <summary> <h4> `ai_edit` usage guide </h4> </summary>
+    
+    The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
+    
+    ##### How it Works
+    
+    1.  **Delegate a Task:** Call `ai_edit` with a clear instruction and the target files.
+    2.  **Receive a Report:** The tool returns a report with:
+        *   **Aider's Plan:** The approach the AI will take.
+        *   **Applied Changes (Diff):** The exact changes made to your files.
+        *   **Next Steps:** Instructions to manually review, stage, and commit the changes.
+    3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
+    
+    </details>
+
+---
 
 ### 🐧 Linux/macOS
 
