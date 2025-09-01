@@ -511,34 +511,19 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `ai_edit`
-- **Description:** AI pair programming tool for making targeted code changes using Aider. Use this tool to:
-  1. Implement new features or functionality in existing code
-  2. Add tests to an existing codebase
-  3. Fix bugs in code
-  4. Refactor or improve existing code
-  5. Make structural changes across multiple files
+- **Description:** AI pair programming tool for making targeted code changes using Aider. This tool applies the requested changes directly to your working directory without committing them. After the tool runs, it returns a structured report containing:
 
-  The tool requires:
-  - A repository path where the code exists
-  - A detailed message describing what changes to make. Please only describe one change per message. If you need to make multiple changes, please submit multiple requests.
+  1.  **Aider's Plan:** The approach Aider decided to take.
+  2.  **Applied Changes (Diff):** A diff of the modifications made to your files.
+  3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.
 
-  **Edit Format Selection:**
-  If the `edit_format` option is not explicitly provided, the default is selected based on the model name:
-  - If the model includes `gemini`, defaults to `diff-fenced`
-  - If the model includes `gpt`, defaults to `udiff`
-  - Otherwise, defaults to `diff`
+  Use this tool to:
+  - Implement new features or functionality in existing code
+  - Add tests to an existing codebase
+  - Fix bugs in code
+  - Refactor or improve existing code
 
-  Best practices for messages:
-  - Be specific about what files or components to modify
-  - Describe the desired behavior or functionality clearly
-  - Provide context about the existing codebase structure
-  - Include any constraints or requirements to follow
-
-  Examples of good messages:
-  - "Add unit tests for the Customer class in src/models/customer.rb testing the validation logic"
-  - "Implement pagination for the user listing API in the controllers/users_controller.js file"
-  - "Fix the bug in utils/date_formatter.py where dates before 1970 aren't handled correctly"
-  - "Refactor the authentication middleware in middleware/auth.js to use async/await instead of callbacks"
+  **IMPORTANT:** This tool does NOT automatically commit changes. You are responsible for reviewing and committing the work.
 - **Input Schema:**
   ```json
   {

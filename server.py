@@ -1115,14 +1115,14 @@ async def ai_edit(
 
             last_reply = _get_last_aider_reply(directory_path) or ""
             result_message = (
-                "### Aider's Plan\n" +
-                f"{last_reply}\n\n" +
-                "### Applied Changes (Diff)\n" +
-                f"{applied_changes}\n\n" +
-                "### Verification Result\n" +
-                "⏳ Not yet implemented.\n\n" +
-                "### Next Steps\n" +
-                "Please review the changes above. If they are correct, please stage and commit them."
+                f"### Aider's Plan\n"
+                f"{last_reply}\n\n"
+                f"### Applied Changes (Diff)\n"
+                f"{applied_changes}\n\n"
+                f"### Verification Result\n"
+                f"⏳ Not yet implemented.\n\n"
+                f"### Next Steps\n"
+                f"Please review the changes above. If they are correct, please stage and commit them."
             )
             structured_report_built = True
 
