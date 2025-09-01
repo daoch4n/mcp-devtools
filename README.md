@@ -129,10 +129,9 @@ You must adhere to the following five-step, iterative workflow:
 - If continue_thread = true:
   - Aider restores prior chat history for continuity within the same repo/session.
   - Still include critical context to make the agent robust. Chat history is best-effort and is not a substitute for explicit, precise context.
-- Recommended default: continue_thread = false unless you explicitly want to build on the previous Aider conversation.
 
 ## Choosing continue_thread
-- Set false (recommended):
+- Set false:
   - Switching features or tasks
   - After significant repository changes
   - When you want clean isolation between prompts
@@ -154,7 +153,6 @@ You must adhere to the following five-step, iterative workflow:
 
 **`ai_edit` Tool Usage Rules:**
 * `repo_path`: Always pass the full, absolute path of the current working directory.
-* `model` / `diff_format`: Do not include these parameters unless explicitly instructed by the user.
 
 ```
 
