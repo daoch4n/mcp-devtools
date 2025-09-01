@@ -1,7 +1,5 @@
 # multi-functional MCP-devtools server over SSE <br> [🌸 リードミー](https://github.com/daoch4n/mcp-devtools/blob/main/%E3%83%AA%E3%83%BC%E3%83%89%E3%83%9F%E3%83%BC.MD) [🏮 读我](https://github.com/daoch4n/mcp-devtools/blob/main/%E8%AF%BB%E6%88%91.MD)
 
-https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
-
 [![GitHub repository](https://img.shields.io/badge/GitHub-repo-blue?logo=github)](https://github.com/daoch4n/mcp-devtools)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/daoch4n/mcp-devtools/python-package.yml?branch=main)](https://github.com/daoch4n/mcp-devtools/actions/workflows/python-package.yml)
 [![PyPI](https://img.shields.io/pypi/v/mcp-devtools)](https://pypi.org/project/mcp-devtools)
@@ -79,7 +77,10 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 }
 ```
 
-## 4️⃣ Generic Workflow
+## 🤖 Generic Workflow
+
+https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
+
 <details>
 <summary> <h3> 📄 Show Prompt </h3> </summary>
   
@@ -147,11 +148,11 @@ You must adhere to the following five-step, iterative workflow:
 
 </details>
 
-## ♒ [Roo](https://github.com/RooCodeInc/Roo-Code) Workflows
+## 🦘 [Roo](https://github.com/RooCodeInc/Roo-Code) Workflow
 
 ℹ️ To ensure agent will follow rules, enable `power steering` in Roo Code's `experimental` settings.  
 
-https://github.com/user-attachments/assets/4d218e5e-906c-4d24-abc3-09ab0acdc1d0
+<img width="1827" height="994" alt="image" src="https://github.com/user-attachments/assets/4e3f3e1d-763d-4dd2-ac67-9f25b8178c3b" />
 
 ### 😻 Vibe-Driven Dev Flow: inspired by [pure vibes](https://en.wikipedia.org/wiki/Vibe_coding) 🦘, optimized for Vibing human-out-of-loop
 
