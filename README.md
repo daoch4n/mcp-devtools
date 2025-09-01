@@ -7,11 +7,11 @@ https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 [![PyPI](https://img.shields.io/pypi/v/mcp-devtools)](https://pypi.org/project/mcp-devtools)
 
 - 🔧 `mcp-devtools` offers a comprehensive suite of software development tools: [ℹ️ Available Tools](#%E2%84%B9%EF%B8%8F-available-tools)
-  -  🤖 AI-assisted file operations (`ai_edit`(uses [Aider](https://github.com/Aider-AI/aider)) 
+  -  🤖 AI-assisted file operations (`ai_edit`)
   -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
-  -  📂 Direct file operations (`write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
-  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
-  -  🖥️ Terminal commands execution (`execute_command`) [⚠️ Automation-Related Security](#-automation-related-security-considerations)
+  -  📂 Direct file operations (`write_to_file`)
+  -  🎋 Git management operations (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
+  -  🖥️ Terminal commands execution (`execute_command`)
 
 <details>
 <summary> <h4> ℹ️ Recommended Aider configuration </h4> </summary>
@@ -22,6 +22,19 @@ https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 - Follow [📄 Official Aider documentation](https://aider.chat/docs/config.html) and for detailed descriptions of each option.
 
 </details>
+
+## 🤖 `ai_edit` Workflow
+
+The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
+
+### How it Works
+
+1.  **Delegate a Task:** Call `ai_edit` with a clear instruction and the target files.
+2.  **Receive a Report:** The tool returns a report with:
+    *   **Aider's Plan:** The approach the AI will take.
+    *   **Applied Changes (Diff):** The exact changes made to your files.
+    *   **Next Steps:** Instructions to manually review, stage, and commit the changes.
+3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
 
 ## 1️⃣ Prerequisites
 
@@ -217,22 +230,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 **Workarounds:**
 
-*    🤖 Instruct your AI assistant to delegate editing files to MCP-compatible coding agent by using `ai_edit` tool instead, as it is more suitable for direct code manipulation, automatically commits changes and produces resulting diff as tool output, and let AI assistant act as task orchestrator that will write down plans and docs with `write_to_file` tool then delegate actual coding to specialized agent, get its report (diff) as tool call result, use `git_read_file` tool to double check agent's work, and manage commits and branches (`ai_edit` tool basically integrates `Aider` via some logic ported from [its MCP bridge](https://github.com/sengokudaikon/aider-mcp-server)).
-
-</details>
-
-### ❔ Aider limitations due to its commit-first nature
-
-<details>
-<summary> <h4> 📃 Show Issue </h4> </summary>
-
-**Issue:**
-
-*    🔍 When using `ai_edit` tool in a dirty repo state, e.g. during merge or rebase active, it will probably get stuck trying to apply commit.
-  
-**Workarounds:**
-
-*    ⚙️ Temporarily disable auto commiting functions in your `.aider.conf.yml` configuration file.
+*    🤖 Instruct your AI assistant to delegate editing files to the `ai_edit` tool. It's more suitable for direct code manipulation than `write_to_file`. `ai_edit` will apply the changes and return a diff for review. Your assistant can then orchestrate the review and commit process.
 
 </details>
 
