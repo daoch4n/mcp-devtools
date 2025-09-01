@@ -5,11 +5,11 @@
 [![PyPI](https://img.shields.io/pypi/v/mcp-devtools)](https://pypi.org/project/mcp-devtools)
 
 - 🔧 `mcp-devtools` offers a comprehensive suite of software development tools: [ℹ️ Available Tools](#%E2%84%B9%EF%B8%8F-available-tools)
-  -  🤖 AI-assisted file operations (`ai_edit`(uses [Aider](https://github.com/Aider-AI/aider)) 
+  -  🤖 AI-assisted file operations (`ai_edit`)
   -  📁 Git-assisted file operations (`git_read_file`, `git_apply_diff`)
-  -  📂 Direct file operations (`write_to_file`) [ℹ️ Direct vs AI-assisted](#-direct-code-editing-vs--ai-assisted-editing)
-  -  🎋 Git management operations (`git_diff`(compares worktree vs index or specific commits/branches), `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
-  -  🖥️ Terminal commands execution (`execute_command`) [⚠️ Automation-Related Security](#-automation-related-security-considerations)
+  -  📂 Direct file operations (`write_to_file`)
+  -  🎋 Git management operations (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
+  -  🖥️ Terminal commands execution (`execute_command`)
 
 <details>
 <summary> <h4> ℹ️ Recommended Aider configuration </h4> </summary>
@@ -20,6 +20,19 @@
 - Follow [📄 Official Aider documentation](https://aider.chat/docs/config.html) and for detailed descriptions of each option.
 
 </details>
+
+## 🤖 `ai_edit` Workflow
+
+The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
+
+### How it Works
+
+1.  **Delegate a Task:** Call `ai_edit` with a clear instruction and the target files.
+2.  **Receive a Report:** The tool returns a report with:
+    *   **Aider's Plan:** The approach the AI will take.
+    *   **Applied Changes (Diff):** The exact changes made to your files.
+    *   **Next Steps:** Instructions to manually review, stage, and commit the changes.
+3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
 
 ## 1️⃣ Prerequisites
 
@@ -117,10 +130,9 @@ You must adhere to the following five-step, iterative workflow:
 - If continue_thread = true:
   - Aider restores prior chat history for continuity within the same repo/session.
   - Still include critical context to make the agent robust. Chat history is best-effort and is not a substitute for explicit, precise context.
-- Recommended default: continue_thread = false unless you explicitly want to build on the previous Aider conversation.
 
 ## Choosing continue_thread
-- Set false (recommended):
+- Set false:
   - Switching features or tasks
   - After significant repository changes
   - When you want clean isolation between prompts
@@ -142,7 +154,6 @@ You must adhere to the following five-step, iterative workflow:
 
 **`ai_edit` Tool Usage Rules:**
 * `repo_path`: Always pass the full, absolute path of the current working directory.
-* `model` / `diff_format`: Do not include these parameters unless explicitly instructed by the user.
 
 ```
 
@@ -218,22 +229,7 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
 **Workarounds:**
 
-*    🤖 Instruct your AI assistant to delegate editing files to MCP-compatible coding agent by using `ai_edit` tool instead, as it is more suitable for direct code manipulation, automatically commits changes and produces resulting diff as tool output, and let AI assistant act as task orchestrator that will write down plans and docs with `write_to_file` tool then delegate actual coding to specialized agent, get its report (diff) as tool call result, use `git_read_file` tool to double check agent's work, and manage commits and branches (`ai_edit` tool basically integrates `Aider` via some logic ported from [its MCP bridge](https://github.com/sengokudaikon/aider-mcp-server)).
-
-</details>
-
-### ❔ Aider limitations due to its commit-first nature
-
-<details>
-<summary> <h4> 📃 Show Issue </h4> </summary>
-
-**Issue:**
-
-*    🔍 When using `ai_edit` tool in a dirty repo state, e.g. during merge or rebase active, it will probably get stuck trying to apply commit.
-  
-**Workarounds:**
-
-*    ⚙️ Temporarily disable auto commiting functions in your `.aider.conf.yml` configuration file.
+*    🤖 Instruct your AI assistant to delegate editing files to the `ai_edit` tool. It's more suitable for direct code manipulation than `write_to_file`. `ai_edit` will apply the changes and return a diff for review. Your assistant can then orchestrate the review and commit process.
 
 </details>
 
@@ -514,34 +510,19 @@ https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
   ```
 
 ### `ai_edit`
-- **Description:** AI pair programming tool for making targeted code changes using Aider. Use this tool to:
-  1. Implement new features or functionality in existing code
-  2. Add tests to an existing codebase
-  3. Fix bugs in code
-  4. Refactor or improve existing code
-  5. Make structural changes across multiple files
+- **Description:** AI pair programming tool for making targeted code changes using Aider. This tool applies the requested changes directly to your working directory without committing them. After the tool runs, it returns a structured report containing:
 
-  The tool requires:
-  - A repository path where the code exists
-  - A detailed message describing what changes to make. Please only describe one change per message. If you need to make multiple changes, please submit multiple requests.
+  1.  **Aider's Plan:** The approach Aider decided to take.
+  2.  **Applied Changes (Diff):** A diff of the modifications made to your files.
+  3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.
 
-  **Edit Format Selection:**
-  If the `edit_format` option is not explicitly provided, the default is selected based on the model name:
-  - If the model includes `gemini`, defaults to `diff-fenced`
-  - If the model includes `gpt`, defaults to `udiff`
-  - Otherwise, defaults to `diff`
+  Use this tool to:
+  - Implement new features or functionality in existing code
+  - Add tests to an existing codebase
+  - Fix bugs in code
+  - Refactor or improve existing code
 
-  Best practices for messages:
-  - Be specific about what files or components to modify
-  - Describe the desired behavior or functionality clearly
-  - Provide context about the existing codebase structure
-  - Include any constraints or requirements to follow
-
-  Examples of good messages:
-  - "Add unit tests for the Customer class in src/models/customer.rb testing the validation logic"
-  - "Implement pagination for the user listing API in the controllers/users_controller.js file"
-  - "Fix the bug in utils/date_formatter.py where dates before 1970 aren't handled correctly"
-  - "Refactor the authentication middleware in middleware/auth.js to use async/await instead of callbacks"
+  **IMPORTANT:** This tool does NOT automatically commit changes. You are responsible for reviewing and committing the work.
 - **Input Schema:**
   ```json
   {
