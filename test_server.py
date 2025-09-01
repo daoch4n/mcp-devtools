@@ -1070,5 +1070,47 @@ async def test_ai_edit_appends_reply_on_success(mock_create_subprocess, mock_get
     last_reply = "Last reply from Aider."
     assert result_text.count(last_reply) == 1, "The last reply should be appended once on success."
     
-    # Assert that the formatted success message is present instead of raw output
-    assert "Code changes completed and committed successfully" in result_text
+    # Assert the structured report sections are present
+    assert "### Aider's Plan" in result_text
+    assert "### Applied Changes (Diff)" in result_text
+    assert "### Verification Result" in result_text
+    assert "### Next Steps" in result_text
+    assert last_reply in result_text
+
+@pytest.mark.asyncio
+@patch("server._get_last_aider_reply", return_value="Mocked plan.")
+@patch("asyncio.create_subprocess_shell")
+async def test_ai_edit_uses_no_auto_commit_and_returns_diff(mock_create_subprocess, mock_get_reply, temp_git_repo):
+    """
+    Verifies that ai_edit invokes Aider with --no-auto-commit and returns a non-empty diff block.
+    """
+    repo, repo_path = temp_git_repo
+
+    # Make an unstaged change to a tracked file to produce a working tree diff
+    target_file = "initial_file.txt"
+    (repo_path / target_file).write_text("edited by aider")
+
+    # Mock a successful Aider run that indicates an applied edit
+    mock_process = AsyncMock()
+    mock_process.communicate.return_value = (b"Applied edit to initial_file.txt", b"")
+    mock_process.returncode = 0
+    mock_create_subprocess.return_value = mock_process
+
+    # Call ai_edit
+    result_text = await ai_edit(
+        str(repo_path),
+        "please edit",
+        AsyncMock(),
+        [target_file],
+        [],
+        continue_thread=False,
+    )
+
+    # Assert the command included --no-auto-commit
+    called_command = mock_create_subprocess.call_args[0][0]
+    assert "--no-auto-commit" in called_command
+
+    # Assert a non-empty diff block is present with expected changes
+    assert "```diff" in result_text
+    assert "-initial content" in result_text
+    assert "+edited by aider" in result_text

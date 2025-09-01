@@ -1009,6 +1009,7 @@ async def ai_edit(
 
     aider_options: Dict[str, Any] = {
         "yes_always": True,
+        "auto_commit": False,
     }
 
     # Prune Aider chat history if not continuing thread
@@ -1060,38 +1061,9 @@ async def ai_edit(
             logger.error(f"[ai_edit] Provided file not found in repo: {fname}. Aider may fail.")
 
     original_dir = os.getcwd()
-    pre_aider_commit_hash = None
+    structured_report_built = False
     result_message = ""
     try:
-        # Capture the current HEAD commit hash before Aider runs
-        try:
-            repo = git.Repo(directory_path)
-            try:
-                if repo.head.is_valid():
-                    try:
-                        pre_aider_commit_hash = repo.head.commit.hexsha
-                        logger.debug(f"Pre-Aider HEAD commit: {pre_aider_commit_hash}")
-                    except (ValueError, AttributeError, IndexError):
-                        # Fallback: use git_log to get last commit hash
-                        log_entries = git_log(repo, max_count=1)
-                        if log_entries:
-                            # Parse hash from "Commit: <hash>" line
-                            first_line = log_entries[0].splitlines()[0]
-                            if first_line.startswith("Commit: "):
-                                pre_aider_commit_hash = first_line.split("Commit: ")[1].strip()
-                                logger.debug(f"Pre-Aider HEAD commit (from git_log): {pre_aider_commit_hash}")
-                            else:
-                                logger.debug("git_log did not return a commit hash line.")
-                        else:
-                            logger.debug("git_log returned no entries; repository may be empty.")
-                else:
-                    logger.debug("Repository has no commits yet or detached HEAD before Aider.")
-            except Exception as e:
-                logger.debug(f"Error retrieving pre-Aider HEAD commit: {e}")
-        except git.InvalidGitRepositoryError:
-            logger.warning(f"Directory {directory_path} is not a valid Git repository. Cannot capture pre-Aider commit hash.")
-        except Exception as e:
-            logger.warning(f"Error capturing pre-Aider commit hash: {e}")
         os.chdir(directory_path)
         logger.debug(f"Changed working directory to: {directory_path}")
 
@@ -1128,60 +1100,42 @@ async def ai_edit(
         else:
             result_message = "Aider process completed."
             if "Applied edit to" in stdout:
-                result_message = "Code changes completed and committed successfully."
-                
+                # Build a structured report with Aider's plan and the diff
                 try:
-                    # Re-initialize repo object to get latest state after Aider potentially made changes
                     repo = git.Repo(directory_path)
-                    
-                    post_aider_commit_hash = None
-                    try:
-                        if repo.head.is_valid():
-                            try:
-                                post_aider_commit_hash = repo.head.commit.hexsha
-                                logger.debug(f"Post-Aider HEAD commit: {post_aider_commit_hash}")
-                            except (ValueError, AttributeError, IndexError):
-                                # Fallback: use git_log to get last commit hash
-                                log_entries = git_log(repo, max_count=1)
-                                if log_entries:
-                                    first_line = log_entries[0].splitlines()[0]
-                                    if first_line.startswith("Commit: "):
-                                        post_aider_commit_hash = first_line.split("Commit: ")[1].strip()
-                                        logger.debug(f"Post-Aider HEAD commit (from git_log): {post_aider_commit_hash}")
-                                    else:
-                                        logger.debug("git_log did not return a commit hash line.")
-                                else:
-                                    logger.debug("git_log returned no entries; repository may be empty.")
-                        else:
-                            logger.debug("Repository has no commits or detached HEAD after Aider.")
-                    except Exception as e:
-                        logger.debug(f"Error retrieving post-Aider HEAD commit: {e}")
-
-                    if pre_aider_commit_hash and post_aider_commit_hash and pre_aider_commit_hash != post_aider_commit_hash:
-                        # Generate diff between the two commit hashes
-                        diff_output = repo.git.diff(pre_aider_commit_hash, post_aider_commit_hash)
-                        if diff_output:
-                            result_message += f"\n\nDiff of changes made by Aider:\n```diff\n{diff_output}\n```"
-                        else:
-                            result_message += "\n\nNo diff generated between pre and post Aider commits (perhaps no changes were made or it's an empty commit)."
-                    elif not pre_aider_commit_hash and post_aider_commit_hash:
-                        # Case: Repo was empty before, now has commits. Diff against empty tree.
-                        diff_output = repo.git.diff(EMPTY_TREE_SHA, post_aider_commit_hash)
-                        if diff_output:
-                            result_message += f"\n\nDiff of changes made by Aider (initial commit):\n```diff\n{diff_output}\n```"
-                        else:
-                            result_message += "\n\nNo diff generated for the initial commit (perhaps no changes were made or it's an empty commit)."
-                    else:
-                        result_message += "\n\nNo new commit detected or no changes made by Aider."
-
+                    diff_output = git_diff(repo)
+                    applied_changes = f"```diff\n{diff_output}\n```" if diff_output else "No unstaged changes detected in working directory."
                 except git.InvalidGitRepositoryError:
-                    result_message += "\n\nCould not access Git repository to get diff after Aider run."
+                    applied_changes = "Could not access Git repository to get diff after Aider run."
                 except Exception as e:
-                    result_message += f"\n\nError generating diff for Aider changes: {e}"
+                    applied_changes = f"Error generating diff for Aider changes: {e}"
+
+                last_reply = _get_last_aider_reply(directory_path) or ""
+                result_message = (
+                    "### Aider's Plan\n" +
+                    f"{last_reply}\n\n" +
+                    "### Applied Changes (Diff)\n" +
+                    f"{applied_changes}\n\n" +
+                    "### Verification Result\n" +
+                    "⏳ Not yet implemented.\n\n" +
+                    "### Next Steps\n" +
+                    "Please review the changes above. If they are correct, please stage and commit them."
+                )
+                structured_report_built = True
             else:
-                 result_message += (f"\nIt's unclear if changes were applied. Please verify the file manually.\n"
-                                     f"You can also inspect .aider.chat.history.md in the repo root for Aider's chat log.\n"
-                                     f"STDOUT:\n{stdout}")
+                 # Build a structured report indicating no changes were applied
+                 last_reply = _get_last_aider_reply(directory_path) or ""
+                 result_message = (
+                     "### Aider's Plan\n" +
+                     f"{last_reply}\n\n" +
+                     "### Applied Changes (Diff)\n" +
+                     "No changes were applied by Aider.\n\n" +
+                     "### Verification Result\n" +
+                     "⏳ Not yet implemented.\n\n" +
+                     "### Next Steps\n" +
+                     "Please review the changes above. If they are correct, please stage and commit them."
+                 )
+                 structured_report_built = True
 
     except Exception as e:
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
@@ -1192,7 +1146,8 @@ async def ai_edit(
             logger.debug(f"Restored working directory to: {original_dir}")
         
         last_reply = _get_last_aider_reply(directory_path)
-        if last_reply:
+        if not structured_report_built and last_reply:
+            # Legacy append when structured report isn't built
             result_message += f"\n\nAider's last reply:\n{last_reply}"
         
         return result_message
@@ -1351,26 +1306,20 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.AI_EDIT,
-            description="AI pair programming tool for making targeted code changes using Aider. Use this tool to:\n\n"
-                        "1. Implement new features or functionality in existing code\n"
-                        "2. Add tests to an existing codebase\n"
-                        "3. Fix bugs in code\n"
-                        "4. Refactor or improve existing code\n"
-                        "5. Make structural changes across multiple files\n\n"
-                        "The tool requires:\n"
-                        "- A repository path where the code exists\n"
-                        "- A detailed message describing what changes to make. Please only describe one change per message. "
-                        "If you need to make multiple changes, please submit multiple requests.\n\n"
-                        "Best practices for messages:\n"
-                        "- Be specific about what files or components to modify\n"
-                        "- Describe the desired behavior or functionality clearly\n"
-                        "- Provide context about the existing codebase structure\n"
-                        "- Include any constraints or requirements to follow\n\n"
-                        "Examples of good messages:\n"
-                        "- \"Add unit tests for the Customer class in src/models/customer.rb testing the validation logic\"\n"
-                        "- \"Implement pagination for the user listing API in the controllers/users_controller.js file\"\n"
-                        "- \"Fix the bug in utils/date_formatter.py where dates before 1970 aren't handled correctly\"\n"
-                        "- \"Refactor the authentication middleware in middleware/auth.js to use async/await instead of callbacks\"",
+            description=(
+                "AI pair programming tool for making targeted code changes using Aider. "
+                "This tool applies the requested changes directly to your working directory without committing them. "
+                "After the tool runs, it returns a structured report containing:\n\n"
+                "1.  **Aider's Plan:** The approach Aider decided to take.\n"
+                "2.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
+                "3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n\n"
+                "Use this tool to:\n"
+                "- Implement new features or functionality in existing code\n"
+                "- Add tests to an existing codebase\n"
+                "- Fix bugs in code\n"
+                "- Refactor or improve existing code\n\n"
+                "**IMPORTANT:** This tool does NOT automatically commit changes. You are responsible for reviewing and committing the work."
+            ),
             inputSchema=AiEdit.model_json_schema(),
         ),
         Tool(
