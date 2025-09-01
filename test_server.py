@@ -391,42 +391,20 @@ async def test_write_to_file_content_bytes_mismatch_and_exception(tmp_path, monk
     # Simulate written_bytes != content.encode('utf-8')
     file_path = "mismatch.txt"
     content = "abc"
-    full_path = tmp_path / file_path
 
-    # Patch open to simulate mismatch on read-back
-    import builtins
-    real_open = builtins.open
-
-    class FakeFile:
-        def __init__(self, *a, **kw):
-            self.lines = []
-            self.mode = a[1] if len(a) > 1 else ""
-            self.closed = False
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def write(self, data): self.lines.append(data)
-        def read(self): return b"xyz" if "b" in self.mode else "xyz"
-        def writelines(self, lines): self.lines.extend(lines)
-        def close(self): self.closed = True
-
-    def fake_open(path, mode="r", *a, **kw):
-        if "mismatch.txt" in str(path) and "rb" in mode:
-            return FakeFile(path, mode)
-        if "mismatch.txt" in str(path) and "w" in mode:
-            return FakeFile(path, mode)
-        return real_open(path, mode, *a, **kw)
-
-    monkeypatch.setattr(builtins, "open", fake_open)
-    result = await write_to_file_content(str(tmp_path), file_path, content)
-    assert "Mismatch between input content and written bytes!" in result or "Diff:" in result
+    # Patch open to simulate mismatch on read-back using mock_open
+    mock_file = mock_open(read_data=b'xyz')
+    with patch('builtins.open', mock_file):
+        result = await write_to_file_content(str(tmp_path), file_path, content)
+        assert "Mismatch between input content and written bytes!" in result
 
     # Simulate Exception during file writing
-    def raise_exc_open(*a, **kw):
-        raise Exception("write error")
-    monkeypatch.setattr(builtins, "open", raise_exc_open)
-    result_exc = await write_to_file_content(str(tmp_path), "fail.txt", "fail")
-    assert "UNEXPECTED_ERROR: Failed to write to file 'fail.txt': write error" in result_exc
-    assert "UNEXPECTED_ERROR:" in result_exc
+    mock_file_raise = mock_open()
+    mock_file_raise.side_effect = Exception("write error")
+    with patch('builtins.open', mock_file_raise):
+        result_exc = await write_to_file_content(str(tmp_path), "fail.txt", "fail")
+        assert "UNEXPECTED_ERROR: Failed to write to file 'fail.txt': write error" in result_exc
+        assert "UNEXPECTED_ERROR:" in result_exc
 
 @pytest.mark.asyncio
 async def test_execute_custom_command_exception(monkeypatch, tmp_path):
@@ -705,18 +683,18 @@ def test_load_aider_config_various_cases(tmp_path, monkeypatch):
     monkeypatch.chdir(workdir)
     assert load_aider_config(str(workdir)) == config1
 
-    # Case 2: Config in git root (different from workdir)
+    # Case 2: Config in git root (different from workdir) and precedence
     gitroot = tmp_path / "gitroot"
     gitroot.mkdir()
     (gitroot / ".git").mkdir()
-    config2 = {"b": 2}
+    config2 = {"b": 2, "a": "from_git_root"} # 'a' will be overridden by workdir
     config_path2 = gitroot / ".aider.conf.yml"
     write_yaml(config_path2, config2)
     # Patch find_git_root to return gitroot for workdir
     with mock.patch("server.find_git_root", return_value=str(gitroot)):
         result = load_aider_config(str(workdir))
-        assert result["a"] == 1
-        assert result["b"] == 2
+        assert result["a"] == 1 # from workdir, overrides git_root
+        assert result["b"] == 2 # from git_root
 
     # Case 3: Config specified directly
     config3 = {"c": 3}
@@ -1043,6 +1021,9 @@ async def test_ai_edit_appends_reply_on_unclear_outcome(mock_create_subprocess, 
 
     last_reply = "Last reply from Aider."
     assert result_text.count(last_reply) == 1, "The last reply should be appended once for unclear outcomes."
+    # Assert that the structured report is NOT present
+    assert "### Aider's Plan" not in result_text
+    assert "### Applied Changes (Diff)" not in result_text
 
 @pytest.mark.asyncio
 @patch("server._get_last_aider_reply", return_value="Last reply from Aider.")
