@@ -4,20 +4,20 @@
 **So that** I can focus on relevant modifications without unrelated changes  
 
 **Acceptance Criteria:**  
-- Automatically create a worktree snapshot before each `ai_edit` execution  
-- Generate diff showing only changes made during the current operation  
-- Preserve snapshot for 24 hours for debugging purposes  
+- Automatically create a worktree diff before each `ai_edit` execution  
+- Generate diff showing only changes made during the current operation relative to the previous diff
 
 ## User Story 2: Parallel Execution Support  
-**As a** developer working on multiple features  
+**As a** developer working on same feature
 **I want** to run multiple `ai_edit` operations concurrently  
 **So that** I can optimize my development workflow  
 
 **Acceptance Criteria:**  
 - Implement isolated workspaces for concurrent operations  
-- Add session IDs to track parallel executions  
-- Prevent file conflicts through automatic locking  
-- Show parallel operation status in dashboard  
+- Add session IDs to track parallel executions and manage separate `.aider.chat.history.md` files for each session with session resume support by adding the optional session ID argument to the `ai_edit` tool, if not specified, last session ID will be used, so we can resume the last session. (we also need to track the last session ID in a temporary file named .aider.last_session_id in the repo_path)
+- The session ID will be generated automatically.
+- Track and show current ai_edit operation status in next ai_edit tool output.
+- Add session ID to the output of the ai_edit tool so LLM will be aware of which session to resume.
 
 ## User Story 3: Automatic Worktree Management  
 **As a** developer  
@@ -27,7 +27,6 @@
 **Acceptance Criteria:**  
 - Create temporary worktrees for each `ai_edit` execution  
 - Automatically clean up worktrees after successful operations  
-- Preserve worktrees for failed operations for debugging  
 
 ## User Story 4: Change Context Awareness  
 **As a** code reviewer  
@@ -39,23 +38,12 @@
 - Highlight changed lines in diff view  
 - Provide file navigation in change preview  
 
-## User Story 5: Atomic Operations  
-**As a** developer  
-**I want** each `ai_edit` operation to be atomic  
-**So that** I can safely interrupt or retry operations  
-
-**Acceptance Criteria:**  
-- Implement transactional file modifications  
-- Automatic rollback on failure  
-- Retry mechanism for interrupted operations  
-
 ## User Story 6: Performance Metrics  
-**As a** system administrator  
+**As a** developer  
 **I want** performance tracking for `ai_edit` operations  
-**So that** I can optimize resource allocation  
+**So that** I can optimize my development workflow  
 
 **Acceptance Criteria:**  
 - Track execution time per operation  
-- Monitor resource usage (CPU/memory)  
-- Generate performance reports  
-- Alert on abnormal patterns  
+- Show execution time in the output of the ai_edit tool
+- TBD
