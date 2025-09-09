@@ -3,6 +3,10 @@ pytest_plugins = "pytest_asyncio"
 import os
 import tempfile
 import shutil
+import json
+import time
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 import pytest
 
 from server import find_git_root
@@ -1046,3 +1050,212 @@ async def test_snapshot_delta_creation(monkeypatch):
         # Verify delta contains expected changes
         assert "-initial" in result
         assert "+modified" in result
+
+@pytest.mark.asyncio
+async def test_ai_session_tools_list_status_resume(monkeypatch):
+    """Test ai_session tools: list, status, and resume"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = Path(tmpdir)
+        repo = git.Repo.init(repo_path)
+        with repo.config_writer() as cw:
+            cw.set_value("user", "email", "test@example.com")
+            cw.set_value("user", "name", "Test User")
+        # Initial commit
+        (repo_path / "file.txt").write_text("initial\n")
+        repo.index.add(["file.txt"])
+        repo.index.commit("init")
+
+        # Ensure session record persists (no worktree purge)
+        monkeypatch.setenv("MCP_USE_WORKTREES", "0")
+
+        # Mock aider process to do a trivial write
+        class FakeProc:
+            def __init__(self):
+                self.returncode = 0
+            async def communicate(self):
+                # Modify file to ensure success
+                (repo_path / "file.txt").write_text("modified\n")
+                return (b"Applied edit to file.txt", b"")
+
+        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+            result = await ai_edit(
+                repo_path=str(repo_path),
+                message="Edit",
+                session=MagicMock(),
+                files=["file.txt"],
+                options=[],
+                continue_thread=False,
+            )
+
+        # Test ai_session_list
+        list_result = list(await call_tool("ai_session_list", {"repo_path": str(repo_path)}))
+        session_payload = json.loads(list_result[0].text)
+        sessions_list = session_payload.get("sessions", [])
+        assert len(sessions_list) >= 1
+        
+        # Get session_id from first session
+        session_id = sessions_list[0].get('id') or sessions_list[0].get('session_id')
+        assert session_id is not None
+
+        # Test ai_session_status
+        status_result = list(await call_tool("ai_session_status", {"repo_path": str(repo_path), "session_id": session_id}))
+        status_data = json.loads(status_result[0].text)
+        assert 'status' in status_data or 'session_id' in status_data
+
+        # Test ai_session_resume
+        resume_result = list(await call_tool("ai_session_resume", {"repo_path": str(repo_path), "session_id": session_id}))
+        assert session_id in resume_result[0].text
+
+@pytest.mark.asyncio
+async def test_auto_apply_workspace_changes_to_root(monkeypatch):
+    """Test that workspace changes are auto-applied to root when MCP_APPLY_WORKSPACE_TO_ROOT=1"""
+    # Set environment variables
+    monkeypatch.setenv("MCP_USE_WORKTREES", "1")
+    monkeypatch.setenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = Path(tmpdir)
+        repo = git.Repo.init(repo_path)
+        with repo.config_writer() as cw:
+            cw.set_value("user", "email", "test@example.com")
+            cw.set_value("user", "name", "Test User")
+        # Initial commit
+        (repo_path / "file.txt").write_text("initial\n")
+        repo.index.add(["file.txt"])
+        repo.index.commit("init")
+
+        # Mock subprocess to modify file in workspace
+        class FakeProc:
+            def __init__(self):
+                self.returncode = 0
+            async def communicate(self):
+                # Modify file in current working directory (workspace)
+                (repo_path / "file.txt").write_text("modified\n")
+                return (b"Applied edit to file.txt", b"")
+
+        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+            result = await ai_edit(
+                repo_path=str(repo_path),
+                message="Edit",
+                session=MagicMock(),
+                files=["file.txt"],
+                options=[],
+                continue_thread=False,
+            )
+
+        # Verify that the output contains the diff
+        assert "-initial" in result
+        assert "+modified" in result
+
+@pytest.mark.asyncio
+async def test_purge_on_success_deletes_session_record(monkeypatch):
+    """Test that successful sessions are purged from sessions.json and workspace is deleted"""
+    # Set environment variables
+    monkeypatch.setenv("MCP_USE_WORKTREES", "1")
+    monkeypatch.setenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1")
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = Path(tmpdir)
+        repo = git.Repo.init(repo_path)
+        with repo.config_writer() as cw:
+            cw.set_value("user", "email", "test@example.com")
+            cw.set_value("user", "name", "Test User")
+        # Initial commit
+        (repo_path / "file.txt").write_text("initial\n")
+        repo.index.add(["file.txt"])
+        repo.index.commit("init")
+
+        # Mock subprocess to ensure success
+        class FakeProc:
+            def __init__(self):
+                self.returncode = 0
+            async def communicate(self):
+                # Modify file
+                (repo_path / "file.txt").write_text("modified\n")
+                return (b"Applied edit to file.txt", b"")
+
+        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+            result = await ai_edit(
+                repo_path=str(repo_path),
+                message="Edit",
+                session=MagicMock(),
+                files=["file.txt"],
+                options=[],
+                continue_thread=False,
+            )
+
+        # Extract session ID from result
+        session_line = [line for line in result.split('\n') if line.startswith("Session: ")][0]
+        session_id = session_line.split(": ")[1].strip()
+
+        # Verify session is not in sessions.json
+        sessions_file = repo_path / ".mcp-devtools" / "sessions.json"
+        if sessions_file.exists():
+            sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
+            session_ids = list(sessions_map.keys())
+            assert session_id not in session_ids
+
+        # Verify workspace directory doesn't exist
+        worktrees_dir = repo_path / ".mcp-devtools" / "workspaces"
+        if worktrees_dir.exists():
+            workspace_dirs = list(worktrees_dir.iterdir())
+            workspace_names = [d.name for d in workspace_dirs]
+            assert session_id not in workspace_names
+
+@pytest.mark.asyncio
+async def test_ttl_cleanup_deletes_expired_records(monkeypatch):
+    """Test that TTL cleanup removes expired session records"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = Path(tmpdir)
+        repo = git.Repo.init(repo_path)
+        with repo.config_writer() as cw:
+            cw.set_value("user", "email", "test@example.com")
+            cw.set_value("user", "name", "Test User")
+        # Initial commit
+        (repo_path / "file.txt").write_text("initial\n")
+        repo.index.add(["file.txt"])
+        repo.index.commit("init")
+
+        # Create sessions.json with expired session
+        mcp_dir = repo_path / ".mcp-devtools"
+        mcp_dir.mkdir(exist_ok=True)
+        sessions_file = mcp_dir / "sessions.json"
+        
+        # Create expired session (completed 2 hours ago) using store schema (dict keyed by id with epoch times)
+        expired_time_epoch = time.time() - 7200
+        expired_session_data = {
+            "expired-session-123": {
+                "id": "expired-session-123",
+                "status": "completed",
+                "completed_at": expired_time_epoch,
+                "last_updated": expired_time_epoch,
+                "use_worktree": False,
+                "workspace_dir": None
+            }
+        }
+        sessions_file.write_text(json.dumps(expired_session_data))
+
+        # Set TTL to 1 second
+        monkeypatch.setenv("MCP_SESSION_TTL_SECONDS", "1")
+
+        # Mock subprocess for ai_edit
+        class FakeProc:
+            def __init__(self):
+                self.returncode = 0
+            async def communicate(self):
+                return (b"noop", b"")
+
+        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+            await ai_edit(
+                repo_path=str(repo_path),
+                message="No-op edit",
+                session=MagicMock(),
+                files=["file.txt"],
+                options=[],
+                continue_thread=False,
+            )
+
+        # Verify expired session was removed
+        if sessions_file.exists():
+            sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
+            assert "expired-session-123" not in sessions_map
