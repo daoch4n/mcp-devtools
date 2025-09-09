@@ -58,6 +58,14 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
+from mcp_devtools.snapshot_utils import (
+    ensure_snap_dir,
+    looks_binary_bytes,
+    now_ts,
+    sanitize_binary_markers,
+    save_snapshot,
+    snapshot_worktree,
+)
 from starlette.routing import Route, Mount
 from starlette.responses import Response
 from starlette.requests import Request
@@ -1061,26 +1069,7 @@ async def ai_edit(
             logger.error(f"[ai_edit] Provided file not found in repo: {fname}. Aider may fail.")
 
     # === Worktree Snapshot helpers (User Story 1) ===
-    import os
-    import re
-    import subprocess
-    import tempfile
-    import time
-    from datetime import datetime, timezone
-    from pathlib import Path
-    from typing import Any, Dict, List, Optional, Set, Tuple, Union
-
-    import git
-    from fastapi import FastAPI, HTTPException
-
-    from .snapshot_utils import (
-        ensure_snap_dir,
-        looks_binary_bytes,
-        now_ts,
-        sanitize_binary_markers,
-        save_snapshot,
-        snapshot_worktree,
-    )
+    # Imports were moved to module top to avoid shadowing and mypy issues.
 
     # Capture pre-existing untracked files BEFORE aider runs
     try:
@@ -1092,14 +1081,14 @@ async def ai_edit(
     # Take pre-execution snapshot
     pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     pre_ts = now_ts()
-    pre_snapshot_path = save_snapshot(repo_path, "pre", pre_ts, pre_snapshot)
+    pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
 
     # ... run aider ...
 
     # Take post-execution snapshot
     post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     post_ts = now_ts()
-    post_snapshot_path = save_snapshot(repo_path, "post", post_ts, post_snapshot)
+    post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
 
     # Compute delta between pre and post snapshots
     try:
@@ -1112,6 +1101,8 @@ async def ai_edit(
             tofile=str(post_snapshot_path.name),
         ))
         delta_section = "### Snapshot Delta (this run)\n\n" + "".join(delta_lines)
+        # Ensure this delta is included in the final result
+        snapshot_delta_section = delta_section
     except Exception as e:
         delta_section = f"\n\nError generating delta: {str(e)}"
 
@@ -1120,8 +1111,6 @@ async def ai_edit(
     original_dir = os.getcwd()
     structured_report_built = False
     result_message = ""
-    snapshot_delta_section = ""
-    pre_existing_untracked_files: set[str] = set()
     try:
         repo_pre = git.Repo(directory_path)
         pre_existing_untracked_files = set(repo_pre.untracked_files)
@@ -1162,7 +1151,7 @@ async def ai_edit(
         # Post-snapshot for this ai_edit run (User Story 1)
         try:
             _post_snapshot_text = snapshot_worktree(directory_path, exclude_untracked=set())
-            _post_snapshot_path = save_snapshot(directory_path, "post", _post_snapshot_text, now_ts())
+            _post_snapshot_path = save_snapshot(directory_path, now_ts(), "post", _post_snapshot_text)
             # Compute delta between pre and post snapshots
             try:
                 # Exclude pre-existing untracked files from delta by filtering both pre and post
