@@ -838,6 +838,20 @@ import asyncio
 
 import pytest
 
+@pytest.fixture
+def fake_aider_proc():
+    class _FakeProc:
+        def __init__(self, repo_path: Path | None = None, filename: str = "file.txt", content: str = "modified\n", returncode: int = 0):
+            self._repo_path = repo_path
+            self._filename = filename
+            self._content = content
+            self.returncode = returncode
+        async def communicate(self):
+            if self._repo_path is not None:
+                (self._repo_path / self._filename).write_text(self._content)
+            return (b"Applied edit to file.txt", b"")
+    return _FakeProc
+
 @pytest.mark.asyncio
 async def test_run_command_success_and_failure(monkeypatch):
     from server import run_command
@@ -1009,7 +1023,7 @@ def test_git_read_file_error_cases(monkeypatch):
 
 # New tests
 @pytest.mark.asyncio
-async def test_snapshot_delta_creation(monkeypatch):
+async def test_snapshot_delta_creation(monkeypatch, fake_aider_proc):
     """Test that snapshot delta is created correctly"""
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_path = Path(tmpdir)
@@ -1022,37 +1036,26 @@ async def test_snapshot_delta_creation(monkeypatch):
         repo.index.add(["file.txt"])
         repo.index.commit("init")
 
-        # Mock aider process
-        class FakeProc:
-            def __init__(self, rc=0):
-                self.returncode = rc
-            async def communicate(self):
-                # Modify file
-                (repo_path / "file.txt").write_text("modified\n")
-                return (b"Applied edit to file.txt", b"")
-
-        async def fake_create_subprocess_shell(*args, **kwargs):
-            return FakeProc()
-
-        monkeypatch.setattr(asyncio, "create_subprocess_shell", fake_create_subprocess_shell)
-
-        result = await ai_edit(
-            repo_path=str(repo_path),
-            message="Edit",
-            session=MagicMock(),
-            files=["file.txt"],
-            options=[],
-            continue_thread=False,
-        )
+        with patch('asyncio.create_subprocess_shell', return_value=fake_aider_proc(repo_path)):
+            result = await ai_edit(
+                repo_path=str(repo_path),
+                message="Edit",
+                session=MagicMock(),
+                files=["file.txt"],
+                options=[],
+                continue_thread=False,
+            )
 
         # Verify delta section exists
         assert "### Snapshot Delta (this run)" in result
-        # Verify delta contains expected changes
+        # Verify delta contains expected changes in correct order
         assert "-initial" in result
         assert "+modified" in result
+        # Ensure the delta shows the correct transformation
+        assert result.index("-initial") < result.index("+modified")
 
 @pytest.mark.asyncio
-async def test_ai_session_tools_list_status_resume(monkeypatch):
+async def test_ai_session_tools_list_status_resume(monkeypatch, fake_aider_proc):
     """Test ai_session tools: list, status, and resume"""
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_path = Path(tmpdir)
@@ -1068,16 +1071,7 @@ async def test_ai_session_tools_list_status_resume(monkeypatch):
         # Ensure session record persists (no worktree purge)
         monkeypatch.setenv("MCP_USE_WORKTREES", "0")
 
-        # Mock aider process to do a trivial write
-        class FakeProc:
-            def __init__(self):
-                self.returncode = 0
-            async def communicate(self):
-                # Modify file to ensure success
-                (repo_path / "file.txt").write_text("modified\n")
-                return (b"Applied edit to file.txt", b"")
-
-        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+        with patch('asyncio.create_subprocess_shell', return_value=fake_aider_proc(repo_path)):
             result = await ai_edit(
                 repo_path=str(repo_path),
                 message="Edit",
@@ -1107,7 +1101,7 @@ async def test_ai_session_tools_list_status_resume(monkeypatch):
         assert session_id in resume_result[0].text
 
 @pytest.mark.asyncio
-async def test_auto_apply_workspace_changes_to_root(monkeypatch):
+async def test_auto_apply_workspace_changes_to_root(monkeypatch, fake_aider_proc):
     """Test that workspace changes are auto-applied to root when MCP_APPLY_WORKSPACE_TO_ROOT=1"""
     # Set environment variables
     monkeypatch.setenv("MCP_USE_WORKTREES", "1")
@@ -1124,16 +1118,7 @@ async def test_auto_apply_workspace_changes_to_root(monkeypatch):
         repo.index.add(["file.txt"])
         repo.index.commit("init")
 
-        # Mock subprocess to modify file in workspace
-        class FakeProc:
-            def __init__(self):
-                self.returncode = 0
-            async def communicate(self):
-                # Modify file in current working directory (workspace)
-                (repo_path / "file.txt").write_text("modified\n")
-                return (b"Applied edit to file.txt", b"")
-
-        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+        with patch('asyncio.create_subprocess_shell', return_value=fake_aider_proc(repo_path)):
             result = await ai_edit(
                 repo_path=str(repo_path),
                 message="Edit",
@@ -1148,7 +1133,7 @@ async def test_auto_apply_workspace_changes_to_root(monkeypatch):
         assert "+modified" in result
 
 @pytest.mark.asyncio
-async def test_purge_on_success_deletes_session_record(monkeypatch):
+async def test_purge_on_success_deletes_session_record(monkeypatch, fake_aider_proc):
     """Test that successful sessions are purged from sessions.json and workspace is deleted"""
     # Set environment variables
     monkeypatch.setenv("MCP_USE_WORKTREES", "1")
@@ -1165,16 +1150,7 @@ async def test_purge_on_success_deletes_session_record(monkeypatch):
         repo.index.add(["file.txt"])
         repo.index.commit("init")
 
-        # Mock subprocess to ensure success
-        class FakeProc:
-            def __init__(self):
-                self.returncode = 0
-            async def communicate(self):
-                # Modify file
-                (repo_path / "file.txt").write_text("modified\n")
-                return (b"Applied edit to file.txt", b"")
-
-        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+        with patch('asyncio.create_subprocess_shell', return_value=fake_aider_proc(repo_path)):
             result = await ai_edit(
                 repo_path=str(repo_path),
                 message="Edit",
@@ -1203,8 +1179,12 @@ async def test_purge_on_success_deletes_session_record(monkeypatch):
             assert session_id not in workspace_names
 
 @pytest.mark.asyncio
-async def test_ttl_cleanup_deletes_expired_records(monkeypatch):
+async def test_ttl_cleanup_deletes_expired_records(monkeypatch, fake_aider_proc):
     """Test that TTL cleanup removes expired session records"""
+    # Fix time for deterministic test
+    fixed_time = 10000
+    monkeypatch.setattr(time, 'time', lambda: fixed_time)
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_path = Path(tmpdir)
         repo = git.Repo.init(repo_path)
@@ -1221,8 +1201,9 @@ async def test_ttl_cleanup_deletes_expired_records(monkeypatch):
         mcp_dir.mkdir(exist_ok=True)
         sessions_file = mcp_dir / "sessions.json"
         
-        # Create expired session (completed 2 hours ago) using store schema (dict keyed by id with epoch times)
-        expired_time_epoch = time.time() - 7200
+        # Create expired session using store schema (dict keyed by id with epoch times)
+        # Expired 3601 seconds ago (more than default TTL of 3600)
+        expired_time_epoch = fixed_time - 3601
         expired_session_data = {
             "expired-session-123": {
                 "id": "expired-session-123",
@@ -1235,17 +1216,10 @@ async def test_ttl_cleanup_deletes_expired_records(monkeypatch):
         }
         sessions_file.write_text(json.dumps(expired_session_data))
 
-        # Set TTL to 1 second
-        monkeypatch.setenv("MCP_SESSION_TTL_SECONDS", "1")
+        # Set TTL to 3600 seconds (1 hour)
+        monkeypatch.setenv("MCP_SESSION_TTL_SECONDS", "3600")
 
-        # Mock subprocess for ai_edit
-        class FakeProc:
-            def __init__(self):
-                self.returncode = 0
-            async def communicate(self):
-                return (b"noop", b"")
-
-        with patch('asyncio.create_subprocess_shell', return_value=FakeProc()):
+        with patch('asyncio.create_subprocess_shell', return_value=fake_aider_proc(repo_path, content="noop")):
             await ai_edit(
                 repo_path=str(repo_path),
                 message="No-op edit",

@@ -1342,14 +1342,26 @@ async def ai_edit(
         pre_existing_untracked_files = set()
 
     # Take pre-execution snapshot from workspace but save under root repo
-    pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
-    pre_ts = now_ts()
-    pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
+    pre_snapshot = ""
+    pre_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_pre.diff"
+    try:
+        pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+        pre_ts = now_ts()
+        pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
+    except Exception as e:
+        logger.debug(f"[ai_edit] pre-snapshot failed: {e}")
 
     # ... run aider ...
 
     # Take post-execution snapshot from workspace but save under root repo
-    post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+    post_snapshot = ""
+    post_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_post.diff"
+    try:
+        post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+        post_ts = now_ts()
+        post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+    except Exception as e:
+        logger.debug(f"[ai_edit] post-snapshot failed: {e}")
     post_ts = now_ts()
     post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
 
@@ -1460,57 +1472,19 @@ async def ai_edit(
 
         # Post-snapshot for this ai_edit run (User Story 1)
         try:
-            _post_snapshot_text = snapshot_worktree(directory_path, exclude_untracked=set())
-            _post_snapshot_path = save_snapshot(directory_path, now_ts(), "post", _post_snapshot_text)
-            # Compute delta between pre and post snapshots
-            try:
-                # Exclude pre-existing untracked files from delta by filtering both pre and post
-                try:
-                    repo_for_delta = git.Repo(directory_path)
-                    _pre_existing = set(repo_for_delta.untracked_files)
-                except Exception:
-                    _pre_existing = set()
-                def _filter_untracked_block(text: str) -> str:
-                    lines = text.splitlines()
-                    out: list[str] = []
-                    i = 0
-                    while i < len(lines):
-                        line = lines[i]
-                        if line.startswith("--- /dev/null"):
-                            # Look ahead for the +++ b/<file>
-                            if i + 1 < len(lines) and lines[i+1].startswith("+++ b/"):
-                                fname = lines[i+1][6:]
-                                if fname in _pre_existing:
-                                    # skip header and subsequent added lines until next header or end
-                                    i += 2
-                                    while i < len(lines):
-                                        if lines[i].startswith("--- ") or lines[i].startswith("diff --git"):
-                                            i -= 1  # step back so outer loop will process header normally
-                                            break
-                                        i += 1
-                                else:
-                                    out.append(line)
-                            else:
-                                out.append(line)
-                        else:
-                            out.append(line)
-                        i += 1
-                    return "\n".join(out)
-                pre_f = _filter_untracked_block(pre_snapshot)
-                post_f = _filter_untracked_block(post_snapshot)
-                delta_lines = list(difflib.unified_diff(
-                    pre_f.splitlines(keepends=True),
-                    post_f.splitlines(keepends=True),
-                    fromfile=str(pre_snapshot_path.name),
-                    tofile=str(post_snapshot_path.name),
-                ))
-                delta_text = "".join(delta_lines).strip()
-                if delta_text:
-                    snapshot_delta_section = f"### Snapshot Delta (this run)\n```diff\n{delta_text}\n```"
-            except Exception as e:
-                logger.debug(f"[ai_edit] Failed to compute snapshot delta: {e}")
+            # Compute delta between pre and post snapshots directly
+            delta_lines = list(difflib.unified_diff(
+                pre_snapshot.splitlines(keepends=True),
+                post_snapshot.splitlines(keepends=True),
+                fromfile=str(pre_snapshot_path.name),
+                tofile=str(post_snapshot_path.name),
+            ))
+            delta_text = "".join(delta_lines).strip()
+            if delta_text:
+                snapshot_delta_section = f"### Snapshot Delta (this run)\n```diff\n{delta_text}\n```"
         except Exception as e:
-            logger.debug(f"[ai_edit] Failed to capture post snapshot: {e}")
+            logger.debug(f"[ai_edit] Failed to compute snapshot delta: {e}")
+            snapshot_delta_section = "### Snapshot Delta (this run)\n<snapshot delta unavailable due to error>"
 
         return_code = process.returncode
         success = (return_code == 0)
@@ -1640,6 +1614,14 @@ async def ai_edit(
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
         result_message = ai_hint_ai_edit_unexpected(e)
     finally:
+        # Always restore working directory first to avoid purging current CWD
+        try:
+            if os.getcwd() != original_dir:
+                os.chdir(original_dir)
+                logger.debug(f"Restored working directory to: {original_dir}")
+        except Exception as e:
+            logger.debug(f"Failed to restore working directory: {e}")
+
         # Record session completion
         try:
             await _record_session_complete_async(repo_root, effective_session_id, success)
@@ -1669,11 +1651,7 @@ async def ai_edit(
             await cleanup_expired_sessions_async(repo_root)
         except Exception as e:
             logger.debug(f"Failed to cleanup expired sessions: {e}")
-        
-        if os.getcwd() != original_dir:
-            os.chdir(original_dir)
-            logger.debug(f"Restored working directory to: {original_dir}")
-        
+
         last_reply = _get_last_aider_reply(directory_path) or ""
         if not structured_report_built and last_reply:
             # Legacy append when structured report isn't built
