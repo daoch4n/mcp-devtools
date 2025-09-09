@@ -1085,19 +1085,19 @@ async def ai_edit(
     # Capture pre-existing untracked files BEFORE aider runs
     try:
         repo = git.Repo(repo_path)
-        pre_existing_untracked = set(repo.untracked_files)
+        pre_existing_untracked_files = set(repo.untracked_files)
     except (git.exc.InvalidGitRepositoryError, git.exc.NoSuchPathError):
-        pre_existing_untracked = set()
+        pre_existing_untracked_files = set()
 
     # Take pre-execution snapshot
-    pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked)
+    pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     pre_ts = now_ts()
     pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
 
     # ... run aider ...
 
     # Take post-execution snapshot
-    post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked)
+    post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     post_ts = now_ts()
     post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
 
@@ -1121,11 +1121,11 @@ async def ai_edit(
     structured_report_built = False
     result_message = ""
     snapshot_delta_section = ""
-    pre_existing_untracked: set[str] = set()
+    pre_existing_untracked_files: set[str] = set()
     try:
         repo_pre = git.Repo(directory_path)
-        pre_existing_untracked = set(repo_pre.untracked_files)
-        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked)}")
+        pre_existing_untracked_files = set(repo_pre.untracked_files)
+        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked_files)}")
     except git.InvalidGitRepositoryError:
         logger.debug("[ai_edit] Not a git repository when capturing pre-existing untracked files.")
     except Exception as e:
@@ -1269,7 +1269,7 @@ async def ai_edit(
                     except Exception:
                         current_untracked = []
                     # Only include files that became untracked during this Aider run
-                    new_untracked = [f for f in current_untracked if f not in pre_existing_untracked]
+                    new_untracked = [f for f in current_untracked if f not in pre_existing_untracked_files]
                     # Exclude internal snapshot artifacts from being reported in Applied Changes
                     new_untracked = [f for f in new_untracked if not f.startswith(".mcp-devtools/")]
                     if new_untracked:
