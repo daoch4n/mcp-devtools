@@ -45,8 +45,8 @@ from mcp.types import (
 Content: TypeAlias = Union[TextContent, ImageContent, EmbeddedResource]
 
 from enum import Enum
-import git # type: ignore
-from git.exc import GitCommandError # type: ignore
+import git
+from git.exc import GitCommandError
 from pydantic import BaseModel, Field
 import asyncio
 import tempfile
@@ -110,7 +110,7 @@ def _load_sessions(repo_root: str) -> dict[str, Any]:
     
     try:
         with open(path, 'r') as f:
-            return json.load(f)
+            return cast(dict[str, Any], json.load(f))
     except (json.JSONDecodeError, IOError) as e:
         logger.debug(f"Failed to load sessions from {path}: {e}")
         return {}
@@ -126,7 +126,16 @@ def _save_sessions(repo_root: str, data: dict[str, Any]) -> None:
         with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         # Atomically replace the old file
-        os.replace(tmp_path, path)
+        try:
+            os.replace(tmp_path, path)
+        except OSError as e:
+            # Best-effort cleanup of tmp file
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            raise
     except IOError as e:
         logger.debug(f"Failed to save sessions to {path}: {e}")
 
@@ -162,7 +171,7 @@ async def _load_sessions_async(repo_root: str) -> dict[str, Any]:
     async with _sessions_lock:
         return await asyncio.to_thread(_load_sessions, repo_root)
 
-def _record_session_update(repo_root: str, session_id: str, **fields) -> None:
+def _record_session_update(repo_root: str, session_id: str, **fields: Any) -> None:
     """Update session record with additional fields."""
     sessions = _load_sessions(repo_root)
     if session_id in sessions:
@@ -170,7 +179,7 @@ def _record_session_update(repo_root: str, session_id: str, **fields) -> None:
         sessions[session_id]["last_updated"] = time.time()
         _save_sessions(repo_root, sessions)
 
-async def _record_session_update_async(repo_root: str, session_id: str, **fields) -> None:
+async def _record_session_update_async(repo_root: str, session_id: str, **fields: Any) -> None:
     async with _sessions_lock:
         await asyncio.to_thread(_record_session_update, repo_root, session_id, **fields)
 
@@ -197,7 +206,7 @@ def _get_ttl_seconds() -> int:
     """Get the session TTL in seconds."""
     return MCP_SESSION_TTL_SECONDS
 
-def _is_session_expired(session: dict) -> bool:
+def _is_session_expired(session: dict[str, Any]) -> bool:
     """Check if a session is expired based on TTL."""
     ttl = _get_ttl_seconds()
     last_active = max(
@@ -239,6 +248,9 @@ def _purge_worktree(repo_root: str, workspace_dir: str) -> None:
 async def _purge_worktree_async(repo_root: str, workspace_dir: str) -> None:
     """Purge a worktree directory asynchronously, trying git worktree remove first, then rm -rf."""
     try:
+        # If already gone, nothing to do
+        if not os.path.exists(workspace_dir):
+            return
         # Try to remove via git worktree command first
         proc = await asyncio.create_subprocess_exec(
             "git", "worktree", "remove", "--force", workspace_dir,
@@ -645,7 +657,7 @@ def prepare_aider_command(
                     command.append(f"--no-{arg_key}")
             
             elif isinstance(value, list):
-                for item in cast(List[Any], value):
+                for item in value:
                     command.append(f"--{arg_key}")
                     command.append(str(item))
             
@@ -838,7 +850,7 @@ def git_status(repo: git.Repo) -> str:
     Returns:
         A string representing the output of `git status`.
     """
-    return repo.git.status()
+    return str(repo.git.status())
 
 
 def git_diff(repo: git.Repo, target: Optional[str] = None, path: Optional[str] = None) -> str:
@@ -859,7 +871,7 @@ def git_diff(repo: git.Repo, target: Optional[str] = None, path: Optional[str] =
     args = [target] if target else []
     if path:
         args.extend(['--', path])
-    return repo.git.diff(*args)
+    return str(repo.git.diff(*args))
 
 def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
     """
@@ -874,7 +886,7 @@ def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]
         A string indicating the success of the staging and commit operation.
     """
     if files:
-        repo.index.add(files)  # type: ignore
+        repo.index.add(files)
         staged_message = f"Files {', '.join(files)} staged successfully."
     else:
         repo.git.add(A=True)
@@ -979,7 +991,7 @@ def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_met
         if path:
             args.extend(["--", path])
             
-        return repo.git.show(*args)
+        return str(repo.git.show(*args))
     else:
         # Handle single commit with structured output
         commit = repo.commit(revision)
@@ -1389,14 +1401,14 @@ async def ai_edit(
     repo_root = find_git_root(directory_path) or directory_path
     
     # Determine if we should use worktrees
-    use_worktrees = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
+    use_worktree = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
     # Set up workspace directory path (but don't create the worktree yet)
-    workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktrees else directory_path
+    workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktree else directory_path
     # Record session start (async, with lock)
-    await _record_session_start_async(repo_root, effective_session_id, workspace_dir, use_worktree=use_worktrees)
+    await _record_session_start_async(repo_root, effective_session_id, workspace_dir, use_worktree=use_worktree)
 
     # === Isolated Workspace Setup (US2 Step 3) ===
-    if use_worktrees:
+    if use_worktree:
         workspace_root = ensure_snap_dir(repo_path) / "workspaces"
         workspace_dir_path = workspace_root / effective_session_id
         
@@ -1412,7 +1424,8 @@ async def ai_edit(
                 )
                 stdout_bytes, stderr_bytes = await proc.communicate()
                 if proc.returncode != 0:
-                    raise subprocess.CalledProcessError(proc.returncode, ["git", "worktree", "add", "--detach", str(workspace_dir_path)], output=stdout_bytes, stderr=stderr_bytes)
+                    rc = 1 if proc.returncode is None else proc.returncode
+                    raise subprocess.CalledProcessError(rc, ["git", "worktree", "add", "--detach", str(workspace_dir_path)], output=stdout_bytes, stderr=stderr_bytes)
             directory_path = str(workspace_dir_path)
             # Ensure recorded workspace_dir matches the final directory_path
             workspace_dir = directory_path
@@ -1495,7 +1508,7 @@ async def ai_edit(
         else:
             # Apply workspace changes to root repo if using worktrees and feature is enabled
             apply_to_root = os.getenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1") != "0"
-            if success and use_worktrees and directory_path != repo_path and apply_to_root:
+            if success and use_worktree and directory_path != repo_path and apply_to_root:
                 try:
                     _apply_workspace_changes_to_root(directory_path, repo_path, files)
                 except Exception as e:
@@ -1627,7 +1640,7 @@ async def ai_edit(
             await _record_session_complete_async(repo_root, effective_session_id, success)
             
             # If successful and using worktrees, check if we should purge the worktree
-            if success and use_worktrees and workspace_dir != repo_path and _git_status_clean(directory_path):
+            if success and use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):
                 try:
                     await _purge_worktree_async(repo_root, workspace_dir)
                     await _record_session_update_async(repo_root, effective_session_id, purged_at=time.time())
@@ -1795,9 +1808,9 @@ async def ai_session_resume(repo_path: str, session_id: str) -> str:
     """
     return f"To resume this session, call ai_edit with session_id='{session_id}' and continue_thread=true."
 
-mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]  # Server's generic signature is not compatible with the expected type due to type system limitations.
+mcp_server: Server[ServerSession] = Server("mcp-git")  # Server's generic signature is not compatible with the expected type due to type system limitations.
 
-@mcp_server.list_tools()
+@mcp_server.list_tools()  # type: ignore[misc, no-untyped-call]
 async def list_tools() -> list[Tool]:
     """
     Lists all available tools provided by this MCP Git server.
@@ -1930,7 +1943,7 @@ async def list_repos() -> Sequence[str]:
 
     return await by_roots()
 
-@mcp_server.call_tool()
+@mcp_server.call_tool()  # type: ignore[misc, no-untyped-call]
 async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
     """
     Executes a requested tool based on its name and arguments.
@@ -2208,7 +2221,7 @@ POST_MESSAGE_ENDPOINT = "/messages/"
 
 sse_transport = SseServerTransport(POST_MESSAGE_ENDPOINT)
 
-async def handle_sse(request: Request):
+async def handle_sse(request: Request) -> Response:
     """
     Handles Server-Sent Events (SSE) connections from MCP clients.
     Establishes a communication channel for the MCP server to send events.
@@ -2223,12 +2236,12 @@ async def handle_sse(request: Request):
     # intended way to integrate with the SseServerTransport according to the
     # mcp library's design for Starlette integration. Suppressing the warning
     # here is safe and necessary for the SSE transport to function correctly.
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream): # type: ignore[protected-access]
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
 
-async def handle_post_message(scope: Scope, receive: Receive, send: Send):
+async def handle_post_message(scope: Scope, receive: Receive, send: Send) -> None:
     """
     Handles incoming POST messages from MCP clients, typically used for client-to-server communication.
 
