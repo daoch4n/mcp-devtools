@@ -1060,9 +1060,120 @@ async def ai_edit(
         if not os.path.isfile(fpath):
             logger.error(f"[ai_edit] Provided file not found in repo: {fname}. Aider may fail.")
 
+    # === Worktree Snapshot helpers (User Story 1) ===
+    from datetime import datetime
+
+    def _now_ts() -> str:
+        return datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+
+    def _ensure_snap_dir(repo_dir: str) -> Path:
+        p = Path(repo_dir) / ".mcp-devtools"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    def _looks_binary_bytes(data: bytes) -> bool:
+        # heuristic: contains null byte or can't decode as utf-8
+        if b"\x00" in data:
+            return True
+        try:
+            data.decode("utf-8")
+            return False
+        except Exception:
+            return True
+
+    def _sanitize_binary_markers(diff_text: str) -> str:
+        # Replace typical git binary diff markers with placeholder
+        placeholder = "[Binary file omitted from diff]"
+        lines = diff_text.splitlines()
+        out: list[str] = []
+        skip_binary_block = False
+        for ln in lines:
+            if ln.startswith("GIT binary patch"):
+                out.append(placeholder)
+                skip_binary_block = True
+                continue
+            if skip_binary_block:
+                # end binary block when we hit an empty line or next file header
+                if ln.startswith("diff --git") or ln.startswith("--- ") or ln.startswith("+++") or ln.strip() == "":
+                    skip_binary_block = False
+                    # keep processing this line normally below
+                else:
+                    # keep skipping
+                    continue
+            if ln.startswith("Binary files ") and ln.endswith(" differ"):
+                out.append(placeholder)
+            else:
+                out.append(ln)
+        return "\n".join(out)
+
+    def _snapshot_worktree(repo_dir: str, exclude_untracked: Optional[set[str]] = None) -> str:
+        try:
+            repo_local = git.Repo(repo_dir)
+            exclude_untracked = exclude_untracked or set()
+            # Determine target
+            try:
+                _ = repo_local.head.commit
+                target = "HEAD"
+            except Exception:
+                target = EMPTY_TREE_SHA
+
+            # tracked changes vs target (includes staged + unstaged)
+            try:
+                tracked = git_diff(repo_local, target=target)
+            except Exception as e:
+                logger.debug(f"[ai_edit] snapshot git diff failed: {e}")
+                tracked = ""
+
+            # include all untracked files content
+            untracked_parts: list[str] = []
+            try:
+                for uf in repo_local.untracked_files:
+                    # Always ignore internal snapshot artifacts
+                    if uf.startswith(".mcp-devtools/"):
+                        continue
+                    if uf in exclude_untracked:
+                        continue
+                    full = Path(repo_dir) / uf
+                    if not full.is_file():
+                        continue
+                    try:
+                        raw = full.read_bytes()
+                        if _looks_binary_bytes(raw):
+                            body = "+[Binary file omitted from diff]\n"
+                        else:
+                            text = raw.decode("utf-8", errors="ignore")
+                            body = "".join(f"+{line}\n" for line in text.splitlines())
+                        hdr = f"--- /dev/null\n+++ b/{uf}\n"
+                        untracked_parts.append(hdr + body)
+                    except Exception as e:
+                        logger.debug(f"[ai_edit] snapshot failed to read untracked {uf}: {e}")
+            except Exception as e:
+                logger.debug(f"[ai_edit] snapshot failed to enumerate untracked: {e}")
+
+            combined = "\n".join([p for p in [tracked] + untracked_parts if p]).strip()
+            return _sanitize_binary_markers(combined)
+        except Exception as e:
+            logger.debug(f"[ai_edit] snapshot_worktree unexpected error: {e}")
+            return ""
+
+    def _save_snapshot(repo_dir: str, ts: str, kind: str, content: str) -> Path:
+        snap_dir = _ensure_snap_dir(repo_dir)
+        path = snap_dir / f"ai_edit_{ts}_{kind}.diff"
+        try:
+            path.write_text(content, encoding="utf-8")
+        except Exception as e:
+            logger.debug(f"[ai_edit] Failed to write snapshot {path}: {e}")
+        return path
+
+    # Capture PRE snapshot before running Aider, using a single timestamp for this operation
+    _snapshot_ts = _now_ts()
+    _pre_snapshot_text = _snapshot_worktree(directory_path)
+    _pre_snapshot_path = _save_snapshot(directory_path, _snapshot_ts, "pre", _pre_snapshot_text)
+
     original_dir = os.getcwd()
     structured_report_built = False
     result_message = ""
+    snapshot_delta_section = ""
     pre_existing_untracked: set[str] = set()
     try:
         repo_pre = git.Repo(directory_path)
@@ -1101,6 +1212,60 @@ async def ai_edit(
         stdout = stdout_bytes.decode('utf-8')
         stderr = stderr_bytes.decode('utf-8')
 
+        # Post-snapshot for this ai_edit run (User Story 1)
+        try:
+            _post_snapshot_text = _snapshot_worktree(directory_path, exclude_untracked=set())
+            _post_snapshot_path = _save_snapshot(directory_path, _snapshot_ts, "post", _post_snapshot_text)
+            # Compute delta between pre and post snapshots
+            try:
+                # Exclude pre-existing untracked files from delta by filtering both pre and post
+                try:
+                    repo_for_delta = git.Repo(directory_path)
+                    _pre_existing = set(repo_for_delta.untracked_files)
+                except Exception:
+                    _pre_existing = set()
+                def _filter_untracked_block(text: str) -> str:
+                    lines = text.splitlines()
+                    out: list[str] = []
+                    i = 0
+                    while i < len(lines):
+                        line = lines[i]
+                        if line.startswith("--- /dev/null"):
+                            # Look ahead for the +++ b/<file>
+                            if i + 1 < len(lines) and lines[i+1].startswith("+++ b/"):
+                                fname = lines[i+1][6:]
+                                if fname in _pre_existing:
+                                    # skip header and subsequent added lines until next header or end
+                                    i += 2
+                                    while i < len(lines):
+                                        if lines[i].startswith("--- ") or lines[i].startswith("diff --git"):
+                                            i -= 1  # step back so outer loop will process header normally
+                                            break
+                                        i += 1
+                                else:
+                                    out.append(line)
+                            else:
+                                out.append(line)
+                        else:
+                            out.append(line)
+                        i += 1
+                    return "\n".join(out)
+                pre_f = _filter_untracked_block(_pre_snapshot_text)
+                post_f = _filter_untracked_block(_post_snapshot_text)
+                delta_lines = list(difflib.unified_diff(
+                    pre_f.splitlines(keepends=True),
+                    post_f.splitlines(keepends=True),
+                    fromfile=str(_pre_snapshot_path.name),
+                    tofile=str(_post_snapshot_path.name),
+                    lineterm=""
+                ))
+                delta_text = "".join(delta_lines).strip()
+                if delta_text:
+                    snapshot_delta_section = f"### Snapshot Delta (this run)\n```diff\n{delta_text}\n```"
+            except Exception as e:
+                logger.debug(f"[ai_edit] Failed to compute snapshot delta: {e}")
+        except Exception as e:
+            logger.debug(f"[ai_edit] Failed to capture post snapshot: {e}")
 
         return_code = process.returncode
         if return_code != 0:
@@ -1159,6 +1324,8 @@ async def ai_edit(
                         current_untracked = []
                     # Only include files that became untracked during this Aider run
                     new_untracked = [f for f in current_untracked if f not in pre_existing_untracked]
+                    # Exclude internal snapshot artifacts from being reported in Applied Changes
+                    new_untracked = [f for f in new_untracked if not f.startswith(".mcp-devtools/")]
                     if new_untracked:
                         logger.debug(f"[ai_edit] New untracked files created by Aider: {new_untracked}")
                         for untracked_file in new_untracked:
@@ -1205,7 +1372,8 @@ async def ai_edit(
                     f"### Verification Result\n"
                     f"⏳ Not yet implemented.\n\n"
                     f"### Next Steps\n"
-                    f"Please review the changes above. If they are correct, please stage and commit them."
+                    f"Please review the changes above. If they are correct, please stage and commit them.\n\n"
+                    f"{snapshot_delta_section if snapshot_delta_section else ''}"
                 )
                 structured_report_built = True
             else:
