@@ -160,6 +160,13 @@ def _record_session_complete(repo_root: str, session_id: str, success: bool) -> 
     """Record the completion of a session."""
     _record_session_update(repo_root, session_id, status="completed", completed_at=time.time(), success=success)
 
+def _delete_session_record(repo_root: str, session_id: str) -> None:
+    """Delete a session record from the sessions file."""
+    sessions = _load_sessions(repo_root)
+    if session_id in sessions:
+        del sessions[session_id]
+        _save_sessions(repo_root, sessions)
+
 def _get_ttl_seconds() -> int:
     """Get the session TTL in seconds."""
     return MCP_SESSION_TTL_SECONDS
@@ -227,21 +234,18 @@ def cleanup_expired_sessions(repo_root: str) -> None:
     """Clean up expired sessions and their worktrees."""
     try:
         sessions = _load_sessions(repo_root)
-        updated = False
+        changed = False
         
         for session_id, session in list(sessions.items()):
             if session.get("status") == "completed" and _is_session_expired(session):
                 # Clean up worktree if it exists and wasn't already purged
                 if session.get("use_worktree") and session.get("workspace_dir") and not session.get("purged_at"):
                     _purge_worktree(repo_root, session["workspace_dir"])
-                    session["purged_at"] = time.time()
-                    updated = True
-                # Remove the session record itself
-                # Note: We're keeping the records for now to maintain history
-                # del sessions[session_id]
-                # updated = True
+                # Delete the session record
+                del sessions[session_id]
+                changed = True
         
-        if updated:
+        if changed:
             _save_sessions(repo_root, sessions)
     except Exception as e:
         logger.debug(f"Error during session cleanup: {e}")
@@ -1581,6 +1585,11 @@ async def ai_edit(
                 try:
                     _purge_worktree(repo_root, workspace_dir)
                     _record_session_update(repo_root, effective_session_id, purged_at=time.time())
+                    # Delete the session record immediately after successful purge
+                    try:
+                        _delete_session_record(repo_root, effective_session_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to delete session record after purge: {e}")
                 except Exception as e:
                     logger.debug(f"Failed to purge worktree: {e}")
         except Exception as e:
