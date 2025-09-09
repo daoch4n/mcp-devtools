@@ -24,6 +24,9 @@ Key Components:
 
 import logging
 import uuid
+import shutil
+import time
+from datetime import datetime
 from pathlib import Path, PurePath
 from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast
 from mcp.server import Server
@@ -57,6 +60,10 @@ import subprocess
 # Git constant for the empty tree SHA, used for diffing initial commits.
 EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
+# Session management constants
+MCP_SESSION_TTL_SECONDS = int(os.getenv("MCP_SESSION_TTL_SECONDS", "3600"))
+MCP_USE_WORKTREES = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
+
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
@@ -79,13 +86,24 @@ logging.getLogger().setLevel(logging.DEBUG)
 
 
 # === Session Store Helpers ===
-def _session_store_path(repo_dir: str) -> Path:
-    """Get the path to the sessions.json file."""
-    snap_dir = ensure_snap_dir(repo_dir)
-    return snap_dir / "sessions.json"
+def _devtools_dir(repo_root: str) -> Path:
+    """Get the .mcp-devtools directory path."""
+    return Path(repo_root) / ".mcp-devtools"
 
-def _load_sessions(path: Path) -> dict[str, Any]:
+def _sessions_file(repo_root: str) -> Path:
+    """Get the path to the sessions.json file."""
+    return _devtools_dir(repo_root) / "sessions.json"
+
+def _workspaces_dir(repo_root: str) -> Path:
+    """Get the workspaces directory path."""
+    return _devtools_dir(repo_root) / "workspaces"
+
+# Async lock for session file operations
+_sessions_lock = asyncio.Lock()
+
+def _load_sessions(repo_root: str) -> dict[str, Any]:
     """Load sessions from the JSON file, returning empty dict if file doesn't exist or is invalid."""
+    path = _sessions_file(repo_root)
     if not path.exists():
         return {}
     
@@ -96,20 +114,137 @@ def _load_sessions(path: Path) -> dict[str, Any]:
         logger.debug(f"Failed to load sessions from {path}: {e}")
         return {}
 
-def _save_sessions(path: Path, data: dict[str, Any]) -> None:
+def _save_sessions(repo_root: str, data: dict[str, Any]) -> None:
     """Save sessions to the JSON file."""
+    path = _sessions_file(repo_root)
     try:
+        # Ensure the directory exists
+        path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, 'w') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
     except IOError as e:
         logger.debug(f"Failed to save sessions to {path}: {e}")
 
-def _upsert_session(path: Path, session: dict[str, Any]) -> None:
-    """Upsert a session record in the sessions store."""
-    sessions = _load_sessions(path)
-    session_id = session["id"]
-    sessions[session_id] = session
-    _save_sessions(path, sessions)
+def _generate_session_id() -> str:
+    """Generate a new session ID."""
+    return str(uuid.uuid4())
+
+def _record_session_start(repo_root: str, session_id: str, workspace_dir: str, use_worktree: bool) -> None:
+    """Record the start of a session."""
+    session_record = {
+        "session_id": session_id,
+        "repo_root": repo_root,
+        "workspace_dir": workspace_dir,
+        "use_worktree": use_worktree,
+        "status": "running",
+        "created_at": time.time(),
+        "last_updated": time.time(),
+        "completed_at": None,
+        "success": None,
+        "purged_at": None
+    }
+    
+    sessions = _load_sessions(repo_root)
+    sessions[session_id] = session_record
+    _save_sessions(repo_root, sessions)
+
+def _record_session_update(repo_root: str, session_id: str, **fields) -> None:
+    """Update session record with additional fields."""
+    sessions = _load_sessions(repo_root)
+    if session_id in sessions:
+        sessions[session_id].update(fields)
+        sessions[session_id]["last_updated"] = time.time()
+        _save_sessions(repo_root, sessions)
+
+def _record_session_complete(repo_root: str, session_id: str, success: bool) -> None:
+    """Record the completion of a session."""
+    _record_session_update(repo_root, session_id, status="completed", completed_at=time.time(), success=success)
+
+def _get_ttl_seconds() -> int:
+    """Get the session TTL in seconds."""
+    return MCP_SESSION_TTL_SECONDS
+
+def _is_session_expired(session: dict) -> bool:
+    """Check if a session is expired based on TTL."""
+    ttl = _get_ttl_seconds()
+    last_active = max(
+        session.get("completed_at", 0) or 0,
+        session.get("last_updated", 0) or 0
+    )
+    return (time.time() - last_active) > ttl
+
+def _git_status_clean(path: str) -> bool:
+    """Check if the git repository status is clean (no changes)."""
+    try:
+        repo = git.Repo(path)
+        return not bool(repo.git.status("--porcelain"))
+    except Exception as e:
+        logger.debug(f"Failed to check git status for {path}: {e}")
+        return False
+
+def _purge_worktree(repo_root: str, workspace_dir: str) -> None:
+    """Purge a worktree directory, trying git worktree remove first, then rm -rf."""
+    try:
+        # Try to remove via git worktree command first
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", workspace_dir],
+            cwd=repo_root,
+            check=True,
+            capture_output=True
+        )
+        logger.debug(f"Successfully removed worktree {workspace_dir} via git command")
+    except subprocess.CalledProcessError as e:
+        logger.debug(f"Failed to remove worktree via git command: {e}. Trying rm -rf.")
+        # Fallback to rm -rf
+        try:
+            if os.path.exists(workspace_dir):
+                shutil.rmtree(workspace_dir)
+                logger.debug(f"Successfully removed worktree {workspace_dir} via rm -rf")
+        except Exception as e2:
+            logger.debug(f"Failed to remove worktree {workspace_dir} via rm -rf: {e2}")
+
+def _apply_workspace_changes_to_root(workspace_dir: str, repo_path: str, files: list[str]) -> None:
+    """Apply changes from workspace to root repository for specified files."""
+    for rel in files:
+        try:
+            src = Path(workspace_dir) / rel
+            dst = Path(repo_path) / rel
+            if src.is_file():
+                # Avoid clobbering root-side edits: only copy if workspace file is newer
+                try:
+                    src_mtime = src.stat().st_mtime
+                    dst_mtime = dst.stat().st_mtime if dst.exists() else 0
+                except Exception:
+                    src_mtime = time.time()
+                    dst_mtime = 0
+                if src_mtime > dst_mtime:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+        except Exception as e:
+            logger.debug(f"[ai_edit] Failed to apply workspace change for {rel}: {e}")
+
+def cleanup_expired_sessions(repo_root: str) -> None:
+    """Clean up expired sessions and their worktrees."""
+    try:
+        sessions = _load_sessions(repo_root)
+        updated = False
+        
+        for session_id, session in list(sessions.items()):
+            if session.get("status") == "completed" and _is_session_expired(session):
+                # Clean up worktree if it exists and wasn't already purged
+                if session.get("use_worktree") and session.get("workspace_dir") and not session.get("purged_at"):
+                    _purge_worktree(repo_root, session["workspace_dir"])
+                    session["purged_at"] = time.time()
+                    updated = True
+                # Remove the session record itself
+                # Note: We're keeping the records for now to maintain history
+                # del sessions[session_id]
+                # updated = True
+        
+        if updated:
+            _save_sessions(repo_root, sessions)
+    except Exception as e:
+        logger.debug(f"Error during session cleanup: {e}")
 
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
@@ -1170,39 +1305,38 @@ async def ai_edit(
     except Exception as e:
         delta_section = f"\n\nError generating delta: {str(e)}"
 
+    # === Session Management ===
     # Determine effective session ID
-    effective_session_id = session_id if session_id else str(uuid.uuid4())
-
-    # === Session Store Integration ===
-    # Record session metadata at start
-    sess_path = _session_store_path(repo_path)
-    session_record = {
-        "id": effective_session_id,
-        "repo_path": os.path.abspath(repo_path),
-        "created_at": now_ts(),
-        "last_updated": now_ts(),
-        "files": files,
-        "status": "running"
-    }
-    _upsert_session(sess_path, session_record)
+    effective_session_id = session_id if session_id else _generate_session_id()
+    
+    # Find the git root or use the directory path
+    repo_root = find_git_root(directory_path) or directory_path
+    
+    # Determine if we should use worktrees
+    use_worktrees = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
+    
+    # Set up workspace directory path (but don't create the worktree yet)
+    workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktrees else directory_path
+    
+    # Record session start
+    _record_session_start(repo_root, effective_session_id, workspace_dir, use_worktrees)
 
     # === Isolated Workspace Setup (US2 Step 3) ===
-    use_worktrees = os.environ.get("MCP_USE_WORKTREES", "1") == "1"
     if use_worktrees:
         workspace_root = ensure_snap_dir(repo_path) / "workspaces"
-        workspace_dir = workspace_root / effective_session_id
+        workspace_dir_path = workspace_root / effective_session_id
         
         try:
             workspace_root.mkdir(parents=True, exist_ok=True)
-            if not workspace_dir.exists():
+            if not workspace_dir_path.exists():
                 # Attempt to create a worktree for this session
                 subprocess.run(
-                    ["git", "worktree", "add", "--detach", str(workspace_dir)], 
+                    ["git", "worktree", "add", "--detach", str(workspace_dir_path)], 
                     cwd=repo_path, 
                     check=True, 
                     capture_output=True
                 )
-            directory_path = str(workspace_dir)
+            directory_path = str(workspace_dir_path)
             logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
         except subprocess.CalledProcessError as e:
             logger.debug(f"[ai_edit] Failed to create worktree workspace: {e}. Falling back to repo_path.")
@@ -1218,10 +1352,11 @@ async def ai_edit(
     original_dir = os.getcwd()
     structured_report_built = False
     result_message = ""
+    success = False
     try:
         repo_pre = git.Repo(directory_path)
-        pre_existing_untracked_files = set(repo_pre.untracked_files)
-        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked_files)}")
+        pre_existing_untracked_files_set = set(repo_pre.untracked_files)
+        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked_files_set)}")
     except git.InvalidGitRepositoryError:
         logger.debug("[ai_edit] Not a git repository when capturing pre-existing untracked files.")
     except Exception as e:
@@ -1310,10 +1445,20 @@ async def ai_edit(
             logger.debug(f"[ai_edit] Failed to capture post snapshot: {e}")
 
         return_code = process.returncode
+        success = (return_code == 0)
+        
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
             result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
+            # Apply workspace changes to root repo if using worktrees and feature is enabled
+            apply_to_root = os.getenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1") != "0"
+            if success and use_worktrees and directory_path != repo_path and apply_to_root:
+                try:
+                    _apply_workspace_changes_to_root(directory_path, repo_path, files)
+                except Exception as e:
+                    logger.debug(f"[ai_edit] Failed to apply workspace changes to root: {e}")
+            
             if "Applied edit to" in stdout:
                 # Build a structured report with Aider's plan and the diff
                 applied_changes = ""
@@ -1427,15 +1572,30 @@ async def ai_edit(
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
         result_message = ai_hint_ai_edit_unexpected(e)
     finally:
-        # Update session metadata at end
+        # Record session completion
         try:
-            session_record.update({
-                "status": "completed",
-                "last_updated": now_ts()
-            })
-            _upsert_session(sess_path, session_record)
+            _record_session_complete(repo_root, effective_session_id, success)
+            
+            # If successful and using worktrees, check if we should purge the worktree
+            if success and use_worktrees and workspace_dir != repo_path and _git_status_clean(directory_path):
+                try:
+                    _purge_worktree(repo_root, workspace_dir)
+                    _record_session_update(repo_root, effective_session_id, purged_at=time.time())
+                except Exception as e:
+                    logger.debug(f"Failed to purge worktree: {e}")
         except Exception as e:
             logger.debug(f"Failed to update session metadata: {e}")
+        
+        # Add session info to result message
+        ttl_seconds = _get_ttl_seconds()
+        session_status = "completed/success" if success else "error"
+        result_message += f"\n\nSession: {effective_session_id} (status: {session_status}), TTL={ttl_seconds}s"
+        
+        # Cleanup expired sessions
+        try:
+            cleanup_expired_sessions(repo_root)
+        except Exception as e:
+            logger.debug(f"Failed to cleanup expired sessions: {e}")
         
         if os.getcwd() != original_dir:
             os.chdir(original_dir)
@@ -1548,8 +1708,8 @@ async def ai_session_list(repo_path: str) -> str:
     Returns:
         A JSON string containing the list of session records.
     """
-    session_store_path = _session_store_path(repo_path)
-    sessions = _load_sessions(session_store_path)
+    repo_root = find_git_root(repo_path) or repo_path
+    sessions = _load_sessions(repo_root)
     return json.dumps({"sessions": list(sessions.values())}, indent=2)
 
 async def ai_session_status(repo_path: str, session_id: str) -> str:
@@ -1563,8 +1723,8 @@ async def ai_session_status(repo_path: str, session_id: str) -> str:
     Returns:
         A JSON string containing the session record or an error message.
     """
-    session_store_path = _session_store_path(repo_path)
-    sessions = _load_sessions(session_store_path)
+    repo_root = find_git_root(repo_path) or repo_path
+    sessions = _load_sessions(repo_root)
     session = sessions.get(session_id)
     if session:
         return json.dumps(session, indent=2)
