@@ -95,6 +95,12 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 }
 ```
 
+> Note on workspaces and Git worktrees
+>
+> - By default, `ai_edit` uses per-session Git worktrees to isolate Aider chat history and execution context.
+> - Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged.
+> - To opt out of worktree usage, set the environment variable `MCP_USE_WORKTREES=0` before running the server.
+
 ## 🤖 Generic Workflow
 
 https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
