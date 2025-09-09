@@ -52,6 +52,7 @@ import difflib
 import shlex
 import json
 import yaml
+import subprocess
 
 # Git constant for the empty tree SHA, used for diffing initial commits.
 EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -588,6 +589,26 @@ class AiderStatus(BaseModel):
         description="If true, the tool will also check Aider's configuration, environment variables, and Git repository details. Defaults to true."
     )
 
+class AiSessionList(BaseModel):
+    """
+    Represents the input schema for the `ai_session_list` tool.
+    """
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+
+class AiSessionStatus(BaseModel):
+    """
+    Represents the input schema for the `ai_session_status` tool.
+    """
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    session_id: str = Field(description="The ID of the session to retrieve.")
+
+class AiSessionResume(BaseModel):
+    """
+    Represents the input schema for the `ai_session_resume` tool.
+    """
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    session_id: str = Field(description="The ID of the session to resume.")
+
 class GitTools(str, Enum):
     """
     An enumeration of all available Git and related tools.
@@ -604,6 +625,9 @@ class GitTools(str, Enum):
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
     AIDER_STATUS = "aider_status"
+    AI_SESSION_LIST = "ai_session_list"
+    AI_SESSION_STATUS = "ai_session_status"
+    AI_SESSION_RESUME = "ai_session_resume"
 
 def git_status(repo: git.Repo) -> str:
     """
@@ -1118,14 +1142,14 @@ async def ai_edit(
     except (git.exc.InvalidGitRepositoryError, git.exc.NoSuchPathError):
         pre_existing_untracked_files = set()
 
-    # Take pre-execution snapshot
+    # Take pre-execution snapshot from workspace but save under root repo
     pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     pre_ts = now_ts()
     pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
 
     # ... run aider ...
 
-    # Take post-execution snapshot
+    # Take post-execution snapshot from workspace but save under root repo
     post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     post_ts = now_ts()
     post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
@@ -1151,7 +1175,7 @@ async def ai_edit(
 
     # === Session Store Integration ===
     # Record session metadata at start
-    sess_path = _session_store_path(directory_path)
+    sess_path = _session_store_path(repo_path)
     session_record = {
         "id": effective_session_id,
         "repo_path": os.path.abspath(repo_path),
@@ -1161,6 +1185,33 @@ async def ai_edit(
         "status": "running"
     }
     _upsert_session(sess_path, session_record)
+
+    # === Isolated Workspace Setup (US2 Step 3) ===
+    use_worktrees = os.environ.get("MCP_USE_WORKTREES", "1") == "1"
+    if use_worktrees:
+        workspace_root = ensure_snap_dir(repo_path) / "workspaces"
+        workspace_dir = workspace_root / effective_session_id
+        
+        try:
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            if not workspace_dir.exists():
+                # Attempt to create a worktree for this session
+                subprocess.run(
+                    ["git", "worktree", "add", "--detach", str(workspace_dir)], 
+                    cwd=repo_path, 
+                    check=True, 
+                    capture_output=True
+                )
+            directory_path = str(workspace_dir)
+            logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
+        except subprocess.CalledProcessError as e:
+            logger.debug(f"[ai_edit] Failed to create worktree workspace: {e}. Falling back to repo_path.")
+            directory_path = repo_path
+        except Exception as e:
+            logger.debug(f"[ai_edit] Unexpected error setting up workspace: {e}. Falling back to repo_path.")
+            directory_path = repo_path
+    else:
+        directory_path = repo_path
 
     # ... rest of ai_edit ...
 
@@ -1269,7 +1320,7 @@ async def ai_edit(
                 try:
                     # Re-initialize Repo to avoid stale caches after external process (Aider) runs
                     logger.debug("[ai_edit] Re-initializing git.Repo to refresh state after Aider run.")
-                    repo = git.Repo(directory_path)
+                    repo = git.Repo(repo_path)
 
                     # Log git status to understand staged vs unstaged changes
                     status_output = ""
@@ -1487,6 +1538,52 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
+async def ai_session_list(repo_path: str) -> str:
+    """
+    List all known sessions from the session store.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+
+    Returns:
+        A JSON string containing the list of session records.
+    """
+    session_store_path = _session_store_path(repo_path)
+    sessions = _load_sessions(session_store_path)
+    return json.dumps({"sessions": list(sessions.values())}, indent=2)
+
+async def ai_session_status(repo_path: str, session_id: str) -> str:
+    """
+    Get a single session record by ID.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+        session_id: The ID of the session to retrieve.
+
+    Returns:
+        A JSON string containing the session record or an error message.
+    """
+    session_store_path = _session_store_path(repo_path)
+    sessions = _load_sessions(session_store_path)
+    session = sessions.get(session_id)
+    if session:
+        return json.dumps(session, indent=2)
+    else:
+        return json.dumps({"error": "Session not found"}, indent=2)
+
+async def ai_session_resume(repo_path: str, session_id: str) -> str:
+    """
+    Produce guidance for resuming a session.
+
+    Args:
+        repo_path: The path to the repository's working directory.
+        session_id: The ID of the session to resume.
+
+    Returns:
+        A plain text instruction for resuming the session.
+    """
+    return f"To resume this session, call ai_edit with session_id='{session_id}' and continue_thread=true."
+
 mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]  # Server's generic signature is not compatible with the expected type due to type system limitations.
 
 @mcp_server.list_tools()
@@ -1576,6 +1673,21 @@ async def list_tools() -> list[Tool]:
                         "3. View the current configuration\n"
                         "4. Diagnose connection or setup issues",
             inputSchema=AiderStatus.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.AI_SESSION_LIST,
+            description="List all known AI editing sessions from the session store.",
+            inputSchema=AiSessionList.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.AI_SESSION_STATUS,
+            description="Get detailed information about a specific AI editing session by ID.",
+            inputSchema=AiSessionStatus.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.AI_SESSION_RESUME,
+            description="Get instructions for resuming a specific AI editing session.",
+            inputSchema=AiSessionResume.model_json_schema(),
         )
     ]
 
@@ -1824,6 +1936,26 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         repo_path=str(repo_path),
                         check_environment=check_environment
                     )
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.AI_SESSION_LIST:
+                    result = await ai_session_list(str(repo_path))
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.AI_SESSION_STATUS:
+                    session_id = arguments["session_id"]
+                    result = await ai_session_status(str(repo_path), session_id)
+                    return [TextContent(
+                        type="text",
+                        text=result
+                    )]
+                case GitTools.AI_SESSION_RESUME:
+                    session_id = arguments["session_id"]
+                    result = await ai_session_resume(str(repo_path), session_id)
                     return [TextContent(
                         type="text",
                         text=result
