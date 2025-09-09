@@ -33,6 +33,7 @@ import asyncio
 import os
 import shutil
 import tempfile
+import glob
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 
@@ -1157,3 +1158,9 @@ async def test_ai_edit_filters_pre_existing_untracked_files(mock_create_subproce
     # CRITICAL: Assert that the PRE-EXISTING untracked file is NOT in the diff
     assert pre_existing_untracked_file not in result_text
     assert "this file was already here" not in result_text
+
+    # Cleanup snapshots if created
+    for p in glob.glob(str(repo_path / ".mcp-devtools" / "ai_edit_*_pre.diff")):
+        os.remove(p)
+    for p in glob.glob(str(repo_path / ".mcp-devtools" / "ai_edit_*_post.diff")):
+        os.remove(p)
