@@ -23,6 +23,7 @@ Key Components:
 """
 
 import logging
+import uuid
 from pathlib import Path, PurePath
 from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast
 from mcp.server import Server
@@ -538,6 +539,10 @@ class AiEdit(BaseModel):
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
     )
+    session_id: str | None = Field(
+        None,
+        description="Optional. A session ID to associate with this edit operation. If not provided, a new UUID will be generated."
+    )
 
 class AiderStatus(BaseModel):
     """
@@ -990,6 +995,7 @@ async def ai_edit(
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> str:
     """
     AI pair programming tool for making targeted code changes using Aider.
@@ -1105,6 +1111,9 @@ async def ai_edit(
         snapshot_delta_section = delta_section
     except Exception as e:
         delta_section = f"\n\nError generating delta: {str(e)}"
+
+    # Determine effective session ID
+    effective_session_id = session_id if session_id else str(uuid.uuid4())
 
     # ... rest of ai_edit ...
 
@@ -1302,6 +1311,8 @@ async def ai_edit(
                 result_message = (
                     f"### Aider's Plan\n"
                     f"{last_reply}\n\n"
+                    f"### Session\n"
+                    f"{effective_session_id}\n\n"
                     f"### Applied Changes (Diff)\n"
                     f"{applied_changes}\n\n"
                     f"### Verification Result\n"
@@ -1488,8 +1499,9 @@ async def list_tools() -> list[Tool]:
                 "This tool applies the requested changes directly to your working directory without committing them. "
                 "After the tool runs, it returns a structured report containing:\n\n"
                 "1.  **Aider's Plan:** The approach Aider decided to take.\n"
-                "2.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
-                "3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n\n"
+                "2.  **Session:** The session ID for this edit operation.\n"
+                "3.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
+                "4.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n\n"
                 "Use this tool to:\n"
                 "- Implement new features or functionality in existing code\n"
                 "- Add tests to an existing codebase\n"
@@ -1725,6 +1737,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                     message = arguments.get("message", "")
                     files = arguments["files"] # files is now mandatory
                     options = arguments.get("options", [])
+                    session_id = arguments.get("session_id")
                     if "continue_thread" not in arguments:
                         return [TextContent(
                             type="text",
@@ -1742,6 +1755,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         files=files,
                         options=options,
                         continue_thread=continue_thread,
+                        session_id=session_id,
                     )
                     return [TextContent(
                         type="text",
