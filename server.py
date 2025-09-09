@@ -77,6 +77,40 @@ logger.setLevel(logging.DEBUG)
 logging.getLogger().setLevel(logging.DEBUG)
 
 
+# === Session Store Helpers ===
+def _session_store_path(repo_dir: str) -> Path:
+    """Get the path to the sessions.json file."""
+    snap_dir = ensure_snap_dir(repo_dir)
+    return snap_dir / "sessions.json"
+
+def _load_sessions(path: Path) -> dict[str, Any]:
+    """Load sessions from the JSON file, returning empty dict if file doesn't exist or is invalid."""
+    if not path.exists():
+        return {}
+    
+    try:
+        with open(path, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.debug(f"Failed to load sessions from {path}: {e}")
+        return {}
+
+def _save_sessions(path: Path, data: dict[str, Any]) -> None:
+    """Save sessions to the JSON file."""
+    try:
+        with open(path, 'w') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except IOError as e:
+        logger.debug(f"Failed to save sessions to {path}: {e}")
+
+def _upsert_session(path: Path, session: dict[str, Any]) -> None:
+    """Upsert a session record in the sessions store."""
+    sessions = _load_sessions(path)
+    session_id = session["id"]
+    sessions[session_id] = session
+    _save_sessions(path, sessions)
+
+
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
     """
     Read the Aider chat history, extract the last session, clean it,
@@ -1115,6 +1149,19 @@ async def ai_edit(
     # Determine effective session ID
     effective_session_id = session_id if session_id else str(uuid.uuid4())
 
+    # === Session Store Integration ===
+    # Record session metadata at start
+    sess_path = _session_store_path(directory_path)
+    session_record = {
+        "id": effective_session_id,
+        "repo_path": os.path.abspath(repo_path),
+        "created_at": now_ts(),
+        "last_updated": now_ts(),
+        "files": files,
+        "status": "running"
+    }
+    _upsert_session(sess_path, session_record)
+
     # ... rest of ai_edit ...
 
     original_dir = os.getcwd()
@@ -1329,6 +1376,16 @@ async def ai_edit(
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
         result_message = ai_hint_ai_edit_unexpected(e)
     finally:
+        # Update session metadata at end
+        try:
+            session_record.update({
+                "status": "completed",
+                "last_updated": now_ts()
+            })
+            _upsert_session(sess_path, session_record)
+        except Exception as e:
+            logger.debug(f"Failed to update session metadata: {e}")
+        
         if os.getcwd() != original_dir:
             os.chdir(original_dir)
             logger.debug(f"Restored working directory to: {original_dir}")
