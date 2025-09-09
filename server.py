@@ -1092,14 +1092,14 @@ async def ai_edit(
     # Take pre-execution snapshot
     pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     pre_ts = now_ts()
-    pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
+    pre_snapshot_path = save_snapshot(repo_path, "pre", pre_ts, pre_snapshot)
 
     # ... run aider ...
 
     # Take post-execution snapshot
     post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
     post_ts = now_ts()
-    post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+    post_snapshot_path = save_snapshot(repo_path, "post", post_ts, post_snapshot)
 
     # Compute delta between pre and post snapshots
     try:
@@ -1162,7 +1162,7 @@ async def ai_edit(
         # Post-snapshot for this ai_edit run (User Story 1)
         try:
             _post_snapshot_text = snapshot_worktree(directory_path, exclude_untracked=set())
-            _post_snapshot_path = save_snapshot(directory_path, _post_snapshot_text, "post", post_snapshot)
+            _post_snapshot_path = save_snapshot(directory_path, "post", _post_snapshot_text, now_ts())
             # Compute delta between pre and post snapshots
             try:
                 # Exclude pre-existing untracked files from delta by filtering both pre and post

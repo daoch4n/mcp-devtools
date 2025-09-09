@@ -1005,17 +1005,44 @@ def test_git_read_file_error_cases(monkeypatch):
 
 # New tests
 @pytest.mark.asyncio
-async def test_snapshot_delta_creation():
+async def test_snapshot_delta_creation(monkeypatch):
     """Test that snapshot delta is created correctly"""
-    # Setup test repo
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_path = Path(tmpdir)
-        # ... test implementation ...
+        repo = git.Repo.init(repo_path)
+        with repo.config_writer() as cw:
+            cw.set_value("user", "email", "test@example.com")
+            cw.set_value("user", "name", "Test User")
+        # Initial commit
+        (repo_path / "file.txt").write_text("initial\n")
+        repo.index.add(["file.txt"])
+        repo.index.commit("init")
 
-@pytest.mark.asyncio
-async def test_pre_existing_untracked_exclusion():
-    """Test that pre-existing untracked files are excluded from delta"""
-    # Setup test repo
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo_path = Path(tmpdir)
-        # ... test implementation ...
+        # Mock aider process
+        class FakeProc:
+            def __init__(self, rc=0):
+                self.returncode = rc
+            async def communicate(self):
+                # Modify file
+                (repo_path / "file.txt").write_text("modified\n")
+                return (b"Applied edit to file.txt", b"")
+
+        async def fake_create_subprocess_shell(*args, **kwargs):
+            return FakeProc()
+
+        monkeypatch.setattr(asyncio, "create_subprocess_shell", fake_create_subprocess_shell)
+
+        result = await ai_edit(
+            repo_path=str(repo_path),
+            message="Edit",
+            session=MagicMock(),
+            files=["file.txt"],
+            options=[],
+            continue_thread=False,
+        )
+
+        # Verify delta section exists
+        assert "### Snapshot Delta (this run)" in result
+        # Verify delta contains expected changes
+        assert "-initial" in result
+        assert "+modified" in result
