@@ -23,6 +23,7 @@ Key Components:
 """
 
 import logging
+import asyncio
 import uuid
 import shutil
 import time
@@ -120,8 +121,12 @@ def _save_sessions(repo_root: str, data: dict[str, Any]) -> None:
     try:
         # Ensure the directory exists
         path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, 'w') as f:
+        # Write to temporary file first for atomic operation
+        tmp_path = path.with_suffix('.tmp')
+        with open(tmp_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+        # Atomically replace the old file
+        os.replace(tmp_path, path)
     except IOError as e:
         logger.debug(f"Failed to save sessions to {path}: {e}")
 
@@ -148,6 +153,15 @@ def _record_session_start(repo_root: str, session_id: str, workspace_dir: str, u
     sessions[session_id] = session_record
     _save_sessions(repo_root, sessions)
 
+async def _record_session_start_async(repo_root: str, session_id: str, workspace_dir: str, use_worktree: bool) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_record_session_start, repo_root, session_id, workspace_dir, use_worktree)
+
+async def _load_sessions_async(repo_root: str) -> dict[str, Any]:
+    """Load sessions from the JSON file asynchronously with locking."""
+    async with _sessions_lock:
+        return await asyncio.to_thread(_load_sessions, repo_root)
+
 def _record_session_update(repo_root: str, session_id: str, **fields) -> None:
     """Update session record with additional fields."""
     sessions = _load_sessions(repo_root)
@@ -156,9 +170,17 @@ def _record_session_update(repo_root: str, session_id: str, **fields) -> None:
         sessions[session_id]["last_updated"] = time.time()
         _save_sessions(repo_root, sessions)
 
+async def _record_session_update_async(repo_root: str, session_id: str, **fields) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_record_session_update, repo_root, session_id, **fields)
+
 def _record_session_complete(repo_root: str, session_id: str, success: bool) -> None:
     """Record the completion of a session."""
     _record_session_update(repo_root, session_id, status="completed", completed_at=time.time(), success=success)
+
+async def _record_session_complete_async(repo_root: str, session_id: str, success: bool) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_record_session_complete, repo_root, session_id, success)
 
 def _delete_session_record(repo_root: str, session_id: str) -> None:
     """Delete a session record from the sessions file."""
@@ -166,6 +188,10 @@ def _delete_session_record(repo_root: str, session_id: str) -> None:
     if session_id in sessions:
         del sessions[session_id]
         _save_sessions(repo_root, sessions)
+
+async def _delete_session_record_async(repo_root: str, session_id: str) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_delete_session_record, repo_root, session_id)
 
 def _get_ttl_seconds() -> int:
     """Get the session TTL in seconds."""
@@ -210,6 +236,36 @@ def _purge_worktree(repo_root: str, workspace_dir: str) -> None:
         except Exception as e2:
             logger.debug(f"Failed to remove worktree {workspace_dir} via rm -rf: {e2}")
 
+async def _purge_worktree_async(repo_root: str, workspace_dir: str) -> None:
+    """Purge a worktree directory asynchronously, trying git worktree remove first, then rm -rf."""
+    try:
+        # Try to remove via git worktree command first
+        proc = await asyncio.create_subprocess_exec(
+            "git", "worktree", "remove", "--force", workspace_dir,
+            cwd=repo_root,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        
+        if proc.returncode == 0:
+            logger.debug(f"Successfully removed worktree {workspace_dir} via git command")
+        else:
+            logger.debug(f"Failed to remove worktree via git command: {stderr.decode()}. Trying rm -rf.")
+            # Fallback to rm -rf
+            if os.path.exists(workspace_dir):
+                await asyncio.to_thread(shutil.rmtree, workspace_dir)
+                logger.debug(f"Successfully removed worktree {workspace_dir} via rm -rf")
+    except Exception as e:
+        logger.debug(f"Failed to remove worktree {workspace_dir} via git command: {e}. Trying rm -rf.")
+        # Fallback to rm -rf
+        try:
+            if os.path.exists(workspace_dir):
+                await asyncio.to_thread(shutil.rmtree, workspace_dir)
+                logger.debug(f"Successfully removed worktree {workspace_dir} via rm -rf")
+        except Exception as e2:
+            logger.debug(f"Failed to remove worktree {workspace_dir} via rm -rf: {e2}")
+
 def _apply_workspace_changes_to_root(workspace_dir: str, repo_path: str, files: list[str]) -> None:
     """Apply changes from workspace to root repository for specified files."""
     for rel in files:
@@ -249,6 +305,10 @@ def cleanup_expired_sessions(repo_root: str) -> None:
             _save_sessions(repo_root, sessions)
     except Exception as e:
         logger.debug(f"Error during session cleanup: {e}")
+
+async def cleanup_expired_sessions_async(repo_root: str) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(cleanup_expired_sessions, repo_root)
 
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
@@ -1318,12 +1378,10 @@ async def ai_edit(
     
     # Determine if we should use worktrees
     use_worktrees = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
-    
     # Set up workspace directory path (but don't create the worktree yet)
     workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktrees else directory_path
-    
-    # Record session start
-    _record_session_start(repo_root, effective_session_id, workspace_dir, use_worktrees)
+    # Record session start (async, with lock)
+    await _record_session_start_async(repo_root, effective_session_id, workspace_dir, use_worktree=use_worktrees)
 
     # === Isolated Workspace Setup (US2 Step 3) ===
     if use_worktrees:
@@ -1333,14 +1391,20 @@ async def ai_edit(
         try:
             workspace_root.mkdir(parents=True, exist_ok=True)
             if not workspace_dir_path.exists():
-                # Attempt to create a worktree for this session
-                subprocess.run(
-                    ["git", "worktree", "add", "--detach", str(workspace_dir_path)], 
-                    cwd=repo_path, 
-                    check=True, 
-                    capture_output=True
+                # Attempt to create a worktree for this session using non-blocking subprocess
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "worktree", "add", "--detach", str(workspace_dir_path),
+                    cwd=repo_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
+                stdout_bytes, stderr_bytes = await proc.communicate()
+                if proc.returncode != 0:
+                    raise subprocess.CalledProcessError(proc.returncode, ["git", "worktree", "add", "--detach", str(workspace_dir_path)], output=stdout_bytes, stderr=stderr_bytes)
             directory_path = str(workspace_dir_path)
+            # Ensure recorded workspace_dir matches the final directory_path
+            workspace_dir = directory_path
+            await _record_session_update_async(repo_root, effective_session_id, workspace_dir=workspace_dir)
             logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
         except subprocess.CalledProcessError as e:
             logger.debug(f"[ai_edit] Failed to create worktree workspace: {e}. Falling back to repo_path.")
@@ -1578,16 +1642,16 @@ async def ai_edit(
     finally:
         # Record session completion
         try:
-            _record_session_complete(repo_root, effective_session_id, success)
+            await _record_session_complete_async(repo_root, effective_session_id, success)
             
             # If successful and using worktrees, check if we should purge the worktree
             if success and use_worktrees and workspace_dir != repo_path and _git_status_clean(directory_path):
                 try:
-                    _purge_worktree(repo_root, workspace_dir)
-                    _record_session_update(repo_root, effective_session_id, purged_at=time.time())
+                    await _purge_worktree_async(repo_root, workspace_dir)
+                    await _record_session_update_async(repo_root, effective_session_id, purged_at=time.time())
                     # Delete the session record immediately after successful purge
                     try:
-                        _delete_session_record(repo_root, effective_session_id)
+                        await _delete_session_record_async(repo_root, effective_session_id)
                     except Exception as e:
                         logger.debug(f"Failed to delete session record after purge: {e}")
                 except Exception as e:
@@ -1602,7 +1666,7 @@ async def ai_edit(
         
         # Cleanup expired sessions
         try:
-            cleanup_expired_sessions(repo_root)
+            await cleanup_expired_sessions_async(repo_root)
         except Exception as e:
             logger.debug(f"Failed to cleanup expired sessions: {e}")
         
@@ -1718,7 +1782,7 @@ async def ai_session_list(repo_path: str) -> str:
         A JSON string containing the list of session records.
     """
     repo_root = find_git_root(repo_path) or repo_path
-    sessions = _load_sessions(repo_root)
+    sessions = await _load_sessions_async(repo_root)
     return json.dumps({"sessions": list(sessions.values())}, indent=2)
 
 async def ai_session_status(repo_path: str, session_id: str) -> str:
@@ -1733,7 +1797,7 @@ async def ai_session_status(repo_path: str, session_id: str) -> str:
         A JSON string containing the session record or an error message.
     """
     repo_root = find_git_root(repo_path) or repo_path
-    sessions = _load_sessions(repo_root)
+    sessions = await _load_sessions_async(repo_root)
     session = sessions.get(session_id)
     if session:
         return json.dumps(session, indent=2)
