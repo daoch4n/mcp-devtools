@@ -1,11 +1,11 @@
 __pycache__/
 .venv/
 .env
-
 dist/
-
 mcp_devtools.egg-info/
 uv.lock
 build/
 .aider*
 .coverage
+.mypy_cache/
+.pytest_cache/

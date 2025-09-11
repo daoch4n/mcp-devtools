@@ -1,0 +1,31 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "DEFAULT_MINIMUM_TOKENS": ""
+      }
+    },
+    "sequentialthinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "devtools": {
+      "url": "http://127.0.0.1:1337/sse",
+      "alwaysAllow": [
+        "git_stage_and_commit",
+        "ai_edit",
+        "execute_command",
+        "git_show",
+        "git_branch",
+        "git_log",
+        "git_diff",
+        "git_status",
+        "write_to_file"
+      ],
+      "timeout": 300,
+      "disabledTools": ["aider_status", "read_file", "git_apply_diff"]
+    }
+  }
+}
