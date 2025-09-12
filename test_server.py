@@ -1101,6 +1101,79 @@ async def test_ai_sessions_tool_list_status_last_session_id(monkeypatch, fake_ai
         assert last_session_file.exists()
         assert last_session_file.read_text().strip() == session_id
 
+
+@pytest.mark.asyncio
+async def test_ai_sessions_list_filter_by_status():
+    """Test ai_sessions list with status filter"""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo_path = Path(tmpdir)
+        repo = git.Repo.init(repo_path)
+        with repo.config_writer() as cw:
+            cw.set_value("user", "email", "test@example.com")
+            cw.set_value("user", "name", "Test User")
+        # Initial commit
+        (repo_path / "file.txt").write_text("initial\n")
+        repo.index.add(["file.txt"])
+        repo.index.commit("init")
+
+        # Run ai_edit once to create a completed session
+        with patch('asyncio.create_subprocess_shell') as mock_shell:
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = AsyncMock(return_value=(b"Applied edit to file.txt", b""))
+            mock_shell.return_value = mock_proc
+            
+            await ai_edit(
+                repo_path=str(repo_path),
+                message="Edit",
+                session=MagicMock(),
+                files=["file.txt"],
+                options=[],
+                continue_thread=False,
+            )
+
+        # Create a 'running' session manually
+        from server import _record_session_start
+        running_id = "test-running-session-id"
+        workspace_dir = str(repo_path / "test-workspace")
+        _record_session_start(str(repo_path), running_id, workspace_dir, use_worktree=False)
+
+        # Call ai_sessions list without filter; verify both sessions are present
+        list_result = list(await call_tool("ai_sessions", {"repo_path": str(repo_path), "action": "list"}))
+        session_payload = json.loads(list_result[0].text)
+        sessions_list = session_payload.get("sessions", [])
+        session_ids = [s.get('id') or s.get('session_id') for s in sessions_list]
+        assert len(sessions_list) >= 2
+        assert running_id in session_ids
+
+        # Call ai_sessions list with status='running'; verify only running_id present
+        list_result_running = list(await call_tool("ai_sessions", {
+            "repo_path": str(repo_path), 
+            "action": "list", 
+            "status": "running"
+        }))
+        session_payload_running = json.loads(list_result_running[0].text)
+        sessions_list_running = session_payload_running.get("sessions", [])
+        running_session_ids = [s.get('id') or s.get('session_id') for s in sessions_list_running]
+        assert len(sessions_list_running) == 1
+        assert running_id in running_session_ids
+
+        # Call ai_sessions list with status='completed'; verify includes the completed session and not the running one
+        list_result_completed = list(await call_tool("ai_sessions", {
+            "repo_path": str(repo_path), 
+            "action": "list", 
+            "status": "completed"
+        }))
+        session_payload_completed = json.loads(list_result_completed[0].text)
+        sessions_list_completed = session_payload_completed.get("sessions", [])
+        completed_session_ids = [s.get('id') or s.get('session_id') for s in sessions_list_completed]
+        assert len(sessions_list_completed) >= 1
+        assert running_id not in completed_session_ids
+        
+        # Verify all completed sessions have status 'completed'
+        for session in sessions_list_completed:
+            assert session.get('status') == 'completed'
+
 @pytest.mark.asyncio
 async def test_auto_apply_workspace_changes_to_root(monkeypatch, fake_aider_proc):
     """Test that workspace changes are auto-applied to root when MCP_APPLY_WORKSPACE_TO_ROOT=1"""

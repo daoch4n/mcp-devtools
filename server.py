@@ -820,6 +820,7 @@ class AiSessions(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     action: Literal['list', 'status'] = Field(description="The action to perform: 'list' to list all sessions or 'status' to get details of a specific session.")
     session_id: Optional[str] = Field(None, description="The ID of the session to retrieve (required for 'status' action).")
+    status: Optional[Literal['running', 'completed']] = Field(None, description="Optional. Filter sessions by status when action='list'.")
     cleanup: bool = Field(False, description="If true, opportunistically run TTL cleanup before returning.")
 
 class GitTools(str, Enum):
@@ -2141,7 +2142,16 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                     action = arguments["action"]
                     if action == "list":
                         sessions = await _load_sessions_async(repo_root)
-                        result = json.dumps({"sessions": list(sessions.values())}, indent=2)
+                        # Filter by status if provided
+                        status_filter = arguments.get("status")
+                        if status_filter:
+                            filtered_sessions = {
+                                k: v for k, v in sessions.items() 
+                                if v.get("status") == status_filter
+                            }
+                            result = json.dumps({"sessions": list(filtered_sessions.values())}, indent=2)
+                        else:
+                            result = json.dumps({"sessions": list(sessions.values())}, indent=2)
                         return [TextContent(
                             type="text",
                             text=result
