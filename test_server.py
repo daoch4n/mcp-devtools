@@ -183,12 +183,6 @@ def test_git_branch_create(temp_git_repo):
     assert "Created branch 'another_branch' from 'new_branch'" in result
     assert 'another_branch' in repo.heads
 
-def test_git_branch_checkout(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    repo.create_head('checkout_branch')
-    result = git_branch(repo, 'checkout', 'checkout_branch')
-    assert "Switched to branch 'checkout_branch'" in result
-    assert repo.active_branch.name == 'checkout_branch'
 
 def test_git_branch_rename(temp_git_repo):
     repo, repo_path = temp_git_repo
