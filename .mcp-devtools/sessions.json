@@ -1,0 +1,14 @@
+{
+  "a64be546-1beb-4876-95f4-a9a603944cae": {
+    "session_id": "a64be546-1beb-4876-95f4-a9a603944cae",
+    "repo_root": "/home/vi/mcp-devtools",
+    "workspace_dir": "/home/vi/mcp-devtools",
+    "use_worktree": false,
+    "status": "completed",
+    "created_at": 1757645677.0032818,
+    "last_updated": 1757645710.5583503,
+    "completed_at": 1757645710.5582263,
+    "success": true,
+    "purged_at": null
+  }
+}

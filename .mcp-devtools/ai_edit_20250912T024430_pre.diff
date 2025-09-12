@@ -1,0 +1,416 @@
+diff --git a/server.py b/server.py
+index ba33478..c9cf8e5 100644
+--- a/server.py
++++ b/server.py
+@@ -384,6 +384,48 @@ def _approx_token_count(text: str) -> int:
+     """
+     return math.ceil(len(text) / 4)
+ 
++def _parse_aider_token_stats(text: str) -> tuple[int, int]:
++    """
++    Parse Aider token statistics from chat history text.
++    Looks for patterns like "> Tokens: 21k sent, 2.6k received."
++    
++    Args:
++        text: The Aider chat history text
++        
++    Returns:
++        A tuple of (sent_tokens, received_tokens) as integers
++    """
++    total_sent = 0
++    total_received = 0
++    
++    # Pattern to match token stats lines
++    pattern = r"> Tokens: ([\d\.km,]+) sent, ([\d\.km,]+) received"
++    matches = re.findall(pattern, text, re.IGNORECASE)
++    
++    for sent_str, received_str in matches:
++        def parse_token_value(value_str: str) -> int:
++            # Remove commas and convert to lowercase
++            value_str = value_str.replace(',', '').lower()
++            
++            # Handle k/m suffixes
++            if value_str.endswith('k'):
++                return int(float(value_str[:-1]) * 1000)
++            elif value_str.endswith('m'):
++                return int(float(value_str[:-1]) * 1000000)
++            else:
++                return int(float(value_str))
++        
++        try:
++            sent_tokens = parse_token_value(sent_str)
++            received_tokens = parse_token_value(received_str)
++            total_sent += sent_tokens
++            total_received += received_tokens
++        except ValueError:
++            # Skip invalid token values
++            continue
++    
++    return (total_sent, total_received)
++
+ def _split_aider_sessions(text: str) -> list[str]:
+     """
+     Split Aider chat history into sessions by the '# aider chat started at' anchor.
+@@ -1389,6 +1431,10 @@ async def ai_edit(
+     AI pair programming tool for making targeted code changes using Aider.
+     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
+     """
++    start_time = time.time()
++    touched_files: Set[str] = set()
++    aider_stderr = ""
++
+     aider_path = aider_path or "aider"
+ 
+     logger.info(f"Running aider in directory: {repo_path}")
+@@ -1719,7 +1765,7 @@ async def ai_edit(
+ 
+         stdout_bytes, stderr_bytes = await process.communicate()
+         stdout = stdout_bytes.decode('utf-8')
+-        stderr = stderr_bytes.decode('utf-8')
++        aider_stderr = stderr_bytes.decode('utf-8')
+ 
+         # Post-snapshot for this ai_edit run (User Story 1)
+         try:
+@@ -1742,7 +1788,7 @@ async def ai_edit(
+         
+         if return_code != 0:
+             logger.error(f"Aider process exited with code {return_code}")
+-            result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
++            result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{aider_stderr}"
+         else:
+             # Apply workspace changes to root repo if using worktrees and feature is enabled
+             apply_to_root = os.getenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1") != "0"
+@@ -1830,6 +1876,16 @@ async def ai_edit(
+                     # Join all parts with a newline. This ensures separation between diff blocks.
+                     final_diff_combined = "\n".join(all_diff_parts).strip()
+ 
++                    # Extract touched files from the diff
++                    for line in final_diff_combined.split('\n'):
++                        if line.startswith('+++ b/'):
++                            touched_file = line[6:]  # Remove '+++ b/' prefix
++                            touched_files.add(touched_file)
++                    
++                    # Add untracked files to touched files
++                    for untracked_file in new_untracked:
++                        touched_files.add(untracked_file)
++
+                     # Log the final diff length and a preview for diagnostics
+                     preview = (final_diff_combined[:1000] + "…") if len(final_diff_combined) > 1000 else final_diff_combined
+                     logger.debug(f"[ai_edit] Final diff length: {len(final_diff_combined)}; preview:\n{preview}")
+@@ -1892,10 +1948,45 @@ async def ai_edit(
+         except Exception as e:
+             logger.debug(f"Failed to update session metadata: {e}")
+         
+-        # Add session info to result message
+-        ttl_seconds = _get_ttl_seconds()
++        # Calculate duration
++        duration_s = round(time.time() - start_time, 2)
++        
++        # Read Aider chat history for token stats
++        thread_text = _read_last_aider_session_text(directory_path)
++        tokens = _approx_token_count(thread_text)
++        sent_tokens, received_tokens = _parse_aider_token_stats(thread_text)
++        
++        # Build summary section
+         session_status = "completed/success" if success else "error"
+-        result_message += f"\n\nSession: {effective_session_id} (status: {session_status}), TTL={ttl_seconds}s"
++        files_touched_count = len(touched_files)
++        
++        # Format touched files list (first 10 files)
++        if touched_files:
++            sorted_touched_files = sorted(list(touched_files))
++            if len(sorted_touched_files) > 10:
++                files_list = ", ".join(sorted_touched_files[:10]) + f" (+{len(sorted_touched_files) - 10} more)"
++            else:
++                files_list = ", ".join(sorted_touched_files)
++        else:
++            files_list = "None"
++        
++        summary_section = (
++            f"### Summary\n"
++            f"- Status: {session_status}\n"
++            f"- Session: {effective_session_id}\n"
++            f"- Duration: {duration_s}s\n"
++            f"- Files touched: {files_touched_count} ({files_list})\n"
++            f"- Aider tokens: sent={sent_tokens}, received={received_tokens}\n"
++            f"- Thread approx tokens: {tokens}\n"
++        )
++        
++        # Add warnings section if there were any stderr messages
++        warnings_section = ""
++        if aider_stderr.strip():
++            warnings_section = f"\n### Warnings\n{aider_stderr.strip()}\n"
++        
++        # Add summary and warnings to the result message
++        result_message = summary_section + result_message + warnings_section
+         
+         # Cleanup expired sessions
+         try:
+diff --git a/test_server.py b/test_server.py
+index 78a18b6..1f3fe22 100644
+--- a/test_server.py
++++ b/test_server.py
+@@ -1234,9 +1234,13 @@ async def test_purge_on_success_deletes_session_record(monkeypatch, fake_aider_p
+                 continue_thread=False,
+             )
+ 
+-        # Extract session ID from result
+-        session_line = [line for line in result.split('\n') if line.startswith("Session: ")][0]
+-        session_id = session_line.split(": ")[1].strip()
++        # Extract session ID from result (supports new Summary format)
++        lines = result.split('\n')
++        session_line = next((ln for ln in lines if ln.strip().startswith("- Session: ")), None)
++        if session_line is None:
++            session_line = next((ln for ln in lines if ln.startswith("Session: ")), "")
++        assert session_line, f"Session line not found in output: {result[:500]}"
++        session_id = session_line.split(": ", 1)[1].strip()
+ 
+         # Verify session is not in sessions.json
+         sessions_file = repo_path / ".mcp-devtools" / "sessions.json"
+@@ -1905,3 +1909,246 @@ def test_server_imports_when_snapshot_utils_missing(tmp_path, monkeypatch):
+     # Fallback save_snapshot shouldn't error
+     p = srv.save_snapshot(str(tmp_path), "TEST", "pre", "")
+     assert p.exists()
++
++
++@pytest.mark.asyncio
++async def test_ai_edit_prune_summarize_fallback_on_failure(temp_git_repo, monkeypatch):
++    """Setup .aider.chat.history.md with 3 sessions; Set MCP_PRUNE_KEEP_SESSIONS=1, prune=True, prune_mode=None (summarize default);
++    Mock asyncio.create_subprocess_shell: summarizer process returns non-zero and does NOT create summary file; main aider returns success;
++    Assert history contains 'summarization failed' header and only last session kept"""
++    repo, repo_path = temp_git_repo
++    
++    # Create .aider.chat.history.md with 3 sessions
++    history_file = repo_path / ".aider.chat.history.md"
++    history_content = """# aider chat started at 2023-01-01 10:00:00
++## User: First request
++Assistant: First response
++
++# aider chat started at 2023-01-01 11:00:00
++## User: Second request
++Assistant: Second response
++
++# aider chat started at 2023-01-01 12:00:00
++## User: Third request
++Assistant: Third response
++"""
++    history_file.write_text(history_content)
++    
++    # Set MCP_PRUNE_KEEP_SESSIONS=1
++    monkeypatch.setenv("MCP_PRUNE_KEEP_SESSIONS", "1")
++    
++    # Mock asyncio.create_subprocess_shell to handle both summarizer (failure) and main aider (success)
++    call_count = 0
++    
++    class Proc:
++        def __init__(self, is_summarizer=False):
++            self.is_summarizer = is_summarizer
++            if is_summarizer:
++                self.returncode = 1  # Summarizer fails
++            else:
++                self.returncode = 0  # Main aider succeeds
++                
++        async def communicate(self):
++            nonlocal call_count
++            call_count += 1
++            if self.is_summarizer:
++                return (b"", b"Summarization failed")
++            return (b"Applied edit to file.txt", b"")
++    
++    async def mock_create_subprocess_shell(command, *args, **kwargs):
++        # Check if this is the summarizer command
++        if "older_history.md" in command and "older_summary.md" in command:
++            return Proc(is_summarizer=True)
++        return Proc(is_summarizer=False)
++    
++    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
++    
++    # Run ai_edit with prune=True (summarize mode by default)
++    await ai_edit(
++        repo_path=str(repo_path),
++        message="test edit",
++        session=MagicMock(),
++        files=["file.txt"],
++        options=[],
++        continue_thread=True,
++        prune=True,
++        prune_mode=None  # Default to summarize
++    )
++    
++    # Assert history contains 'summarization failed' header and only last session kept
++    assert history_file.exists()
++    content = history_file.read_text()
++    assert "summarization failed" in content
++    assert "# aider chat started at 2023-01-01 12:00:00" in content  # Last session kept
++    assert "# aider chat started at 2023-01-01 11:00:00" not in content  # Previous sessions removed
++    assert "# aider chat started at 2023-01-01 10:00:00" not in content  # Previous sessions removed
++
++
++@pytest.mark.asyncio
++async def test_ai_edit_prune_keep_two_sessions(temp_git_repo, monkeypatch):
++    """Setup .aider.chat.history.md with 4 sessions; Set MCP_PRUNE_KEEP_SESSIONS=2, prune=True, prune_mode='truncate';
++    Mock main aider success; Assert history keeps last two sessions and truncation header present; earlier sessions removed"""
++    repo, repo_path = temp_git_repo
++    
++    # Create .aider.chat.history.md with 4 sessions
++    history_file = repo_path / ".aider.chat.history.md"
++    history_content = """# aider chat started at 2023-01-01 09:00:00
++## User: First request
++Assistant: First response
++
++# aider chat started at 2023-01-01 10:00:00
++## User: Second request
++Assistant: Second response
++
++# aider chat started at 2023-01-01 11:00:00
++## User: Third request
++Assistant: Third response
++
++# aider chat started at 2023-01-01 12:00:00
++## User: Fourth request
++Assistant: Fourth response
++"""
++    history_file.write_text(history_content)
++    
++    # Set MCP_PRUNE_KEEP_SESSIONS=2
++    monkeypatch.setenv("MCP_PRUNE_KEEP_SESSIONS", "2")
++    
++    # Mock asyncio.create_subprocess_shell for successful aider run
++    class SuccessProc:
++        def __init__(self):
++            self.returncode = 0
++        async def communicate(self):
++            return (b"Applied edit to file.txt", b"")
++    
++    async def mock_create_subprocess_shell(*args, **kwargs):
++        return SuccessProc()
++    
++    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
++    
++    # Run ai_edit with prune=True and prune_mode='truncate'
++    await ai_edit(
++        repo_path=str(repo_path),
++        message="test edit",
++        session=MagicMock(),
++        files=["file.txt"],
++        options=[],
++        continue_thread=True,
++        prune=True,
++        prune_mode="truncate"
++    )
++    
++    # Assert history keeps last two sessions and truncation header present; earlier sessions removed
++    assert history_file.exists()
++    content = history_file.read_text()
++    assert "aider chat older sessions truncated" in content
++    assert "# aider chat started at 2023-01-01 11:00:00" in content  # Last two sessions kept
++    assert "# aider chat started at 2023-01-01 12:00:00" in content  # Last two sessions kept
++    assert "# aider chat started at 2023-01-01 10:00:00" not in content  # Earlier sessions removed
++    assert "# aider chat started at 2023-01-01 09:00:00" not in content  # Earlier sessions removed
++
++
++@pytest.mark.asyncio
++async def test_ai_edit_prune_with_continue_false_does_not_clear(temp_git_repo, monkeypatch):
++    """Setup .aider.chat.history.md with 2 sessions; Run ai_edit with prune=True (truncate) and continue_thread=False;
++    Mock main aider success; Assert history is NOT cleared (contains truncation header and last session), verifying precedence of pruning over clearing"""
++    repo, repo_path = temp_git_repo
++    
++    # Create .aider.chat.history.md with 2 sessions
++    history_file = repo_path / ".aider.chat.history.md"
++    history_content = """# aider chat started at 2023-01-01 10:00:00
++## User: First request
++Assistant: First response
++
++# aider chat started at 2023-01-01 11:00:00
++## User: Second request
++Assistant: Second response
++"""
++    history_file.write_text(history_content)
++    
++    # Set MCP_PRUNE_KEEP_SESSIONS=1
++    monkeypatch.setenv("MCP_PRUNE_KEEP_SESSIONS", "1")
++    
++    # Mock asyncio.create_subprocess_shell for successful aider run
++    class SuccessProc:
++        def __init__(self):
++            self.returncode = 0
++        async def communicate(self):
++            return (b"Applied edit to file.txt", b"")
++    
++    async def mock_create_subprocess_shell(*args, **kwargs):
++        return SuccessProc()
++    
++    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
++    
++    # Run ai_edit with prune=True (truncate mode) and continue_thread=False
++    await ai_edit(
++        repo_path=str(repo_path),
++        message="test edit",
++        session=MagicMock(),
++        files=["file.txt"],
++        options=[],
++        continue_thread=False,  # This would normally clear history
++        prune=True,
++        prune_mode="truncate"   # But pruning should take precedence
++    )
++    
++    # Assert history is NOT cleared (contains truncation header and last session), verifying precedence of pruning over clearing
++    assert history_file.exists()
++    content = history_file.read_text()
++    assert "aider chat older sessions truncated" in content
++    assert "# aider chat started at 2023-01-01 11:00:00" in content  # Last session kept
++    assert "# aider chat started at 2023-01-01 10:00:00" not in content  # Earlier session removed
++    # Should NOT be completely cleared (no empty history or just header)
++    assert content.strip() != "# aider chat started at 2023-01-01 11:00:00"  # Has more content than just session header
++
++
++@pytest.mark.asyncio
++async def test_ai_edit_no_prune_history_unchanged(temp_git_repo, monkeypatch):
++    """Setup .aider.chat.history.md with 2 sessions; Run ai_edit with prune=False and continue_thread=True;
++    Mock main aider success; Assert history unchanged (contains both sessions, no header)"""
++    repo, repo_path = temp_git_repo
++    
++    # Create .aider.chat.history.md with 2 sessions
++    history_file = repo_path / ".aider.chat.history.md"
++    history_content = """# aider chat started at 2023-01-01 10:00:00
++## User: First request
++Assistant: First response
++
++# aider chat started at 2023-01-01 11:00:00
++## User: Second request
++Assistant: Second response
++"""
++    original_content = history_content
++    history_file.write_text(history_content)
++    
++    # Mock asyncio.create_subprocess_shell for successful aider run
++    class SuccessProc:
++        def __init__(self):
++            self.returncode = 0
++        async def communicate(self):
++            return (b"Applied edit to file.txt", b"")
++    
++    async def mock_create_subprocess_shell(*args, **kwargs):
++        return SuccessProc()
++    
++    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
++    
++    # Run ai_edit with prune=False and continue_thread=True
++    await ai_edit(
++        repo_path=str(repo_path),
++        message="test edit",
++        session=MagicMock(),
++        files=["file.txt"],
++        options=[],
++        continue_thread=True,
++        prune=False  # No pruning
++    )
++    
++    # Assert history unchanged (contains both sessions, no header)
++    assert history_file.exists()
++    content = history_file.read_text()
++    assert content == original_content  # History unchanged
++    assert "aider chat older sessions truncated" not in content
++    assert "Summary of older chat sessions" not in content
++    assert "# aider chat started at 2023-01-01 10:00:00" in content  # Both sessions still present
++    assert "# aider chat started at 2023-01-01 11:00:00" in content  # Both sessions still present
