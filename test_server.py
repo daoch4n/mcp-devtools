@@ -1875,3 +1875,33 @@ async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch)
     assert "### Thread Context Usage" in result
     assert "Approximate tokens:" in result
     assert "Guidance: Keep overall thread context under ~200k tokens" in result
+
+
+def test_server_imports_when_snapshot_utils_missing(tmp_path, monkeypatch):
+    """Ensure importing server succeeds even if mcp_devtools.snapshot_utils isn't available."""
+    import importlib, sys
+    # Create a fake package mcp_devtools without snapshot_utils
+    fake_root = tmp_path / "fakepkg"
+    pkg_dir = fake_root / "mcp_devtools"
+    pkg_dir.mkdir(parents=True)
+    (pkg_dir / "__init__.py").write_text("# dummy package without snapshot_utils\n")
+
+    # Prepend to sys.path so it shadows the real package
+    monkeypatch.syspath_prepend(str(fake_root))
+
+    # Remove any cached modules
+    for mod in ["mcp_devtools", "mcp_devtools.snapshot_utils", "server"]:
+        if mod in sys.modules:
+            del sys.modules[mod]
+
+    # Import server; should not raise
+    srv = importlib.import_module("server")
+
+    # Use fallback ensure_snap_dir to create .mcp-devtools
+    d = srv.ensure_snap_dir(str(tmp_path))
+    assert d.exists()
+    assert d.name == ".mcp-devtools"
+
+    # Fallback save_snapshot shouldn't error
+    p = srv.save_snapshot(str(tmp_path), "TEST", "pre", "")
+    assert p.exists()

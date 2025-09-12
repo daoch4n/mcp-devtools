@@ -69,14 +69,45 @@ MCP_EXPERIMENTAL_WORKTREES = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower(
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
-from mcp_devtools.snapshot_utils import (
-    ensure_snap_dir,
-    looks_binary_bytes,
-    now_ts,
-    sanitize_binary_markers,
-    save_snapshot,
-    snapshot_worktree,
-)
+try:
+    from mcp_devtools.snapshot_utils import (
+        ensure_snap_dir,
+        looks_binary_bytes,
+        now_ts,
+        sanitize_binary_markers,
+        save_snapshot,
+        snapshot_worktree,
+    )
+except Exception:
+    # Define minimal fallbacks so server can start even if package missing
+    from pathlib import Path
+    import os
+    from datetime import datetime, timezone
+    def ensure_snap_dir(repo_dir: str) -> Path:
+        p = Path(repo_dir) / ".mcp-devtools"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    def now_ts() -> str:
+        return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    def looks_binary_bytes(data: bytes) -> bool:
+        try:
+            data.decode("utf-8")
+            return False
+        except Exception:
+            return True
+    def sanitize_binary_markers(diff_text: str) -> str:
+        return diff_text
+    def snapshot_worktree(repo_dir: str, exclude_untracked=None) -> str:
+        # Fallback: no snapshot available
+        return ""
+    def save_snapshot(repo_dir: str, ts: str, kind: str, content: str) -> Path:
+        d = ensure_snap_dir(repo_dir)
+        path = d / f"ai_edit_{ts}_{kind}.diff"
+        try:
+            path.write_text(content, encoding="utf-8")
+        except Exception:
+            pass
+        return path
 from starlette.routing import Route, Mount
 from starlette.responses import Response
 from starlette.requests import Request
@@ -1536,42 +1567,49 @@ async def ai_edit(
     # Take pre-execution snapshot from workspace but save under root repo
     pre_snapshot = ""
     pre_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_pre.diff"
-    try:
-        pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
-        pre_ts = now_ts()
-        pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
-    except Exception as e:
-        logger.debug(f"[ai_edit] pre-snapshot failed: {e}")
+    if os.getenv("MCP_DISABLE_SNAPSHOTS") != "1":
+        try:
+            pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+            pre_ts = now_ts()
+            pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
+        except Exception as e:
+            logger.debug(f"[ai_edit] pre-snapshot failed: {e}")
+    else:
+        logger.debug("[ai_edit] Snapshots disabled via MCP_DISABLE_SNAPSHOTS")
 
     # ... run aider ...
 
     # Take post-execution snapshot from workspace but save under root repo
     post_snapshot = ""
     post_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_post.diff"
-    try:
-        post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+    if os.getenv("MCP_DISABLE_SNAPSHOTS") != "1":
+        try:
+            post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+            post_ts = now_ts()
+            post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+        except Exception as e:
+            logger.debug(f"[ai_edit] post-snapshot failed: {e}")
         post_ts = now_ts()
         post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
-    except Exception as e:
-        logger.debug(f"[ai_edit] post-snapshot failed: {e}")
-    post_ts = now_ts()
-    post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
 
-    # Compute delta between pre and post snapshots
-    try:
-        # Use difflib to compute unified diff
-        import difflib
-        delta_lines = list(difflib.unified_diff(
-            pre_snapshot.splitlines(keepends=True),
-            post_snapshot.splitlines(keepends=True),
-            fromfile=str(pre_snapshot_path.name),
-            tofile=str(post_snapshot_path.name),
-        ))
-        delta_section = "### Snapshot Delta (this run)\n\n" + "".join(delta_lines)
-        # Ensure this delta is included in the final result
-        snapshot_delta_section = delta_section
-    except Exception as e:
-        delta_section = f"\n\nError generating delta: {str(e)}"
+        # Compute delta between pre and post snapshots
+        try:
+            # Use difflib to compute unified diff
+            import difflib
+            delta_lines = list(difflib.unified_diff(
+                pre_snapshot.splitlines(keepends=True),
+                post_snapshot.splitlines(keepends=True),
+                fromfile=str(pre_snapshot_path.name),
+                tofile=str(post_snapshot_path.name),
+            ))
+            delta_section = "### Snapshot Delta (this run)\n\n" + "".join(delta_lines)
+            # Ensure this delta is included in the final result
+            snapshot_delta_section = delta_section
+        except Exception as e:
+            delta_section = f"\n\nError generating delta: {str(e)}"
+    else:
+        logger.debug("[ai_edit] Snapshots disabled via MCP_DISABLE_SNAPSHOTS")
+        snapshot_delta_section = "### Snapshot Delta (this run)\n\n<snapshots disabled>"
 
     # === Session Management ===
     # Determine effective session ID

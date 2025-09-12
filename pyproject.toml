@@ -35,3 +35,4 @@ mcp-devtools = "mcp_devtools_cli:main"
 "Bug Tracker" = "https://github.com/daoch4n/mcp-devtools/issues"
 [tool.setuptools]
 py-modules = ["server", "mcp_devtools_cli"]
+packages = ["mcp_devtools"]
