@@ -3,7 +3,6 @@ uvicorn
 mcp-server-git
 httpx
 python-dotenv
-
 PyYAML
 pytest-asyncio
 pytest-cov

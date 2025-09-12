@@ -3,8 +3,6 @@ description: Summon Rovo Dev coding agent
 auto_execution_mode: 3
 ---
 
-## Windsurf Workflow: Summon Rovo Dev
-
 ### Workflow Steps
 
 1. **Formulate detailed prompt** - Create a clear task description in `.agent.local.md`
