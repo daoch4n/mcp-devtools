@@ -1726,6 +1726,7 @@ async def ai_edit(
             stdout_bytes, stderr_bytes = await proc.communicate()
             
             if proc.returncode == 0:
+                Path(workspace_dir).mkdir(parents=True, exist_ok=True)
                 directory_path = workspace_dir
                 logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
             else:
@@ -1945,13 +1946,6 @@ async def ai_edit(
         # Record session completion
         try:
             await _record_session_complete_async(repo_root, effective_session_id, success)
-            
-            # If successful, delete the session record
-            if success:
-                try:
-                    await _delete_session_record_async(repo_root, effective_session_id)
-                except Exception as e:
-                    logger.debug(f"Failed to delete session record: {e}")
             
             # If using worktrees, check if we should purge the worktree
             if use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):

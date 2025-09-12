@@ -1208,9 +1208,9 @@ async def test_auto_apply_workspace_changes_to_root(monkeypatch, fake_aider_proc
 
 @pytest.mark.asyncio
 async def test_purge_on_success_deletes_session_record(monkeypatch, fake_aider_proc):
-    """Test that successful sessions are purged from sessions.json and workspace is deleted"""
+    """Test that successful sessions are retained in sessions.json with purged metadata and workspace is deleted"""
     # Set environment variables
-    monkeypatch.setenv("MCP_USE_WORKTREES", "1")
+    monkeypatch.setenv("MCP_EXPERIMENTAL_WORKTREES", "1")
     monkeypatch.setenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1")
     
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -1223,6 +1223,9 @@ async def test_purge_on_success_deletes_session_record(monkeypatch, fake_aider_p
         (repo_path / "file.txt").write_text("initial\n")
         repo.index.add(["file.txt"])
         repo.index.commit("init")
+
+        # Monkeypatch _git_status_clean to return True to allow purge-on-success
+        monkeypatch.setattr("server._git_status_clean", lambda *args, **kwargs: True)
 
         with patch('asyncio.create_subprocess_shell', return_value=fake_aider_proc(repo_path)):
             result = await ai_edit(
@@ -1242,19 +1245,17 @@ async def test_purge_on_success_deletes_session_record(monkeypatch, fake_aider_p
         assert session_line, f"Session line not found in output: {result[:500]}"
         session_id = session_line.split(": ", 1)[1].strip()
 
-        # Verify session is not in sessions.json
+        # Verify session is still in sessions.json with purged metadata
         sessions_file = repo_path / ".mcp-devtools" / "sessions.json"
         if sessions_file.exists():
             sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
-            session_ids = list(sessions_map.keys())
-            assert session_id not in session_ids
+            assert session_id in sessions_map
+            assert sessions_map[session_id].get("purged_at") is not None
+            assert sessions_map[session_id].get("status") == "completed"
 
-        # Verify workspace directory doesn't exist
-        worktrees_dir = repo_path / ".mcp-devtools" / "workspaces"
-        if worktrees_dir.exists():
-            workspace_dirs = list(worktrees_dir.iterdir())
-            workspace_names = [d.name for d in workspace_dirs]
-            assert session_id not in workspace_names
+        # Verify specific workspace directory doesn't exist
+        workspace_dir = repo_path / ".mcp-devtools" / "workspaces" / session_id
+        assert not workspace_dir.exists()
 
 @pytest.mark.asyncio
 async def test_ttl_cleanup_deletes_expired_records(monkeypatch, fake_aider_proc):
@@ -1416,11 +1417,13 @@ async def test_ai_edit_worktrees_enabled_creates_and_purges(temp_git_repo, monke
     # Assert workspace_dir is removed (purged) after completion
     assert not workspace_dir.exists()
     
-    # Assert the sessions.json no longer contains this session_id
+    # Assert the sessions.json contains this session_id with purged metadata
     sessions_file = repo_path / ".mcp-devtools" / "sessions.json"
     if sessions_file.exists():
         sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
-        assert session_id not in sessions_map
+        assert session_id in sessions_map
+        assert sessions_map[session_id].get("purged_at") is not None
+        assert sessions_map[session_id].get("status") == "completed"
 
 
 @pytest.mark.asyncio
