@@ -1712,3 +1712,40 @@ async def test_ai_edit_options_override_and_unsupported_removed(temp_git_repo, m
     assert "--restore-chat-history" not in command
     assert "--base-url" not in command
     assert "--base_url" not in command
+
+@pytest.mark.asyncio
+async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch):
+    """Test that ai_edit output includes thread context usage information"""
+    repo, repo_path = temp_git_repo
+    
+    # Create a .aider.chat.history.md file with some content
+    history_file = repo_path / ".aider.chat.history.md"
+    history_content = "# aider chat started at 2024-01-01\nUser: Hello\nAssistant: Hi there!"
+    history_file.write_text(history_content)
+    
+    # Mock successful Aider run
+    class SuccessProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def mock_create_subprocess_shell(command, *args, **kwargs):
+        return SuccessProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Run ai_edit
+    result = await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=True
+    )
+    
+    # Assert that the output contains thread context usage information
+    assert "### Thread Context Usage" in result
+    assert "Approximate tokens:" in result
+    assert "Guidance: Keep overall thread context under ~200k tokens" in result

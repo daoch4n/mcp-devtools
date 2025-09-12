@@ -27,6 +27,7 @@ import asyncio
 import uuid
 import shutil
 import time
+import math
 from datetime import datetime
 from pathlib import Path, PurePath
 from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal
@@ -322,6 +323,35 @@ async def cleanup_expired_sessions_async(repo_root: str) -> None:
     async with _sessions_lock:
         await asyncio.to_thread(cleanup_expired_sessions, repo_root)
 
+
+def _read_last_aider_session_text(directory_path: str) -> str:
+    """
+    Read the Aider chat history and return the content of the last session.
+    Returns the content from the last '# aider chat started at' anchor to the end,
+    or the full content if no anchor is found, or empty string if file is missing.
+    """
+    try:
+        history_path = Path(directory_path) / ".aider.chat.history.md"
+        if not history_path.exists():
+            return ""
+        history_content = history_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Find the last session
+        anchor = "# aider chat started at"
+        last_anchor_pos = history_content.rfind(anchor)
+        if last_anchor_pos != -1:
+            return history_content[last_anchor_pos:]
+        else:
+            return history_content
+    except Exception as e:
+        logger.debug(f"Failed to read Aider chat history: {e}")
+        return ""
+
+def _approx_token_count(text: str) -> int:
+    """
+    Approximate token count using the rule of thumb: tokens ≈ characters / 4
+    """
+    return math.ceil(len(text) / 4)
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
     """
@@ -1692,6 +1722,11 @@ async def ai_edit(
         if not structured_report_built and last_reply:
             # Legacy append when structured report isn't built
             result_message += f"\n\nAider's last reply:\n{last_reply}"
+        
+        # Add thread context usage information
+        thread_text = _read_last_aider_session_text(directory_path)
+        tokens = _approx_token_count(thread_text)
+        result_message += f"\n\n### Thread Context Usage\nApproximate tokens: {tokens}\nGuidance: Keep overall thread context under ~200k tokens. If you're approaching the limit, consider pruning older messages or calling ai_edit with continue_thread=false to truncate history."
         
         return result_message
 

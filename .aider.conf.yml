@@ -8,7 +8,7 @@ model: "openai/qwen3-coder-plus"
 # API Keys and settings:
 
 ## Specify the OpenAI API key
-#openai-api-key: "cat .qwen/oauth_creds.json" # also run "qwen" and update key here when access token invalidates (usually lasts for few hours)
+# openai-api-key: "your-api-key-here" # Replace with your actual API key
 
 ## Specify the api base url
 openai-api-base: "https://portal.qwen.ai/v1"

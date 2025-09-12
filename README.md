@@ -523,6 +523,7 @@ You must adhere to the following five-step, iterative workflow:
   1.  **Aider's Plan:** The approach Aider decided to take.
   2.  **Applied Changes (Diff):** A diff of the modifications made to your files.
   3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.
+  4.  **Thread Context Usage:** Information about the approximate token count of the conversation history and guidance on keeping it under ~200k tokens.
 
   Use this tool to:
   - Implement new features or functionality in existing code
