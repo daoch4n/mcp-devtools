@@ -573,6 +573,19 @@ You must adhere to the following five-step, iterative workflow:
         ],
         "default": "diff",
         "description": "Optional. The format Aider should use for edits. Defaults to 'diff'. Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
+      },
+      "prune": {
+        "type": "boolean",
+        "default": false,
+        "description": "Optional. Whether to prune older chat history sessions before running. Defaults to false."
+      },
+      "prune_mode": {
+        "type": "string",
+        "enum": [
+          "summarize",
+          "truncate"
+        ],
+        "description": "Optional. The pruning mode to use when prune=true. 'summarize' creates a summary of older sessions, 'truncate' removes them. Defaults to 'summarize' if prune=true and prune_mode is not specified."
       }
     },
     "required": [
@@ -596,6 +609,8 @@ You must adhere to the following five-step, iterative workflow:
 > Note: When `continue_thread` is false, the server prunes Aider chat memory by truncating `.aider.chat.history.md` in the repository root before invoking Aider.
 
 > Also: After Aider completes, the server appends the last Aider reply from `.aider.chat.history.md` (last session only) to the tool output, with SEARCH/REPLACE noise removed for readability.
+
+> Pruning: When `prune` is true, older chat sessions are either summarized or truncated based on `prune_mode`. By default, only the most recent session is kept (configurable via `MCP_PRUNE_KEEP_SESSIONS` environment variable).
 
 ### `aider_status`
 - **Description:** Check the status of Aider and its environment. Use this to:

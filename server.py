@@ -353,6 +353,53 @@ def _approx_token_count(text: str) -> int:
     """
     return math.ceil(len(text) / 4)
 
+def _split_aider_sessions(text: str) -> list[str]:
+    """
+    Split Aider chat history into sessions by the '# aider chat started at' anchor.
+    Each chunk will include the anchor line for clarity.
+    
+    Args:
+        text: The full chat history text
+        
+    Returns:
+        A list of session chunks, each starting with the anchor
+    """
+    anchor = "# aider chat started at"
+    chunks = []
+    lines = text.split('\n')
+    current_chunk = []
+    
+    for line in lines:
+        if line.startswith(anchor) and current_chunk:
+            # Found a new session, save the previous one
+            chunks.append('\n'.join(current_chunk) + '\n')
+            current_chunk = [line]
+        else:
+            current_chunk.append(line)
+    
+    # Don't forget the last chunk
+    if current_chunk:
+        chunks.append('\n'.join(current_chunk) + '\n')
+        
+    return chunks
+
+def _rebuild_history_with_summary(summary: str, kept_sessions: list[str]) -> str:
+    """
+    Construct a new chat history with a summary block and kept sessions.
+    
+    Args:
+        summary: The summary of older sessions
+        kept_sessions: List of recent session texts to keep
+        
+    Returns:
+        The reconstructed chat history
+    """
+    # Create summary block
+    summary_block = f"# Summary of older chat sessions\n\n{summary}\n\n"
+    
+    # Combine summary with kept sessions
+    return summary_block + ''.join(kept_sessions)
+
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
     """
     Read the Aider chat history, extract the last session, clean it,
@@ -818,6 +865,14 @@ class AiEdit(BaseModel):
     session_id: str | None = Field(
         None,
         description="Optional. A session ID to associate with this edit operation. If not provided, a new UUID will be generated."
+    )
+    prune: bool = Field(
+        default=False,
+        description="Optional. Whether to prune older chat history sessions before running. Defaults to false."
+    )
+    prune_mode: Literal['summarize', 'truncate'] | None = Field(
+        None,
+        description="Optional. The pruning mode to use when prune=True. 'summarize' creates a summary of older sessions, 'truncate' removes them. Defaults to 'summarize' if prune=True and prune_mode is not specified."
     )
 
 class AiderStatus(BaseModel):
@@ -1292,6 +1347,8 @@ async def ai_edit(
     files: List[str],
     options: list[str] | None,
     continue_thread: bool,
+    prune: bool = False,
+    prune_mode: Optional[Literal['summarize', 'truncate']] = None,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -1326,8 +1383,100 @@ async def ai_edit(
         "auto_commit": False,
     }
 
-    # Prune Aider chat history if not continuing thread
-    if not continue_thread:
+    # Prune Aider chat history if requested
+    if prune:
+        history_path = Path(directory_path) / ".aider.chat.history.md"
+        if history_path.is_file():
+            try:
+                history_content = history_path.read_text(encoding="utf-8")
+                sessions = _split_aider_sessions(history_content)
+                keep = int(os.getenv('MCP_PRUNE_KEEP_SESSIONS', '1'))
+                
+                if len(sessions) > keep:
+                    older_sessions = sessions[:-keep]
+                    kept_sessions = sessions[-keep:]
+                    
+                    if prune_mode == 'truncate' or (prune_mode is None and not prune):
+                        # Truncate mode - remove older sessions
+                        new_history = "# aider chat older sessions truncated\n\n" + ''.join(kept_sessions)
+                        history_path.write_text(new_history, encoding="utf-8")
+                        logger.info(f"[ai_edit] Truncated Aider chat history, keeping {keep} session(s)")
+                    else:
+                        # Summarize mode (default when prune=True and prune_mode is not 'truncate')
+                        try:
+                            # Create context directory
+                            ctx_dir = Path(ensure_snap_dir(directory_path)) / "ctx"
+                            ctx_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            # Write older sessions to file
+                            older_text = ''.join(older_sessions)
+                            older_history_path = ctx_dir / "older_history.md"
+                            older_history_path.write_text(older_text, encoding="utf-8")
+                            
+                            # Create summary file path
+                            older_summary_path = ctx_dir / "older_summary.md"
+                            
+                            # Prepare summarizer message
+                            summarizer_message = (
+                                f"Summarize the chat history in {older_history_path.name} concisely. "
+                                f"Write only the summary to {older_summary_path.name}. "
+                                "Focus on key decisions, code changes, and important context."
+                            )
+                            
+                            # Run aider to create summary
+                            summarizer_options = {
+                                "yes_always": True,
+                                "auto_commit": False,
+                                "restore_chat_history": True,  # Don't clear history during summarization
+                                "message": summarizer_message
+                            }
+                            
+                            summarizer_command = prepare_aider_command(
+                                [aider_path],
+                                [str(older_history_path.relative_to(directory_path)), str(older_summary_path.relative_to(directory_path))],
+                                summarizer_options
+                            )
+                            summarizer_command_str = ' '.join(shlex.quote(part) for part in summarizer_command)
+                            
+                            logger.info(f"[ai_edit] Running summarizer: {summarizer_command_str}")
+                            
+                            summarizer_process = await asyncio.create_subprocess_shell(
+                                summarizer_command_str,
+                                stdin=None,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                                cwd=directory_path,
+                            )
+                            
+                            summarizer_stdout, summarizer_stderr = await summarizer_process.communicate()
+                            
+                            if summarizer_process.returncode == 0 and older_summary_path.exists():
+                                summary_content = older_summary_path.read_text(encoding="utf-8").strip()
+                                if summary_content:
+                                    # Rebuild history with summary
+                                    new_history = _rebuild_history_with_summary(summary_content, kept_sessions)
+                                    history_path.write_text(new_history, encoding="utf-8")
+                                    logger.info(f"[ai_edit] Summarized Aider chat history, keeping {keep} session(s)")
+                                else:
+                                    # Fallback to truncate if summary is empty
+                                    new_history = "# aider chat older sessions truncated (summary was empty)\n\n" + ''.join(kept_sessions)
+                                    history_path.write_text(new_history, encoding="utf-8")
+                                    logger.info(f"[ai_edit] Summarized Aider chat history failed (empty summary), falling back to truncation")
+                            else:
+                                # Fallback to truncate on summarization failure
+                                new_history = f"# aider chat older sessions truncated (summarization failed)\n\n" + ''.join(kept_sessions)
+                                history_path.write_text(new_history, encoding="utf-8")
+                                logger.warning(f"[ai_edit] Summarization failed, falling back to truncation. Stderr: {summarizer_stderr.decode()}")
+                        except Exception as e:
+                            # Fallback to truncate on any exception
+                            new_history = f"# aider chat older sessions truncated (summarization error: {e})\n\n" + ''.join(kept_sessions)
+                            history_path.write_text(new_history, encoding="utf-8")
+                            logger.warning(f"[ai_edit] Summarization error, falling back to truncation: {e}")
+            except Exception as e:
+                logger.warning(f"[ai_edit] Failed to prune Aider chat history: {e}")
+    
+    # Clear Aider chat history if not continuing thread and not pruning
+    if not continue_thread and not prune:
         history_path = Path(directory_path) / ".aider.chat.history.md"
         if history_path.is_file():
             try:

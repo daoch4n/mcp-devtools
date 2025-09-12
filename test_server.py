@@ -1568,6 +1568,132 @@ async def test_ai_edit_prunes_history_when_continue_false(temp_git_repo, monkeyp
     content = history_file.read_text()
     assert content == "" or content.strip() == "# Chat History"
 
+@pytest.mark.asyncio
+async def test_ai_edit_prune_truncate_updates_history(temp_git_repo, monkeypatch):
+    """Create .aider.chat.history.md with multiple sessions; run ai_edit with prune=True and prune_mode='truncate'; assert older sessions are removed."""
+    repo, repo_path = temp_git_repo
+    
+    # Create .aider.chat.history.md with multiple sessions
+    history_file = repo_path / ".aider.chat.history.md"
+    history_content = """# aider chat started at 2023-01-01 10:00:00
+## User: First request
+Assistant: First response
+
+# aider chat started at 2023-01-01 11:00:00
+## User: Second request
+Assistant: Second response
+
+# aider chat started at 2023-01-01 12:00:00
+## User: Third request
+Assistant: Third response
+"""
+    history_file.write_text(history_content)
+    
+    # Mock asyncio.create_subprocess_shell to simulate successful Aider run
+    class SuccessProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def mock_create_subprocess_shell(*args, **kwargs):
+        return SuccessProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Set MCP_PRUNE_KEEP_SESSIONS to 1 for this test
+    monkeypatch.setenv("MCP_PRUNE_KEEP_SESSIONS", "1")
+    
+    # Run ai_edit with prune=True and prune_mode='truncate'
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=True,  # Important: continue_thread=True to avoid clearing
+        prune=True,
+        prune_mode="truncate"
+    )
+    
+    # Assert history file was updated with truncation
+    assert history_file.exists()
+    content = history_file.read_text()
+    assert "aider chat older sessions truncated" in content
+    assert "# aider chat started at 2023-01-01 12:00:00" in content  # Last session kept
+    assert "# aider chat started at 2023-01-01 11:00:00" not in content  # Previous sessions removed
+
+@pytest.mark.asyncio
+async def test_ai_edit_prune_summarize_updates_history(temp_git_repo, monkeypatch):
+    """Create .aider.chat.history.md with multiple sessions; run ai_edit with prune=True; mock summarizer to create summary; assert history is rebuilt with summary."""
+    repo, repo_path = temp_git_repo
+    
+    # Create .aider.chat.history.md with multiple sessions
+    history_file = repo_path / ".aider.chat.history.md"
+    history_content = """# aider chat started at 2023-01-01 10:00:00
+## User: First request
+Assistant: First response
+
+# aider chat started at 2023-01-01 11:00:00
+## User: Second request
+Assistant: Second response
+
+# aider chat started at 2023-01-01 12:00:00
+## User: Third request
+Assistant: Third response
+"""
+    history_file.write_text(history_content)
+    
+    # Mock asyncio.create_subprocess_shell to handle both main aider and summarizer
+    call_count = 0
+    
+    class SuccessProc:
+        def __init__(self, is_summarizer=False):
+            self.returncode = 0
+            self.is_summarizer = is_summarizer
+            
+        async def communicate(self):
+            nonlocal call_count
+            call_count += 1
+            if self.is_summarizer:
+                # Create the summary file when summarizer runs
+                ctx_dir = repo_path / ".mcp-devtools" / "ctx"
+                ctx_dir.mkdir(parents=True, exist_ok=True)
+                summary_file = ctx_dir / "older_summary.md"
+                summary_file.write_text("Summary of first two sessions: discussed initial requests and responses.")
+                return (b"Summary created", b"")
+            return (b"Applied edit to file.txt", b"")
+    
+    async def mock_create_subprocess_shell(command, *args, **kwargs):
+        # Check if this is the summarizer command
+        if "older_history.md" in command and "older_summary.md" in command:
+            return SuccessProc(is_summarizer=True)
+        return SuccessProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Set MCP_PRUNE_KEEP_SESSIONS to 1 for this test
+    monkeypatch.setenv("MCP_PRUNE_KEEP_SESSIONS", "1")
+    
+    # Run ai_edit with prune=True (default prune_mode is summarize)
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=True,  # Important: continue_thread=True to avoid clearing
+        prune=True
+    )
+    
+    # Assert history file was updated with summary
+    assert history_file.exists()
+    content = history_file.read_text()
+    assert "Summary of older chat sessions" in content
+    assert "Summary of first two sessions: discussed initial requests and responses." in content
+    assert "# aider chat started at 2023-01-01 12:00:00" in content  # Last session kept
+    assert "# aider chat started at 2023-01-01 11:00:00" not in content  # Previous sessions removed except in summary
+
 
 @pytest.mark.asyncio
 async def test_ai_edit_no_structured_report_fallback_appends_last_reply(temp_git_repo, monkeypatch):
