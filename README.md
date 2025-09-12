@@ -8,7 +8,7 @@
 
 - 🔧 `mcp-devtools` server offers a comprehensive suite of software development tools:
   -  🤖 Agentic editing (`ai_edit`)
-  -  📁 File management (`read_file`, `write_to_file`, `git_apply_diff`)
+  -  📁 File management (`read_file`, `write_to_file`)
   -  🎋 Git management (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
   -  🖥️ Terminal integration (`execute_command`)
 
@@ -232,7 +232,7 @@ You must adhere to the following five-step, iterative workflow:
 
 **Mitigation:** 
 
-*    🔨 The `write_to_file` and `git_apply_diff` tools are dynamically integrated with `tsc` (TypeScript compiler) for conditional type checking of `.js`, `.mjs`, and `.ts` files on edit. The output of `tsc --noEmit --allowJs` is provided as part of the tool's response. AI assistants should parse this output to detect any compiler errors and should not proceed with further actions if errors are reported, indicating a problem with the written code.
+*    🔨 The `write_to_file` tool is dynamically integrated with `tsc` (TypeScript compiler) for conditional type checking of `.js`, `.mjs`, and `.ts` files on edit. The output of `tsc --noEmit --allowJs` is provided as part of the tool's response. AI assistants should parse this output to detect any compiler errors and should not proceed with further actions if errors are reported, indicating a problem with the written code.
 
 **Workarounds:**
 
@@ -414,29 +414,6 @@ You must adhere to the following five-step, iterative workflow:
     "required": [
       "repo_path",
       "revision"
-    ]
-  }
-  ```
-
-### `git_apply_diff`
-- **Description:** Applies a given diff content (in unified diff format) to the working directory of the repository. This can be used to programmatically apply patches or changes.
-- **Input Schema:**
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "repo_path": {
-        "type": "string",
-        "description": "The absolute path to the Git repository's working directory."
-      },
-      "diff_content": {
-        "type": "string",
-        "description": "The diff content string to apply to the repository. This should be in a unified diff format."
-      }
-    },
-    "required": [
-      "repo_path",
-      "diff_content"
     ]
   }
   ```

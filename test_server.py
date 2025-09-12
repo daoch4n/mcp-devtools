@@ -45,7 +45,7 @@ from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 from server import (
     git_status, git_diff, git_stage_and_commit,
     git_log, git_branch, git_show,
-    git_apply_diff, read_file_content,
+    read_file_content,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
     Starlette, Route, Mount, Response, ServerSession, ClientCapabilities, RootsCapability, ListRootsResult, TextContent,
@@ -448,13 +448,12 @@ async def test_list_tools():
 @patch('server.git_log')
 @patch('server.git_branch')
 @patch('server.git_show')
-@patch('server.git_apply_diff', new_callable=AsyncMock)
 @patch('server.read_file_content')
 @patch('server.write_to_file_content', new_callable=AsyncMock)
 @patch('server.execute_custom_command', new_callable=AsyncMock)
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
-    mock_read_file_content, mock_git_apply_diff, mock_git_show,
+    mock_read_file_content, mock_git_show,
     mock_git_branch, mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
@@ -524,12 +523,6 @@ async def test_call_tool(
     mock_git_show.return_value = "Show output"
     result = list(await call_tool(GitTools.SHOW.value, {"repo_path": "/tmp/repo", "revision": "HEAD"})) # Cast to list
     assert result[0].text == "Show output"
-
-    # Test GitTools.APPLY_DIFF
-    mock_git_apply_diff.return_value = "Diff applied" # Simplified mock
-    
-    result = list(await call_tool(GitTools.APPLY_DIFF.value, {"repo_path": "/tmp/repo", "diff_content": "diff"})) # Cast to list
-    assert result[0].text == "Diff applied"
 
     # Test GitTools.READ_FILE
     mock_read_file_content.return_value = "File content"
@@ -929,70 +922,6 @@ def test_prepare_aider_command_various_cases():
     cmd = prepare_aider_command([])
     assert cmd == []
 @pytest.mark.asyncio
-async def test_git_apply_diff_cases(monkeypatch, tmp_path):
-    from server import git_apply_diff
-    import types
-
-    class DummyRepo:
-        def __init__(self, working_dir):
-            self.working_dir = working_dir
-            self.git = types.SimpleNamespace()
-            self.git.apply = self.apply
-
-        def apply(self, *args, **kwargs):
-            if "--fail" in args:
-                raise Exception("fail")
-            if "--giterr" in args:
-                from git.exc import GitCommandError
-                raise GitCommandError("apply", 1, stderr="git error")
-            return
-
-    # Patch _generate_diff_output and _run_tsc_if_applicable to avoid side effects
-    async def fake_generate_diff_output(*a, **kw):
-        return ""
-    async def fake_run_tsc_if_applicable(*a, **kw):
-        return ""
-    monkeypatch.setattr("server._generate_diff_output", fake_generate_diff_output)
-    monkeypatch.setattr("server._run_tsc_if_applicable", fake_run_tsc_if_applicable)
-
-    repo = DummyRepo(str(tmp_path))
-
-    # Case 1: Successful diff application with affected file
-    file_path = tmp_path / "file.txt"
-    file_path.write_text("old")
-    diff_content = "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new\n"
-    result = await git_apply_diff(repo, diff_content)
-    assert "Diff applied successfully" in result
-
-    # Case 2: Diff content without a/ or b/ paths (should not fail)
-    result = await git_apply_diff(repo, "random diff content")
-    assert "Diff applied successfully" in result or "Error applying diff" in result
-
-    # Case 3: full_affected_path.exists() is False
-    result = await git_apply_diff(repo, "--- a/nonexistent.txt\n+++ b/nonexistent.txt\n@@ -1 +1 @@\n-old\n+new\n")
-    assert (
-        "Diff applied successfully" in result
-        or "Error applying diff" in result
-        or "An unexpected error occurred" in result
-    )
-
-    # Case 4: GitCommandError
-    repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(
-        __import__("git").exc.GitCommandError("apply", 1, stderr="git error")
-    )
-    result = await git_apply_diff(repo, diff_content)
-    assert (
-        "GIT_COMMAND_FAILED: Failed to apply diff. Details: \n  stderr: 'git error'. Check if the diff is valid and applies cleanly to the current state of the repository."
-        in result
-    )
-
-    # Case 5: Other Exception
-    repo.git.apply = lambda *a, **kw: (_ for _ in ()).throw(Exception("fail"))
-    result = await git_apply_diff(repo, diff_content)
-    assert (
-        "UNEXPECTED_ERROR: An unexpected error occurred while applying diff: fail. AI_HINT: Check the server logs for more details or review your input."
-        in result
-    )
 def test_git_read_file_error_cases(monkeypatch):
     from server import read_file_content
     import types

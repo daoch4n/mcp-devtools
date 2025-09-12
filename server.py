@@ -583,21 +583,6 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
 
 # === AI_HINT helper builders (keep terse, agent-friendly) ===
 
-def ai_hint_git_apply_diff_error(stderr: str | None, affected_file_path: str | None) -> str:
-    extra: List[str] = []
-    low = (stderr or "").lower()
-    if "patch failed" in low or "could not apply" in low:
-        extra.append("The diff may not match the current repo state. Ensure the working tree is clean and the diff was created against the current HEAD.")
-    if "whitespace" in low:
-        extra.append("Whitespace conflicts detected. Consider re-generating the diff or removing trailing spaces.")
-    if affected_file_path:
-        extra.append(f"Verify that the file path in the diff exists: {affected_file_path} (relative to repo root).")
-    extra_hint = (" More info: " + " ".join(extra)) if extra else ""
-    return (
-        f"GIT_COMMAND_FAILED: Failed to apply diff. Details: {stderr}. "
-        f"Check if the diff is valid and applies cleanly to the current state of the repository.{extra_hint}"
-    )
-
 def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception) -> str:
     return (
         "UNEXPECTED_ERROR: Failed to read file "
@@ -908,13 +893,6 @@ class GitShow(BaseModel):
         description="Optional. If true, only show diff content without commit metadata. Defaults to false. If both show_metadata_only and show_diff_only are true, both sections will be included."
     )
 
-class GitApplyDiff(BaseModel):
-    """
-    Represents the input schema for the `git_apply_diff` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    diff_content: str = Field(description="The diff content string to apply to the repository. This should be in a unified diff format.")
-
 class GitReadFile(BaseModel):
     """
     Represents the input schema for the `read_file` tool.
@@ -1009,7 +987,6 @@ class GitTools(str, Enum):
     LOG = "git_log"
     BRANCH = "git_branch"
     SHOW = "git_show"
-    APPLY_DIFF = "git_apply_diff"
     READ_FILE = "read_file"
     WRITE_TO_FILE = "write_to_file"
     EXECUTE_COMMAND = "execute_command"
@@ -1208,72 +1185,6 @@ def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_met
             return diff_str
         else:
             return metadata_str + diff_str
-
-async def git_apply_diff(repo: git.Repo, diff_content: str) -> str:
-    """
-    Applies a given diff content to the working directory of the repository.
-    Includes a check for successful application and generates a new diff output.
-    Also runs TSC if applicable after applying the diff.
-
-    Args:
-        repo: The Git repository object.
-        diff_content: The diff string to apply.
-
-    Returns:
-        A string indicating the result of the diff application, including
-        any new diff generated and TSC output if applicable, or an error message.
-    """
-    tmp_file_path = None
-    full_affected_path = None
-    original_content = ""
-
-    # Attempt to extract affected file path from the diff content
-    match = re.search(r"--- a/(.+)", diff_content)
-    if match:
-        affected_file_path = match.group(1).strip()
-    else:
-        match = re.search(r"\+\+\+ b/(.+)", diff_content)
-        if match:
-            affected_file_path = match.group(1).strip()
-        else:
-            affected_file_path = None
-
-    if affected_file_path:
-        full_affected_path = Path(repo.working_dir) / affected_file_path
-        if full_affected_path.exists():
-            with open(full_affected_path, 'r') as f:
-                original_content = f.read()
-
-    try:
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp:
-            tmp.write(diff_content)
-            tmp_file_path = tmp.name
-        
-        repo.git.apply(
-            '--check',
-            '-3',
-            '--whitespace=fix',
-            '--allow-overlap',
-            tmp_file_path
-        )
-            
-        result_message = "Diff applied successfully"
-
-        if affected_file_path and full_affected_path:
-            with open(full_affected_path, 'r') as f:
-                new_content = f.read()
-
-            result_message += await _generate_diff_output(original_content, new_content, affected_file_path)
-            result_message += await _run_tsc_if_applicable(str(repo.working_dir), affected_file_path)
-
-        return result_message
-    except GitCommandError as gce:
-        return ai_hint_git_apply_diff_error(gce.stderr, affected_file_path)
-    except Exception as e:
-        return f"UNEXPECTED_ERROR: An unexpected error occurred while applying diff: {e}. AI_HINT: Check the server logs for more details or review your input."
-    finally:
-        if tmp_file_path and os.path.exists(tmp_file_path):
-            os.unlink(tmp_file_path)
 
 def read_file_content(repo: git.Repo, file_path: str) -> str:
     """
@@ -2160,11 +2071,6 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitShow.model_json_schema(),
         ),
         Tool(
-            name=GitTools.APPLY_DIFF,
-            description="Applies a given diff content (in unified diff format) to the working directory of the repository. This can be used to programmatically apply patches or changes.",
-            inputSchema=GitApplyDiff.model_json_schema(),
-        ),
-        Tool(
             name=GitTools.READ_FILE,
             description="Reads and returns the entire content of a specified file within the Git repository's working directory. The file path must be relative to the repository root.",
             inputSchema=GitReadFile.model_json_schema(),
@@ -2385,13 +2291,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         show_metadata_only=arguments.get("show_metadata_only", False),
                         show_diff_only=arguments.get("show_diff_only", False)
                     )
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.APPLY_DIFF:
-                    repo = git.Repo(repo_path)
-                    result = await git_apply_diff(repo, arguments["diff_content"])
                     return [TextContent(
                         type="text",
                         text=result
