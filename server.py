@@ -237,6 +237,7 @@ async def _delete_session_record_async(repo_root: str, session_id: str) -> None:
     async with _sessions_lock:
         await asyncio.to_thread(_delete_session_record, repo_root, session_id)
 
+
 def _get_ttl_seconds() -> int:
     """Get the session TTL in seconds."""
     return MCP_SESSION_TTL_SECONDS
@@ -1702,7 +1703,7 @@ async def ai_edit(
     repo_root = find_git_root(directory_path) or directory_path
     
     # Determine if we should use worktrees
-    use_worktree = MCP_EXPERIMENTAL_WORKTREES
+    use_worktree = _env_truthy(os.getenv("MCP_EXPERIMENTAL_WORKTREES"))
     # Set up workspace directory path (but don't create the worktree yet)
     workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktree else directory_path
     # Record session start (async, with lock)
@@ -1710,33 +1711,28 @@ async def ai_edit(
 
     # === Isolated Workspace Setup (US2 Step 3) ===
     if use_worktree:
-        workspace_root = ensure_snap_dir(repo_path) / "workspaces"
-        workspace_dir_path = workspace_root / effective_session_id
-        
         try:
-            workspace_root.mkdir(parents=True, exist_ok=True)
-            if not workspace_dir_path.exists():
-                # Attempt to create a worktree for this session using non-blocking subprocess
-                proc = await asyncio.create_subprocess_exec(
-                    "git", "worktree", "add", "--detach", str(workspace_dir_path),
-                    cwd=repo_path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout_bytes, stderr_bytes = await proc.communicate()
-                if proc.returncode != 0:
-                    rc = 1 if proc.returncode is None else proc.returncode
-                    raise subprocess.CalledProcessError(rc, ["git", "worktree", "add", "--detach", str(workspace_dir_path)], output=stdout_bytes, stderr=stderr_bytes)
-            directory_path = str(workspace_dir_path)
-            # Ensure recorded workspace_dir matches the final directory_path
-            workspace_dir = directory_path
-            await _record_session_update_async(repo_root, effective_session_id, workspace_dir=workspace_dir)
-            logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
-        except subprocess.CalledProcessError as e:
-            logger.debug(f"[ai_edit] Failed to create worktree workspace: {e}. Falling back to repo_path.")
-            directory_path = repo_path
+            # Ensure workspaces directory exists
+            workspaces_dir_path = _workspaces_dir(repo_root)
+            workspaces_dir_path.mkdir(parents=True, exist_ok=True)
+            
+            # Create worktree
+            proc = await asyncio.create_subprocess_exec(
+                "git", "worktree", "add", "--force", workspace_dir, "HEAD",
+                cwd=repo_root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_bytes, stderr_bytes = await proc.communicate()
+            
+            if proc.returncode == 0:
+                directory_path = workspace_dir
+                logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
+            else:
+                logger.warning(f"[ai_edit] Failed to create worktree: {stderr_bytes.decode()}. Falling back to repo_path.")
+                directory_path = repo_path
         except Exception as e:
-            logger.debug(f"[ai_edit] Unexpected error setting up workspace: {e}. Falling back to repo_path.")
+            logger.warning(f"[ai_edit] Exception during worktree creation: {e}. Falling back to repo_path.")
             directory_path = repo_path
     else:
         directory_path = repo_path
@@ -1950,16 +1946,18 @@ async def ai_edit(
         try:
             await _record_session_complete_async(repo_root, effective_session_id, success)
             
-            # If successful and using worktrees, check if we should purge the worktree
-            if success and use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):
+            # If successful, delete the session record
+            if success:
+                try:
+                    await _delete_session_record_async(repo_root, effective_session_id)
+                except Exception as e:
+                    logger.debug(f"Failed to delete session record: {e}")
+            
+            # If using worktrees, check if we should purge the worktree
+            if use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):
                 try:
                     await _purge_worktree_async(repo_root, workspace_dir)
                     await _record_session_update_async(repo_root, effective_session_id, purged_at=time.time())
-                    # Delete the session record immediately after successful purge
-                    try:
-                        await _delete_session_record_async(repo_root, effective_session_id)
-                    except Exception as e:
-                        logger.debug(f"Failed to delete session record after purge: {e}")
                 except Exception as e:
                     logger.debug(f"Failed to purge worktree: {e}")
         except Exception as e:
