@@ -1,19 +1,20 @@
 name: Bump Version
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
 
 jobs:
   bump-version:
-    if: '!contains(github.event.head_commit.message, ''ci: bump version'')'
+    if: "${{ github.event.pull_request.merged == true && contains(github.event.head_commit.message, 'ci: bump version') == false }}"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
