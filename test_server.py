@@ -1423,3 +1423,218 @@ async def test_ai_edit_worktrees_add_failure_falls_back(temp_git_repo, monkeypat
     
     # Purge may be invoked as a no-op when no worktree exists; ensure it does not raise and leaves no workspace.
     assert not workspace_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_ai_edit_aider_failure_path(temp_git_repo, monkeypatch):
+    """Simulate Aider returning non-zero exit code and stderr; assert error path."""
+    repo, repo_path = temp_git_repo
+    
+    # Mock asyncio.create_subprocess_shell to return a failed process
+    class FailedProc:
+        def __init__(self):
+            self.returncode = 1
+        async def communicate(self):
+            return (b"", b"Error: Could not connect to model")
+    
+    async def mock_create_subprocess_shell(*args, **kwargs):
+        return FailedProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Call ai_edit and capture result
+    result = await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=False
+    )
+    
+    # Assert error path - should contain the stderr content
+    assert "Error: Could not connect to model" in result
+    assert "Aider process exited with code 1" in result
+
+
+@pytest.mark.asyncio
+async def test_ai_edit_prunes_history_when_continue_false(temp_git_repo, monkeypatch):
+    """Create .aider.chat.history.md with content; run ai_edit with continue_thread=False; assert it was cleared."""
+    repo, repo_path = temp_git_repo
+    
+    # Create .aider.chat.history.md with content
+    history_file = repo_path / ".aider.chat.history.md"
+    history_content = "# Chat History\n\n## User: Initial request\n\nAssistant: Initial response\n"
+    history_file.write_text(history_content)
+    
+    # Mock asyncio.create_subprocess_shell to simulate successful Aider run
+    class SuccessProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def mock_create_subprocess_shell(*args, **kwargs):
+        return SuccessProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Run ai_edit with continue_thread=False
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=False
+    )
+    
+    # Assert history file was cleared (empty or contains only header)
+    assert history_file.exists()
+    content = history_file.read_text()
+    assert content == "" or content.strip() == "# Chat History"
+
+
+@pytest.mark.asyncio
+async def test_ai_edit_no_structured_report_fallback_appends_last_reply(temp_git_repo, monkeypatch):
+    """Provide a chat history with assistant content; run ai_edit with continue_thread=True and stdout without 'Applied edit to'; assert output contains 'Aider process completed.' and the parsed last reply."""
+    repo, repo_path = temp_git_repo
+    
+    # Create .aider.chat.history.md with assistant content
+    history_file = repo_path / ".aider.chat.history.md"
+    history_content = "# Chat History\n\n## User: Initial request\n\nAssistant: Here's my response to your request.\n"
+    history_file.write_text(history_content)
+    
+    # Mock asyncio.create_subprocess_shell to return stdout without "Applied edit to"
+    class NoStructuredReportProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Aider process completed successfully.", b"")
+    
+    async def mock_create_subprocess_shell(*args, **kwargs):
+        return NoStructuredReportProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Run ai_edit with continue_thread=True
+    result = await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=True
+    )
+    
+    # Assert output contains expected content
+    assert "Aider process completed." in result
+    assert "Here's my response to your request." in result
+
+
+@pytest.mark.asyncio
+async def test_ai_edit_worktrees_enabled_dirty_no_purge(temp_git_repo, monkeypatch):
+    """Enable MCP_EXPERIMENTAL_WORKTREES=1; simulate worktree add success; Aider success; monkeypatch _git_status_clean to False; assert workspace remains and session record not deleted (no purged_at)."""
+    repo, repo_path = temp_git_repo
+    
+    # Enable MCP_EXPERIMENTAL_WORKTREES=1
+    monkeypatch.setenv("MCP_EXPERIMENTAL_WORKTREES", "1")
+    
+    # Use a fixed session_id
+    session_id = "sess-wt-dirty"
+    workspace_dir = repo_path / ".mcp-devtools" / "workspaces" / session_id
+    
+    # Monkeypatch asyncio.create_subprocess_exec to simulate successful worktree add
+    original_create_subprocess_exec = asyncio.create_subprocess_exec
+    
+    async def mock_create_subprocess_exec(*args, **kwargs):
+        if "worktree" in args and "add" in args:
+            # Create workspace_dir
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            # Return success
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+            return mock_proc
+        return await original_create_subprocess_exec(*args, **kwargs)
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_exec)
+    
+    # Monkeypatch asyncio.create_subprocess_shell to simulate successful Aider
+    class SuccessProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def mock_create_subprocess_shell(*args, **kwargs):
+        return SuccessProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Monkeypatch _git_status_clean to return False (dirty repo)
+    monkeypatch.setattr("server._git_status_clean", lambda *args, **kwargs: False)
+    
+    # Run ai_edit
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=False,
+        session_id=session_id
+    )
+    
+    # Assert workspace remains (not purged)
+    assert workspace_dir.exists()
+    
+    # Assert session record still exists (not deleted)
+    sessions_file = repo_path / ".mcp-devtools" / "sessions.json"
+    if sessions_file.exists():
+        sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
+        assert session_id in sessions_map
+        # Assert purged_at is None (no purge occurred)
+        assert sessions_map[session_id].get("purged_at") in (None, 0)
+
+
+@pytest.mark.asyncio
+async def test_ai_edit_options_override_and_unsupported_removed(temp_git_repo, monkeypatch):
+    """Pass options with conflicting restore_chat_history and unsupported base-url; capture the command string passed to create_subprocess_shell; assert it contains '--no-restore-chat-history' (from continue_thread=False), does not contain '--restore-chat-history', and does not contain '--base-url' or '--base_url'."""
+    repo, repo_path = temp_git_repo
+    
+    # Capture the command passed to create_subprocess_shell
+    captured_command = []
+    
+    class SuccessProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def mock_create_subprocess_shell(command, *args, **kwargs):
+        captured_command.append(command)
+        return SuccessProc()
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    
+    # Run ai_edit with conflicting options and continue_thread=False
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[
+            "--restore-chat-history",  # This should be overridden
+            "--base-url", "http://example.com",  # This should be removed
+            "--base_url", "http://example.com",  # This should also be removed
+        ],
+        continue_thread=False
+    )
+    
+    # Assert command contains expected flags
+    command = captured_command[0]
+    assert "--no-restore-chat-history" in command
+    assert "--restore-chat-history" not in command
+    assert "--base-url" not in command
+    assert "--base_url" not in command
