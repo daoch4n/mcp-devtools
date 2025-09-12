@@ -38,7 +38,7 @@
     
     </details>
     
-  <details>
+    <details>
     <summary> <h4> Usage: </h4> </summary>
     
     The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
@@ -54,14 +54,13 @@
     
     Aider reads .aider.conf.yml itself. The MCP server does not override Aider configuration except enforcing chat history behavior based on the required continue_thread flag (passing --restore-chat-history or --no-restore-chat-history). Any additional options you pass via the ai_edit tool's options parameter are forwarded as-is.
 
-**Note on workspaces and Git worktrees (Experimental)**:
-- Git worktrees are EXPERIMENTAL and disabled by default.
-- Enable per-session worktrees by setting `MCP_EXPERIMENTAL_WORKTREES=1` (also accepts `true`/`yes`).
-- When enabled, `ai_edit` may create per-session worktrees under `.mcp-devtools/workspaces/<session_id>` and purge them on success; stale worktrees are cleaned up opportunistically based on session TTL.
-- Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged when disabled.
+    **Note on workspaces and Git worktrees (Experimental)**:
+      - Git worktrees are EXPERIMENTAL and disabled by default.
+      - Enable per-session worktrees by setting `MCP_EXPERIMENTAL_WORKTREES=1` (also accepts `true`/`yes`).
+      - When enabled, `ai_edit` may create per-session worktrees under `.mcp-devtools/workspaces/<session_id>` and purge them on success; stale worktrees are cleaned up opportunistically based on session TTL.
+      - Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged when disabled.
 
-
-  </details>
+    </details>
 
 ---
 
