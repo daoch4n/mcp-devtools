@@ -27,9 +27,10 @@ import asyncio
 import uuid
 import shutil
 import time
+import math
 from datetime import datetime
 from pathlib import Path, PurePath
-from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal, Set
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -68,14 +69,45 @@ MCP_EXPERIMENTAL_WORKTREES = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower(
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
-from mcp_devtools.snapshot_utils import (
-    ensure_snap_dir,
-    looks_binary_bytes,
-    now_ts,
-    sanitize_binary_markers,
-    save_snapshot,
-    snapshot_worktree,
-)
+try:
+    from mcp_devtools.snapshot_utils import (
+        ensure_snap_dir,
+        looks_binary_bytes,
+        now_ts,
+        sanitize_binary_markers,
+        save_snapshot,
+        snapshot_worktree,
+    )
+except (ImportError, ModuleNotFoundError):
+    # Define minimal fallbacks so server can start even if package missing
+    from pathlib import Path
+    import os
+    from datetime import datetime, timezone
+    def ensure_snap_dir(repo_dir: str) -> Path:
+        p = Path(repo_dir) / ".mcp-devtools"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+    def now_ts() -> str:
+        return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    def looks_binary_bytes(data: bytes) -> bool:
+        try:
+            data.decode("utf-8")
+            return False
+        except Exception:
+            return True
+    def sanitize_binary_markers(diff_text: str) -> str:
+        return diff_text
+    def snapshot_worktree(repo_dir: str, exclude_untracked: Optional[Set[str]] = None) -> str:
+        # Fallback: no snapshot available
+        return ""
+    def save_snapshot(repo_dir: str, ts: str, kind: str, content: str) -> Path:
+        d = ensure_snap_dir(repo_dir)
+        path = d / f"ai_edit_{ts}_{kind}.diff"
+        try:
+            path.write_text(content, encoding="utf-8")
+        except Exception:
+            logging.getLogger(__name__).debug(f"Failed to save snapshot to {path}")
+        return path
 from starlette.routing import Route, Mount
 from starlette.responses import Response
 from starlette.requests import Request
@@ -322,6 +354,82 @@ async def cleanup_expired_sessions_async(repo_root: str) -> None:
     async with _sessions_lock:
         await asyncio.to_thread(cleanup_expired_sessions, repo_root)
 
+
+def _read_last_aider_session_text(directory_path: str) -> str:
+    """
+    Read the Aider chat history and return the content of the last session.
+    Returns the content from the last '# aider chat started at' anchor to the end,
+    or the full content if no anchor is found, or empty string if file is missing.
+    """
+    try:
+        history_path = Path(directory_path) / ".aider.chat.history.md"
+        if not history_path.exists():
+            return ""
+        history_content = history_path.read_text(encoding="utf-8", errors="ignore")
+
+        # Find the last session
+        anchor = "# aider chat started at"
+        last_anchor_pos = history_content.rfind(anchor)
+        if last_anchor_pos != -1:
+            return history_content[last_anchor_pos:]
+        else:
+            return history_content
+    except Exception as e:
+        logger.debug(f"Failed to read Aider chat history: {e}")
+        return ""
+
+def _approx_token_count(text: str) -> int:
+    """
+    Approximate token count using the rule of thumb: tokens ≈ characters / 4
+    """
+    return math.ceil(len(text) / 4)
+
+def _split_aider_sessions(text: str) -> list[str]:
+    """
+    Split Aider chat history into sessions by the '# aider chat started at' anchor.
+    Each chunk will include the anchor line for clarity.
+    
+    Args:
+        text: The full chat history text
+        
+    Returns:
+        A list of session chunks, each starting with the anchor
+    """
+    anchor = "# aider chat started at"
+    chunks = []
+    lines = text.split('\n')
+    current_chunk: list[str] = []
+    
+    for line in lines:
+        if line.startswith(anchor) and current_chunk:
+            # Found a new session, save the previous one
+            chunks.append('\n'.join(current_chunk) + '\n')
+            current_chunk = [line]
+        else:
+            current_chunk.append(line)
+    
+    # Don't forget the last chunk
+    if current_chunk:
+        chunks.append('\n'.join(current_chunk) + '\n')
+        
+    return chunks
+
+def _rebuild_history_with_summary(summary: str, kept_sessions: list[str]) -> str:
+    """
+    Construct a new chat history with a summary block and kept sessions.
+    
+    Args:
+        summary: The summary of older sessions
+        kept_sessions: List of recent session texts to keep
+        
+    Returns:
+        The reconstructed chat history
+    """
+    # Create summary block
+    summary_block = f"# Summary of older chat sessions\n\n{summary}\n\n"
+    
+    # Combine summary with kept sessions
+    return summary_block + ''.join(kept_sessions)
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
     """
@@ -788,6 +896,14 @@ class AiEdit(BaseModel):
     session_id: str | None = Field(
         None,
         description="Optional. A session ID to associate with this edit operation. If not provided, a new UUID will be generated."
+    )
+    prune: bool = Field(
+        default=False,
+        description="Optional. Whether to prune older chat history sessions before running. Defaults to false."
+    )
+    prune_mode: Literal['summarize', 'truncate'] | None = Field(
+        None,
+        description="Optional. The pruning mode to use when prune=True. 'summarize' creates a summary of older sessions, 'truncate' removes them. Defaults to 'summarize' if prune=True and prune_mode is not specified."
     )
 
 class AiderStatus(BaseModel):
@@ -1262,6 +1378,8 @@ async def ai_edit(
     files: List[str],
     options: list[str] | None,
     continue_thread: bool,
+    prune: bool = False,
+    prune_mode: Optional[Literal['summarize', 'truncate']] = None,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -1296,8 +1414,100 @@ async def ai_edit(
         "auto_commit": False,
     }
 
-    # Prune Aider chat history if not continuing thread
-    if not continue_thread:
+    # Prune Aider chat history if requested
+    if prune:
+        history_path = Path(directory_path) / ".aider.chat.history.md"
+        if history_path.is_file():
+            try:
+                history_content = history_path.read_text(encoding="utf-8")
+                sessions = _split_aider_sessions(history_content)
+                keep = int(os.getenv('MCP_PRUNE_KEEP_SESSIONS', '1'))
+                
+                if len(sessions) > keep:
+                    older_sessions = sessions[:-keep]
+                    kept_sessions = sessions[-keep:]
+                        
+                    if prune_mode == 'truncate':
+                        # Truncate mode - remove older sessions
+                        new_history = "# aider chat older sessions truncated\n\n" + ''.join(kept_sessions)
+                        history_path.write_text(new_history, encoding="utf-8")
+                        logger.info(f"[ai_edit] Truncated Aider chat history, keeping {keep} session(s)")
+                    else:
+                        # Summarize mode (default when prune=True and prune_mode is not 'truncate')
+                        try:
+                            # Create context directory
+                            ctx_dir = Path(ensure_snap_dir(directory_path)) / "ctx"
+                            ctx_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            # Write older sessions to file
+                            older_text = ''.join(older_sessions)
+                            older_history_path = ctx_dir / "older_history.md"
+                            older_history_path.write_text(older_text, encoding="utf-8")
+                            
+                            # Create summary file path
+                            older_summary_path = ctx_dir / "older_summary.md"
+                            
+                            # Prepare summarizer message
+                            summarizer_message = (
+                                f"Summarize the chat history in {older_history_path.name} concisely. "
+                                f"Write only the summary to {older_summary_path.name}. "
+                                "Focus on key decisions, code changes, and important context."
+                            )
+                            
+                            # Run aider to create summary
+                            summarizer_options = {
+                                "yes_always": True,
+                                "auto_commit": False,
+                                "restore_chat_history": True,  # Don't clear history during summarization
+                                "message": summarizer_message
+                            }
+                            
+                            summarizer_command = prepare_aider_command(
+                                [aider_path],
+                                [str(older_history_path.relative_to(directory_path)), str(older_summary_path.relative_to(directory_path))],
+                                summarizer_options
+                            )
+                            summarizer_command_str = ' '.join(shlex.quote(part) for part in summarizer_command)
+                            
+                            logger.info(f"[ai_edit] Running summarizer: {summarizer_command_str}")
+                            
+                            summarizer_process = await asyncio.create_subprocess_shell(
+                                summarizer_command_str,
+                                stdin=None,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE,
+                                cwd=directory_path,
+                            )
+                            
+                            summarizer_stdout, summarizer_stderr = await summarizer_process.communicate()
+                            
+                            if summarizer_process.returncode == 0 and older_summary_path.exists():
+                                summary_content = older_summary_path.read_text(encoding="utf-8").strip()
+                                if summary_content:
+                                    # Rebuild history with summary
+                                    new_history = _rebuild_history_with_summary(summary_content, kept_sessions)
+                                    history_path.write_text(new_history, encoding="utf-8")
+                                    logger.info(f"[ai_edit] Summarized Aider chat history, keeping {keep} session(s)")
+                                else:
+                                    # Fallback to truncate if summary is empty
+                                    new_history = "# aider chat older sessions truncated (summary was empty)\n\n" + ''.join(kept_sessions)
+                                    history_path.write_text(new_history, encoding="utf-8")
+                                    logger.info(f"[ai_edit] Summarized Aider chat history failed (empty summary), falling back to truncation")
+                            else:
+                                # Fallback to truncate on summarization failure
+                                new_history = f"# aider chat older sessions truncated (summarization failed)\n\n" + ''.join(kept_sessions)
+                                history_path.write_text(new_history, encoding="utf-8")
+                                logger.warning(f"[ai_edit] Summarization failed, falling back to truncation. Stderr: {summarizer_stderr.decode()}")
+                        except Exception as e:
+                            # Fallback to truncate on any exception
+                            new_history = f"# aider chat older sessions truncated (summarization error: {e})\n\n" + ''.join(kept_sessions)
+                            history_path.write_text(new_history, encoding="utf-8")
+                            logger.warning(f"[ai_edit] Summarization error, falling back to truncation: {e}")
+            except Exception as e:
+                logger.warning(f"[ai_edit] Failed to prune Aider chat history: {e}")
+    
+    # Clear Aider chat history if not continuing thread and not pruning
+    if not continue_thread and not prune:
         history_path = Path(directory_path) / ".aider.chat.history.md"
         if history_path.is_file():
             try:
@@ -1357,42 +1567,47 @@ async def ai_edit(
     # Take pre-execution snapshot from workspace but save under root repo
     pre_snapshot = ""
     pre_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_pre.diff"
-    try:
-        pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
-        pre_ts = now_ts()
-        pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
-    except Exception as e:
-        logger.debug(f"[ai_edit] pre-snapshot failed: {e}")
+    if os.getenv("MCP_DISABLE_SNAPSHOTS") != "1":
+        try:
+            pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+            pre_ts = now_ts()
+            pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
+        except Exception as e:
+            logger.debug(f"[ai_edit] pre-snapshot failed: {e}")
+    else:
+        logger.debug("[ai_edit] Snapshots disabled via MCP_DISABLE_SNAPSHOTS")
 
     # ... run aider ...
 
     # Take post-execution snapshot from workspace but save under root repo
     post_snapshot = ""
     post_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_post.diff"
-    try:
-        post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
-        post_ts = now_ts()
-        post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
-    except Exception as e:
-        logger.debug(f"[ai_edit] post-snapshot failed: {e}")
-    post_ts = now_ts()
-    post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+    if os.getenv("MCP_DISABLE_SNAPSHOTS") != "1":
+        try:
+            post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+            post_ts = now_ts()
+            post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+        except Exception as e:
+            logger.debug(f"[ai_edit] post-snapshot failed: {e}")
 
-    # Compute delta between pre and post snapshots
-    try:
-        # Use difflib to compute unified diff
-        import difflib
-        delta_lines = list(difflib.unified_diff(
-            pre_snapshot.splitlines(keepends=True),
-            post_snapshot.splitlines(keepends=True),
-            fromfile=str(pre_snapshot_path.name),
-            tofile=str(post_snapshot_path.name),
-        ))
-        delta_section = "### Snapshot Delta (this run)\n\n" + "".join(delta_lines)
-        # Ensure this delta is included in the final result
-        snapshot_delta_section = delta_section
-    except Exception as e:
-        delta_section = f"\n\nError generating delta: {str(e)}"
+        # Compute delta between pre and post snapshots
+        try:
+            # Use difflib to compute unified diff
+            import difflib
+            delta_lines = list(difflib.unified_diff(
+                pre_snapshot.splitlines(keepends=True),
+                post_snapshot.splitlines(keepends=True),
+                fromfile=str(pre_snapshot_path.name),
+                tofile=str(post_snapshot_path.name),
+            ))
+            delta_section = "### Snapshot Delta (this run)\n\n" + "".join(delta_lines)
+            # Ensure this delta is included in the final result
+            snapshot_delta_section = delta_section
+        except Exception as e:
+            delta_section = f"\n\nError generating delta: {str(e)}"
+    else:
+        logger.debug("[ai_edit] Snapshots disabled via MCP_DISABLE_SNAPSHOTS")
+        snapshot_delta_section = "### Snapshot Delta (this run)\n\n<snapshots disabled>"
 
     # === Session Management ===
     # Determine effective session ID
@@ -1692,6 +1907,11 @@ async def ai_edit(
         if not structured_report_built and last_reply:
             # Legacy append when structured report isn't built
             result_message += f"\n\nAider's last reply:\n{last_reply}"
+        
+        # Add thread context usage information
+        thread_text = _read_last_aider_session_text(directory_path)
+        tokens = _approx_token_count(thread_text)
+        result_message += f"\n\n### Thread Context Usage\nApproximate tokens: {tokens}\nGuidance: Keep overall thread context under ~200k tokens. If you're approaching the limit, consider pruning older messages or calling ai_edit with continue_thread=false to truncate history."
         
         return result_message
 
