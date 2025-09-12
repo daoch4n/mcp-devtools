@@ -426,11 +426,11 @@ def _parse_aider_token_stats(text: str) -> tuple[int, int]:
             
             # Handle k/m suffixes
             if value_str.endswith('k'):
-                return int(float(value_str[:-1]) * 1000)
+                return math.ceil(float(value_str[:-1]) * 1000)
             elif value_str.endswith('m'):
-                return int(float(value_str[:-1]) * 1000000)
+                return math.ceil(float(value_str[:-1]) * 1000000)
             else:
-                return int(float(value_str))
+                return math.ceil(float(value_str))
         
         try:
             sent_tokens = parse_token_value(sent_str)
@@ -1976,7 +1976,8 @@ async def ai_edit(
                 sent_tokens, received_tokens = _parse_aider_token_stats(full_history_text)
             else:
                 sent_tokens, received_tokens = 0, 0
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to parse token stats from chat history: {e}")
             sent_tokens, received_tokens = 0, 0
         
         # For backward compatibility, still calculate tokens for last session

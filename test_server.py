@@ -2241,3 +2241,18 @@ def test_approx_token_count_fallback_when_encode_raises(monkeypatch):
     # Assert server._approx_token_count(text) == expected
     result = server._approx_token_count(text)
     assert result == expected
+
+
+def test_parse_aider_token_stats_rounds_up_fractional_values():
+    """Test that _parse_aider_token_stats rounds up fractional values"""
+    from server import _parse_aider_token_stats
+    
+    # Test string with fractional token values
+    test_text = "> Tokens: 2.6k sent, 1.2k received."
+    
+    # Call _parse_aider_token_stats
+    sent_tokens, received_tokens = _parse_aider_token_stats(test_text)
+    
+    # Assert (2600, 1200) - verifying rounding up behavior
+    assert sent_tokens == 2600
+    assert received_tokens == 1200
