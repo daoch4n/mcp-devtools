@@ -621,6 +621,50 @@ You must adhere to the following five-step, iterative workflow:
     ]
   }
 
+### `ai_sessions`
+- **Description:** List active AI editing sessions or get the status of a specific session. Can optionally run TTL cleanup to remove expired sessions when listing (cleanup=true).
+- **Input Schema:**
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "repo_path": {
+        "type": "string",
+        "description": "The absolute path to the Git repository's working directory."
+      },
+      "action": {
+        "type": "string",
+        "description": "The action to perform: 'list' sessions or get 'status' of a specific session.",
+        "enum": [
+          "list",
+          "status"
+        ]
+      },
+      "session_id": {
+        "type": "string",
+        "description": "Optional. The session ID to get status for. Required when action='status'."
+      },
+      "cleanup": {
+        "type": "boolean",
+        "default": false,
+        "description": "Optional. If true, runs TTL cleanup when listing sessions. Defaults to false."
+      }
+    },
+    "required": [
+      "repo_path",
+      "action"
+    ]
+  }
+  ```
+- **Example Usage:**
+  ```json
+  // List sessions with cleanup
+  {"repo_path": "/abs/path/to/repo", "action": "list", "cleanup": true}
+  
+  // Get status of a specific session
+  {"repo_path": "/abs/path/to/repo", "action": "status", "session_id": "<session_id>"}
+  ```
+
 </details>
 
 ## 🎧
