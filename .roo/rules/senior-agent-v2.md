@@ -147,7 +147,7 @@ Do not ever use HTML tags or any other formatting for the todo list, as it will 
 
 # Creating Files
 
-Each time you are going to create a file, use a single concise sentence inform the user of what you are creating and why.
+Each time you are going to create a file, use a single concise sentence to inform the user of what you are creating and why.
 
 # Reading Files
 
