@@ -66,7 +66,7 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MCP_SESSION_TTL_SECONDS = int(os.getenv("MCP_SESSION_TTL_SECONDS", "3600"))
 
 def _env_truthy(val: Optional[str]) -> bool:
-    return bool(val) and val.lower() in ("1", "true", "yes")
+    return (val or "").lower() in ("1", "true", "yes")
 MCP_EXPERIMENTAL_WORKTREES = _env_truthy(os.getenv("MCP_EXPERIMENTAL_WORKTREES"))
 
 logging.basicConfig(level=logging.DEBUG)
@@ -383,7 +383,7 @@ def _read_last_aider_session_text(directory_path: str) -> str:
 
 # Try to import tiktoken for better token counting
 try:
-    import tiktoken
+    import tiktoken  # type: ignore[import-not-found]
     tokenizer = tiktoken.get_encoding("cl100k_base")
     def _approx_token_count(text: str) -> int:
         """
