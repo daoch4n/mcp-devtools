@@ -30,7 +30,7 @@ import time
 import math
 from datetime import datetime
 from pathlib import Path, PurePath
-from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal, Set
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -78,7 +78,7 @@ try:
         save_snapshot,
         snapshot_worktree,
     )
-except Exception:
+except (ImportError, ModuleNotFoundError):
     # Define minimal fallbacks so server can start even if package missing
     from pathlib import Path
     import os
@@ -97,7 +97,7 @@ except Exception:
             return True
     def sanitize_binary_markers(diff_text: str) -> str:
         return diff_text
-    def snapshot_worktree(repo_dir: str, exclude_untracked=None) -> str:
+    def snapshot_worktree(repo_dir: str, exclude_untracked: Optional[Set[str]] = None) -> str:
         # Fallback: no snapshot available
         return ""
     def save_snapshot(repo_dir: str, ts: str, kind: str, content: str) -> Path:
@@ -106,7 +106,7 @@ except Exception:
         try:
             path.write_text(content, encoding="utf-8")
         except Exception:
-            pass
+            logging.getLogger(__name__).debug(f"Failed to save snapshot to {path}")
         return path
 from starlette.routing import Route, Mount
 from starlette.responses import Response
@@ -398,7 +398,7 @@ def _split_aider_sessions(text: str) -> list[str]:
     anchor = "# aider chat started at"
     chunks = []
     lines = text.split('\n')
-    current_chunk = []
+    current_chunk: list[str] = []
     
     for line in lines:
         if line.startswith(anchor) and current_chunk:
@@ -1426,8 +1426,8 @@ async def ai_edit(
                 if len(sessions) > keep:
                     older_sessions = sessions[:-keep]
                     kept_sessions = sessions[-keep:]
-                    
-                    if prune_mode == 'truncate' or (prune_mode is None and not prune):
+                        
+                    if prune_mode == 'truncate':
                         # Truncate mode - remove older sessions
                         new_history = "# aider chat older sessions truncated\n\n" + ''.join(kept_sessions)
                         history_path.write_text(new_history, encoding="utf-8")
@@ -1589,8 +1589,6 @@ async def ai_edit(
             post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
         except Exception as e:
             logger.debug(f"[ai_edit] post-snapshot failed: {e}")
-        post_ts = now_ts()
-        post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
 
         # Compute delta between pre and post snapshots
         try:
