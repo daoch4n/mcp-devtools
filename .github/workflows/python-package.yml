@@ -27,7 +27,6 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install --upgrade pip
         python -m pip install mypy build types-PyYAML
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Type check with mypy
@@ -35,7 +34,7 @@ jobs:
         mypy .
     - name: Test with pytest and generate coverage
       run: |
-        pytest --cov=server --cov=mcp_devtools --cov-report=term-missing:skip-covered --cov-report=xml
+        pytest --cov=server --cov=mcp_devtools --cov-report=term-missing:skip-covered --cov-report=xml --cov-fail-under=75
     - name: Generate coverage summaries
       run: |
         coverage json -o coverage.json
