@@ -24,6 +24,7 @@ jobs:
 
       - name: Bump version and create tag
         run: |
+          set -e
           # Extract current version
           version=$(grep -oP 'version = "\K[^"]+' pyproject.toml)
           

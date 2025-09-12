@@ -7,7 +7,7 @@ on:
 
 jobs:
   bump-version:
-    if: "!contains(github.event.head_commit.message, 'ci: bump version')"
+    if: '!contains(github.event.head_commit.message, ''ci: bump version'')'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -27,6 +27,7 @@ jobs:
 
       - name: Bump version and create tag
         run: |
+          set -e
           # Extract current version
           version=$(grep -oP 'version = "\K[^"]+' pyproject.toml)
           
