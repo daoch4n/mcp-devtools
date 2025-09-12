@@ -27,7 +27,7 @@
     ```bash
     python -m pip install aider-install && aider-install
     ```
-  - 
+    
     <details>
     <summary> <h4> Configuration: </h4> </summary>
     
@@ -36,8 +36,8 @@
     - Follow [📄 official Aider documentation](https://aider.chat/docs/config.html) for detailed descriptions of each available option.
     
     </details>
-  - 
-    <details>
+    
+  <details>
     <summary> <h4> Usage: </h4> </summary>
     
     The `ai_edit` tool provides a powerful way to make code changes using natural language. It no longer automatically commits changes. Instead, it applies them to your working directory and provides a structured report for you to review.
@@ -51,7 +51,9 @@
         *   **Next Steps:** Instructions to manually review, stage, and commit the changes.
     3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
     
-    </details>
+    Aider reads .aider.conf.yml itself. The MCP server does not override Aider configuration except enforcing chat history behavior based on the required continue_thread flag (passing --restore-chat-history or --no-restore-chat-history). Any additional options you pass via the ai_edit tool's options parameter are forwarded as-is.
+    
+  </details>
 
 ---
 

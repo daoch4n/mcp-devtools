@@ -1055,8 +1055,8 @@ async def test_snapshot_delta_creation(monkeypatch, fake_aider_proc):
         assert result.index("-initial") < result.index("+modified")
 
 @pytest.mark.asyncio
-async def test_ai_session_tools_list_status_resume(monkeypatch, fake_aider_proc):
-    """Test ai_session tools: list, status, and resume"""
+async def test_ai_sessions_tool_list_status_last_session_id(monkeypatch, fake_aider_proc):
+    """Test ai_sessions tool: list, status, and .aider.last_session_id support"""
     with tempfile.TemporaryDirectory() as tmpdir:
         repo_path = Path(tmpdir)
         repo = git.Repo.init(repo_path)
@@ -1081,8 +1081,8 @@ async def test_ai_session_tools_list_status_resume(monkeypatch, fake_aider_proc)
                 continue_thread=False,
             )
 
-        # Test ai_session_list
-        list_result = list(await call_tool("ai_session_list", {"repo_path": str(repo_path)}))
+        # Test ai_sessions list
+        list_result = list(await call_tool("ai_sessions", {"repo_path": str(repo_path), "action": "list"}))
         session_payload = json.loads(list_result[0].text)
         sessions_list = session_payload.get("sessions", [])
         assert len(sessions_list) >= 1
@@ -1091,14 +1091,15 @@ async def test_ai_session_tools_list_status_resume(monkeypatch, fake_aider_proc)
         session_id = sessions_list[0].get('id') or sessions_list[0].get('session_id')
         assert session_id is not None
 
-        # Test ai_session_status
-        status_result = list(await call_tool("ai_session_status", {"repo_path": str(repo_path), "session_id": session_id}))
+        # Test ai_sessions status
+        status_result = list(await call_tool("ai_sessions", {"repo_path": str(repo_path), "action": "status", "session_id": session_id}))
         status_data = json.loads(status_result[0].text)
         assert 'status' in status_data or 'session_id' in status_data
 
-        # Test ai_session_resume
-        resume_result = list(await call_tool("ai_session_resume", {"repo_path": str(repo_path), "session_id": session_id}))
-        assert session_id in resume_result[0].text
+        # Test .aider.last_session_id file exists and contains the session id
+        last_session_file = repo_path / ".aider.last_session_id"
+        assert last_session_file.exists()
+        assert last_session_file.read_text().strip() == session_id
 
 @pytest.mark.asyncio
 async def test_auto_apply_workspace_changes_to_root(monkeypatch, fake_aider_proc):

@@ -29,7 +29,7 @@ import shutil
 import time
 from datetime import datetime
 from pathlib import Path, PurePath
-from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -813,12 +813,14 @@ class AiSessionStatus(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     session_id: str = Field(description="The ID of the session to retrieve.")
 
-class AiSessionResume(BaseModel):
+class AiSessions(BaseModel):
     """
-    Represents the input schema for the `ai_session_resume` tool.
+    Represents the input schema for the `ai_sessions` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    session_id: str = Field(description="The ID of the session to resume.")
+    action: Literal['list', 'status'] = Field(description="The action to perform: 'list' to list all sessions or 'status' to get details of a specific session.")
+    session_id: Optional[str] = Field(None, description="The ID of the session to retrieve (required for 'status' action).")
+    cleanup: bool = Field(False, description="If true, opportunistically run TTL cleanup before returning.")
 
 class GitTools(str, Enum):
     """
@@ -836,9 +838,7 @@ class GitTools(str, Enum):
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
     AIDER_STATUS = "aider_status"
-    AI_SESSION_LIST = "ai_session_list"
-    AI_SESSION_STATUS = "ai_session_status"
-    AI_SESSION_RESUME = "ai_session_resume"
+    AI_SESSIONS = "ai_sessions"
 
 def git_status(repo: git.Repo) -> str:
     """
@@ -1395,7 +1395,29 @@ async def ai_edit(
 
     # === Session Management ===
     # Determine effective session ID
-    effective_session_id = session_id if session_id else _generate_session_id()
+    if session_id:
+        effective_session_id = session_id
+    else:
+        # Try to read from .aider.last_session_id file
+        last_session_file = Path(directory_path) / ".aider.last_session_id"
+        try:
+            if last_session_file.exists():
+                last_session_id = last_session_file.read_text().strip()
+                if last_session_id:
+                    effective_session_id = last_session_id
+                else:
+                    effective_session_id = _generate_session_id()
+            else:
+                effective_session_id = _generate_session_id()
+        except Exception:
+            effective_session_id = _generate_session_id()
+    
+    # Write the effective session ID to .aider.last_session_id
+    try:
+        last_session_file = Path(directory_path) / ".aider.last_session_id"
+        last_session_file.write_text(effective_session_id)
+    except Exception as e:
+        logger.debug(f"Failed to write .aider.last_session_id: {e}")
     
     # Find the git root or use the directory path
     repo_root = find_git_root(directory_path) or directory_path
@@ -1762,51 +1784,6 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-async def ai_session_list(repo_path: str) -> str:
-    """
-    List all known sessions from the session store.
-
-    Args:
-        repo_path: The path to the repository's working directory.
-
-    Returns:
-        A JSON string containing the list of session records.
-    """
-    repo_root = find_git_root(repo_path) or repo_path
-    sessions = await _load_sessions_async(repo_root)
-    return json.dumps({"sessions": list(sessions.values())}, indent=2)
-
-async def ai_session_status(repo_path: str, session_id: str) -> str:
-    """
-    Get a single session record by ID.
-
-    Args:
-        repo_path: The path to the repository's working directory.
-        session_id: The ID of the session to retrieve.
-
-    Returns:
-        A JSON string containing the session record or an error message.
-    """
-    repo_root = find_git_root(repo_path) or repo_path
-    sessions = await _load_sessions_async(repo_root)
-    session = sessions.get(session_id)
-    if session:
-        return json.dumps(session, indent=2)
-    else:
-        return json.dumps({"error": "Session not found"}, indent=2)
-
-async def ai_session_resume(repo_path: str, session_id: str) -> str:
-    """
-    Produce guidance for resuming a session.
-
-    Args:
-        repo_path: The path to the repository's working directory.
-        session_id: The ID of the session to resume.
-
-    Returns:
-        A plain text instruction for resuming the session.
-    """
-    return f"To resume this session, call ai_edit with session_id='{session_id}' and continue_thread=true."
 
 mcp_server: Server[ServerSession] = Server("mcp-git")  # Server's generic signature is not compatible with the expected type due to type system limitations.
 
@@ -1899,19 +1876,9 @@ async def list_tools() -> list[Tool]:
             inputSchema=AiderStatus.model_json_schema(),
         ),
         Tool(
-            name=GitTools.AI_SESSION_LIST,
-            description="List all known AI editing sessions from the session store.",
-            inputSchema=AiSessionList.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.AI_SESSION_STATUS,
-            description="Get detailed information about a specific AI editing session by ID.",
-            inputSchema=AiSessionStatus.model_json_schema(),
-        ),
-        Tool(
-            name=GitTools.AI_SESSION_RESUME,
-            description="Get instructions for resuming a specific AI editing session.",
-            inputSchema=AiSessionResume.model_json_schema(),
+            name=GitTools.AI_SESSIONS,
+            description="Unified tool for managing AI editing sessions. Can list all sessions or get details of a specific session.",
+            inputSchema=AiSessions.model_json_schema(),
         )
     ]
 
@@ -2164,26 +2131,43 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         type="text",
                         text=result
                     )]
-                case GitTools.AI_SESSION_LIST:
-                    result = await ai_session_list(str(repo_path))
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.AI_SESSION_STATUS:
-                    session_id = arguments["session_id"]
-                    result = await ai_session_status(str(repo_path), session_id)
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
-                case GitTools.AI_SESSION_RESUME:
-                    session_id = arguments["session_id"]
-                    result = await ai_session_resume(str(repo_path), session_id)
-                    return [TextContent(
-                        type="text",
-                        text=result
-                    )]
+                case GitTools.AI_SESSIONS:
+                    repo_root = find_git_root(str(repo_path)) or str(repo_path)
+                    
+                    # Run cleanup if requested
+                    if arguments.get("cleanup", False):
+                        await cleanup_expired_sessions_async(repo_root)
+                    
+                    action = arguments["action"]
+                    if action == "list":
+                        sessions = await _load_sessions_async(repo_root)
+                        result = json.dumps({"sessions": list(sessions.values())}, indent=2)
+                        return [TextContent(
+                            type="text",
+                            text=result
+                        )]
+                    elif action == "status":
+                        session_id = arguments.get("session_id")
+                        if not session_id:
+                            return [TextContent(
+                                type="text",
+                                text=json.dumps({"error": "session_id is required for 'status' action"}, indent=2)
+                            )]
+                        sessions = await _load_sessions_async(repo_root)
+                        session = sessions.get(session_id)
+                        if session:
+                            result = json.dumps(session, indent=2)
+                        else:
+                            result = json.dumps({"error": "Session not found"}, indent=2)
+                        return [TextContent(
+                            type="text",
+                            text=result
+                        )]
+                    else:
+                        return [TextContent(
+                            type="text",
+                            text=f"INVALID_ACTION: Unknown action '{action}'. Valid actions are 'list' and 'status'."
+                        )]
                 case _:
                     raise ValueError(f"Unknown tool: {name}")
 
