@@ -53,7 +53,14 @@
     3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
     
     Aider reads .aider.conf.yml itself. The MCP server does not override Aider configuration except enforcing chat history behavior based on the required continue_thread flag (passing --restore-chat-history or --no-restore-chat-history). Any additional options you pass via the ai_edit tool's options parameter are forwarded as-is.
-    
+
+**Note on workspaces and Git worktrees (Experimental)**:
+- Git worktrees are EXPERIMENTAL and disabled by default.
+- Enable per-session worktrees by setting `MCP_EXPERIMENTAL_WORKTREES=1` (also accepts `true`/`yes`).
+- When enabled, `ai_edit` may create per-session worktrees under `.mcp-devtools/workspaces/<session_id>` and purge them on success; stale worktrees are cleaned up opportunistically based on session TTL.
+- Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged when disabled.
+
+
   </details>
 
 ---
@@ -97,15 +104,6 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
   }
 }
 ```
-
-> Note on workspaces and Git worktrees (Experimental)
->
-> - Git worktrees are EXPERIMENTAL and disabled by default.
-> - Enable per-session worktrees by setting `MCP_EXPERIMENTAL_WORKTREES=1` (also accepts `true`/`yes`).
-> - When enabled, `ai_edit` may create per-session worktrees under `.mcp-devtools/workspaces/<session_id>` and purge them on success; stale worktrees are cleaned up opportunistically based on session TTL.
-> - Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged when disabled.
-
-## 🤖 Generic Workflow
 
 https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 
@@ -174,13 +172,11 @@ You must adhere to the following five-step, iterative workflow:
 
 </details>
 
-## 🦘 [Roo](https://github.com/RooCodeInc/Roo-Code) Workflow
+💬 *But I'm too lazy to copy paste prompts myself!*
 
-ℹ️ To ensure agent will follow rules, enable `power steering` in Roo Code's `experimental` settings.  
+<img width="1408" height="1502" alt="meme-imageonline co-merged" src="https://github.com/user-attachments/assets/b6251406-e120-47bc-bf75-3e844919ea7c" />
 
-<img width="1827" height="994" alt="image" src="https://github.com/user-attachments/assets/4e3f3e1d-763d-4dd2-ac67-9f25b8178c3b" />
-
-### 😻 Vibe-Driven Dev Flow: inspired by [pure vibes](https://en.wikipedia.org/wiki/Vibe_coding) 🦘, optimized for Vibing human-out-of-loop
+### 😻 Prompt-Driven Dev Flow: inspired by [pure vibes](https://github.com/RooCodeInc/Roo-Code) 🦘, optimized for Vibing human-out-of-loop
 
 <details>
 <summary> <h4> 🪪 Show Description </h4> </summary>
@@ -190,7 +186,6 @@ You must adhere to the following five-step, iterative workflow:
 </details>
 
 ### 🙀 Spec-Driven Dev Flow: inspired by [spooky vibes](https://kiro.dev) 👻, optimized for Agile human-in-the-loop
-
 <details>
 <summary> <h4> 🪪 Show Description </h4> </summary>
 
@@ -218,9 +213,14 @@ You must adhere to the following five-step, iterative workflow:
 
 ## 🙈 Security Considerations
 
+<details>
+<summary> <h4> ⚠️ Show Disclaimer </h4> </summary>
+
 - 🛡️ For automated workflows, always run MCP Servers in isolated environments (🐧[Firejail](https://github.com/netblue30/firejail) or 🪟[Sandboxie](https://github.com/sandboxie-plus/Sandboxie))
 - 🗃️ Filesystem access boundaries are maintained via passing `repo_path` to every tool call, so AI assistant only has read/write access to files in the current workspace (relative to any path AI decides to pass as `repo_path` , make sure system prompt is solid on cwd use).
 - ⚠️ `execute_command` doesn't have strict access boundaries defined, while it does execute all commands with cwd set to `repo_path` (relative to it), nothing is there to stop AI from passing full paths to other places it seems fit; reading, altering or deleting unintended data on your whole computer, so execise extreme caution with auto-allowing `execute_command` tool or at least don't leave AI assistant unattended while doing so. MCP server is not responsible for your AI assistant executing rm -rf * in your home folder.
+
+</details>
 
 ## ❔ FAQ
 
@@ -684,6 +684,6 @@ You must adhere to the following five-step, iterative workflow:
 
 </details>
 
-## 🎧
+💬 *But I'm too lazy to even read this all!*
 
 https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
