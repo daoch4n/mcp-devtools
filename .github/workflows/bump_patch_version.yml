@@ -1,6 +1,7 @@
 name: Bump Version
 
 on:
+  workflow_dispatch:
   pull_request:
     types: [closed]
     branches:
