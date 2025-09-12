@@ -63,7 +63,7 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 # Session management constants
 MCP_SESSION_TTL_SECONDS = int(os.getenv("MCP_SESSION_TTL_SECONDS", "3600"))
-MCP_USE_WORKTREES = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
+MCP_EXPERIMENTAL_WORKTREES = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower() in ("1", "true", "yes")
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -1401,7 +1401,7 @@ async def ai_edit(
     repo_root = find_git_root(directory_path) or directory_path
     
     # Determine if we should use worktrees
-    use_worktree = os.getenv("MCP_USE_WORKTREES", "1") not in ("0", "false", "False")
+    use_worktree = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower() in ("1", "true", "yes")
     # Set up workspace directory path (but don't create the worktree yet)
     workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktree else directory_path
     # Record session start (async, with lock)

@@ -19,13 +19,15 @@
 - Track and show current ai_edit operation status in next ai_edit tool output.
 - Add session ID to the output of the ai_edit tool so LLM will be aware of which session to resume.
 
-## User Story 3: Automatic Worktree Management  
+## User Story 3: Automatic Worktree Management (Experimental)  
 **As a** developer  
 **I want** automatic Git worktree creation for each operation  
 **So that** I have a clean environment for each task  
 
 **Acceptance Criteria:**  
-- Create temporary worktrees for each `ai_edit` execution  
+- Git worktree creation is EXPERIMENTAL and disabled by default
+- Opt-in via `MCP_EXPERIMENTAL_WORKTREES=1`
+- When enabled, create temporary worktrees for each `ai_edit` execution
 - Automatically clean up worktrees after successful operations  
 
 ## User Story 4: Change Context Awareness  

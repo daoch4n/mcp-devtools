@@ -1233,3 +1233,113 @@ async def test_ttl_cleanup_deletes_expired_records(monkeypatch, fake_aider_proc)
         if sessions_file.exists():
             sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
             assert "expired-session-123" not in sessions_map
+
+@pytest.mark.asyncio
+async def test_ai_edit_worktrees_disabled_by_default(temp_git_repo, monkeypatch):
+    """Ensure that when MCP_EXPERIMENTAL_WORKTREES is not set (default), ai_edit runs without creating a workspace dir."""
+    repo, repo_path = temp_git_repo
+    
+    # Monkeypatch asyncio.create_subprocess_shell to simulate aider success
+    class FakeProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def _fake_shell_proc(*args, **kwargs):
+        return FakeProc()
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", _fake_shell_proc)
+    
+    # Call ai_edit with a fixed session_id
+    session_id = "sess-default-off"
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=False,
+        session_id=session_id
+    )
+    
+    # Assert that .mcp-devtools/workspaces/sess-default-off does not exist
+    workspace_dir = repo_path / ".mcp-devtools" / "workspaces" / session_id
+    assert not workspace_dir.exists()
+
+@pytest.mark.asyncio
+async def test_ai_edit_worktrees_enabled_creates_and_purges(temp_git_repo, monkeypatch):
+    """With MCP_EXPERIMENTAL_WORKTREES=1, ensure ai_edit attempts to create a worktree workspace and purges it on success."""
+    repo, repo_path = temp_git_repo
+    
+    # Set env MCP_EXPERIMENTAL_WORKTREES=1
+    monkeypatch.setenv("MCP_EXPERIMENTAL_WORKTREES", "1")
+    
+    # Use a known session_id
+    session_id = "sess-wt-1"
+    workspace_dir = repo_path / ".mcp-devtools" / "workspaces" / session_id
+    
+    # Track if worktree was created
+    worktree_created = False
+    
+    # Monkeypatch asyncio.create_subprocess_exec to intercept 'git worktree add'
+    original_create_subprocess_exec = asyncio.create_subprocess_exec
+    
+    async def mock_create_subprocess_exec(*args, **kwargs):
+        nonlocal worktree_created
+        if "worktree" in args and "add" in args:
+            # Create workspace_dir before returning success
+            workspace_dir.mkdir(parents=True, exist_ok=True)
+            worktree_created = True
+            # Return a mock process with returncode 0
+            mock_proc = MagicMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+            return mock_proc
+        return await original_create_subprocess_exec(*args, **kwargs)
+    
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_exec)
+    
+    # Monkeypatch asyncio.create_subprocess_shell to simulate aider success
+    class FakeProc:
+        def __init__(self):
+            self.returncode = 0
+        async def communicate(self):
+            return (b"Applied edit to file.txt", b"")
+    
+    async def _fake_shell_proc(*args, **kwargs):
+        return FakeProc()
+    monkeypatch.setattr(asyncio, "create_subprocess_shell", _fake_shell_proc)
+    
+    # Monkeypatch server._git_status_clean to return True
+    monkeypatch.setattr("server._git_status_clean", lambda *args, **kwargs: True)
+    
+    # Monkeypatch server._purge_worktree_async to actually remove the workspace_dir
+    async def mock_purge_worktree_async(repo_root, workspace_path):
+        nonlocal worktree_created
+        if worktree_created and Path(workspace_path).exists():
+            shutil.rmtree(workspace_path)
+    
+    monkeypatch.setattr("server._purge_worktree_async", mock_purge_worktree_async)
+    
+    # Call ai_edit with that session_id
+    await ai_edit(
+        repo_path=str(repo_path),
+        message="test edit",
+        session=MagicMock(),
+        files=["file.txt"],
+        options=[],
+        continue_thread=False,
+        session_id=session_id
+    )
+    
+    # Assert workspace_dir was created during run
+    assert worktree_created
+    
+    # Assert workspace_dir is removed (purged) after completion
+    assert not workspace_dir.exists()
+    
+    # Assert the sessions.json no longer contains this session_id
+    sessions_file = repo_path / ".mcp-devtools" / "sessions.json"
+    if sessions_file.exists():
+        sessions_map = json.loads(sessions_file.read_text()) if sessions_file.read_text().strip() else {}
+        assert session_id not in sessions_map

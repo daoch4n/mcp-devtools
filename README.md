@@ -95,11 +95,12 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 }
 ```
 
-> Note on workspaces and Git worktrees
+> Note on workspaces and Git worktrees (Experimental)
 >
-> - By default, `ai_edit` uses per-session Git worktrees to isolate Aider chat history and execution context.
-> - Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged.
-> - To opt out of worktree usage, set the environment variable `MCP_USE_WORKTREES=0` before running the server.
+> - Git worktrees are EXPERIMENTAL and disabled by default.
+> - Enable per-session worktrees by setting `MCP_EXPERIMENTAL_WORKTREES=1` (also accepts `true`/`yes`).
+> - When enabled, `ai_edit` may create per-session worktrees under `.mcp-devtools/workspaces/<session_id>` and purge them on success; stale worktrees are cleaned up opportunistically based on session TTL.
+> - Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged when disabled.
 
 ## 🤖 Generic Workflow
 
