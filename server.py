@@ -869,8 +869,8 @@ class GitBranch(BaseModel):
     Input schema for the `git_branch` tool.
     """
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    action: str = Field(description="The branch operation to perform: 'create', 'checkout', 'rename', or 'list'.")
-    branch_name: Optional[str] = Field(None, description="The name of the branch to create, checkout, or rename. Required for 'create', 'checkout', and 'rename' actions; optional for 'list'.")
+    action: Literal['create', 'rename', 'list'] = Field(description="The branch operation to perform: 'create', 'rename', or 'list'.")
+    branch_name: Optional[str] = Field(None, description="The name of the branch to create or rename. Required for 'create' and 'rename' actions; optional for 'list'.")
     base_branch: Optional[str] = Field(None, description="Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD.")
     new_name: Optional[str] = Field(None, description="Optional. The new name for the branch when action='rename'.")
 
@@ -1072,10 +1072,9 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
     return log
 
 def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base_branch: str | None = None, new_name: str | None = None) -> str:
-    """Create, checkout, rename, or list branches on the given repo.
+    """Create, rename, or list branches on the given repo.
 
     - action='create': creates branch_name at base_branch (or current HEAD if None)
-    - action='checkout': checks out branch_name
     - action='rename': renames branch_name to new_name
     - action='list': lists all branches with current branch marked
     """
@@ -1088,11 +1087,6 @@ def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base
         else:
             repo.create_head(branch_name)
             return f"Created branch '{branch_name}'"
-    elif action == 'checkout':
-        if not branch_name:
-            raise ValueError("branch_name is required for 'checkout' action")
-        repo.git.checkout(branch_name)
-        return f"Switched to branch '{branch_name}'"
     elif action == 'rename':
         if not branch_name:
             raise ValueError("branch_name is required for 'rename' action")
@@ -1114,7 +1108,7 @@ def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base
                 branches.append(f"  {head.name}")
         return "Branches:\n" + "\n".join(branches)
     else:
-        raise ValueError("Invalid action. Must be 'create', 'checkout', 'rename', or 'list'.")
+        raise ValueError("Invalid action. Must be 'create', 'rename', or 'list'.")
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
@@ -2062,7 +2056,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name=GitTools.BRANCH,
-            description="Create, checkout, rename, or list Git branches. Action may be 'create' with optional base_branch, 'checkout', 'rename' with new_name, or 'list' to show all branches with current marked by '*'.",
+            description="Create, rename, or list Git branches. Action may be 'create' with optional base_branch, 'rename' with new_name, or 'list' to show all branches with current marked by '*'.",
             inputSchema=GitBranch.model_json_schema(),
         ),
         Tool(

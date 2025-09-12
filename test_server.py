@@ -183,12 +183,6 @@ def test_git_branch_create(temp_git_repo):
     assert "Created branch 'another_branch' from 'new_branch'" in result
     assert 'another_branch' in repo.heads
 
-def test_git_branch_checkout(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    repo.create_head('checkout_branch')
-    result = git_branch(repo, 'checkout', 'checkout_branch')
-    assert "Switched to branch 'checkout_branch'" in result
-    assert repo.active_branch.name == 'checkout_branch'
 
 def test_git_branch_rename(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -202,7 +196,7 @@ def test_git_branch_list(temp_git_repo):
     repo, repo_path = temp_git_repo
     git_branch(repo, 'create', 'a')
     git_branch(repo, 'create', 'b')
-    git_branch(repo, 'checkout', 'b')
+    repo.git.checkout('b')
     listing = git_branch(repo, 'list')
     assert 'a' in listing and 'b' in listing
     assert '* b' in listing or '*  b' in listing or '* b' in listing.replace('  ', ' ')
@@ -503,11 +497,6 @@ async def test_call_tool(
     mock_git_branch.return_value = "Branch created"
     result = list(await call_tool(GitTools.BRANCH.value, {"repo_path": "/tmp/repo", "action": "create", "branch_name": "new_branch"})) # Cast to list
     assert result[0].text == "Branch created"
-
-    # Test GitTools.BRANCH checkout
-    mock_git_branch.return_value = "Checked out"
-    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path": "/tmp/repo", "action": "checkout", "branch_name": "dev"})) # Cast to list
-    assert result[0].text == "Checked out"
 
     # Test GitTools.BRANCH rename
     mock_git_branch.return_value = "Renamed"
