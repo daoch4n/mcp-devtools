@@ -64,7 +64,10 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 # Session management constants
 MCP_SESSION_TTL_SECONDS = int(os.getenv("MCP_SESSION_TTL_SECONDS", "3600"))
-MCP_EXPERIMENTAL_WORKTREES = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower() in ("1", "true", "yes")
+
+def _env_truthy(val: Optional[str]) -> bool:
+    return (val or "").lower() in ("1", "true", "yes")
+MCP_EXPERIMENTAL_WORKTREES = _env_truthy(os.getenv("MCP_EXPERIMENTAL_WORKTREES"))
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -234,6 +237,7 @@ async def _delete_session_record_async(repo_root: str, session_id: str) -> None:
     async with _sessions_lock:
         await asyncio.to_thread(_delete_session_record, repo_root, session_id)
 
+
 def _get_ttl_seconds() -> int:
     """Get the session TTL in seconds."""
     return MCP_SESSION_TTL_SECONDS
@@ -378,11 +382,67 @@ def _read_last_aider_session_text(directory_path: str) -> str:
         logger.debug(f"Failed to read Aider chat history: {e}")
         return ""
 
-def _approx_token_count(text: str) -> int:
+# Try to import tiktoken for better token counting
+try:
+    import tiktoken  # type: ignore[import-not-found]
+    tokenizer = tiktoken.get_encoding("cl100k_base")
+    def _approx_token_count(text: str) -> int:
+        """
+        Count tokens using tiktoken when available, otherwise fall back to character-based approximation.
+        """
+        try:
+            return len(tokenizer.encode(text))
+        except Exception:
+            # Fallback to character-based approximation if tiktoken fails
+            return math.ceil(len(text) / 4)
+except ImportError:
+    def _approx_token_count(text: str) -> int:
+        """
+        Approximate token count using the rule of thumb: tokens ≈ characters / 4
+        """
+        return math.ceil(len(text) / 4)
+
+def _parse_aider_token_stats(text: str) -> tuple[int, int]:
     """
-    Approximate token count using the rule of thumb: tokens ≈ characters / 4
+    Parse Aider token statistics from chat history text.
+    Looks for patterns like "> Tokens: 21k sent, 2.6k received."
+    
+    Args:
+        text: The Aider chat history text
+        
+    Returns:
+        A tuple of (sent_tokens, received_tokens) as integers
     """
-    return math.ceil(len(text) / 4)
+    total_sent = 0
+    total_received = 0
+    
+    # Pattern to match token stats lines
+    pattern = r"> Tokens: ([\d\.km,]+) sent, ([\d\.km,]+) received"
+    matches = re.findall(pattern, text, re.IGNORECASE)
+    
+    for sent_str, received_str in matches:
+        def parse_token_value(value_str: str) -> int:
+            # Remove commas and convert to lowercase
+            value_str = value_str.replace(',', '').lower()
+            
+            # Handle k/m suffixes
+            if value_str.endswith('k'):
+                return math.ceil(float(value_str[:-1]) * 1000)
+            elif value_str.endswith('m'):
+                return math.ceil(float(value_str[:-1]) * 1000000)
+            else:
+                return math.ceil(float(value_str))
+        
+        try:
+            sent_tokens = parse_token_value(sent_str)
+            received_tokens = parse_token_value(received_str)
+            total_sent += sent_tokens
+            total_received += received_tokens
+        except ValueError:
+            # Skip invalid token values
+            continue
+    
+    return (total_sent, total_received)
 
 def _split_aider_sessions(text: str) -> list[str]:
     """
@@ -1389,6 +1449,10 @@ async def ai_edit(
     AI pair programming tool for making targeted code changes using Aider.
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
     """
+    start_time = time.time()
+    touched_files: Set[str] = set()
+    aider_stderr = ""
+
     aider_path = aider_path or "aider"
 
     logger.info(f"Running aider in directory: {repo_path}")
@@ -1639,7 +1703,7 @@ async def ai_edit(
     repo_root = find_git_root(directory_path) or directory_path
     
     # Determine if we should use worktrees
-    use_worktree = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower() in ("1", "true", "yes")
+    use_worktree = _env_truthy(os.getenv("MCP_EXPERIMENTAL_WORKTREES"))
     # Set up workspace directory path (but don't create the worktree yet)
     workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktree else directory_path
     # Record session start (async, with lock)
@@ -1647,33 +1711,29 @@ async def ai_edit(
 
     # === Isolated Workspace Setup (US2 Step 3) ===
     if use_worktree:
-        workspace_root = ensure_snap_dir(repo_path) / "workspaces"
-        workspace_dir_path = workspace_root / effective_session_id
-        
         try:
-            workspace_root.mkdir(parents=True, exist_ok=True)
-            if not workspace_dir_path.exists():
-                # Attempt to create a worktree for this session using non-blocking subprocess
-                proc = await asyncio.create_subprocess_exec(
-                    "git", "worktree", "add", "--detach", str(workspace_dir_path),
-                    cwd=repo_path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout_bytes, stderr_bytes = await proc.communicate()
-                if proc.returncode != 0:
-                    rc = 1 if proc.returncode is None else proc.returncode
-                    raise subprocess.CalledProcessError(rc, ["git", "worktree", "add", "--detach", str(workspace_dir_path)], output=stdout_bytes, stderr=stderr_bytes)
-            directory_path = str(workspace_dir_path)
-            # Ensure recorded workspace_dir matches the final directory_path
-            workspace_dir = directory_path
-            await _record_session_update_async(repo_root, effective_session_id, workspace_dir=workspace_dir)
-            logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
-        except subprocess.CalledProcessError as e:
-            logger.debug(f"[ai_edit] Failed to create worktree workspace: {e}. Falling back to repo_path.")
-            directory_path = repo_path
+            # Ensure workspaces directory exists
+            workspaces_dir_path = _workspaces_dir(repo_root)
+            workspaces_dir_path.mkdir(parents=True, exist_ok=True)
+            
+            # Create worktree
+            proc = await asyncio.create_subprocess_exec(
+                "git", "worktree", "add", "--force", workspace_dir, "HEAD",
+                cwd=repo_root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout_bytes, stderr_bytes = await proc.communicate()
+            
+            if proc.returncode == 0:
+                Path(workspace_dir).mkdir(parents=True, exist_ok=True)
+                directory_path = workspace_dir
+                logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
+            else:
+                logger.warning(f"[ai_edit] Failed to create worktree: {stderr_bytes.decode()}. Falling back to repo_path.")
+                directory_path = repo_path
         except Exception as e:
-            logger.debug(f"[ai_edit] Unexpected error setting up workspace: {e}. Falling back to repo_path.")
+            logger.warning(f"[ai_edit] Exception during worktree creation: {e}. Falling back to repo_path.")
             directory_path = repo_path
     else:
         directory_path = repo_path
@@ -1719,7 +1779,7 @@ async def ai_edit(
 
         stdout_bytes, stderr_bytes = await process.communicate()
         stdout = stdout_bytes.decode('utf-8')
-        stderr = stderr_bytes.decode('utf-8')
+        aider_stderr = stderr_bytes.decode('utf-8')
 
         # Post-snapshot for this ai_edit run (User Story 1)
         try:
@@ -1742,7 +1802,7 @@ async def ai_edit(
         
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
-            result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
+            result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{aider_stderr}"
         else:
             # Apply workspace changes to root repo if using worktrees and feature is enabled
             apply_to_root = os.getenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1") != "0"
@@ -1830,6 +1890,16 @@ async def ai_edit(
                     # Join all parts with a newline. This ensures separation between diff blocks.
                     final_diff_combined = "\n".join(all_diff_parts).strip()
 
+                    # Extract touched files from the diff
+                    for line in final_diff_combined.split('\n'):
+                        if line.startswith('+++ b/'):
+                            touched_file = line[6:]  # Remove '+++ b/' prefix
+                            touched_files.add(touched_file)
+                    
+                    # Add untracked files to touched files
+                    for untracked_file in new_untracked:
+                        touched_files.add(untracked_file)
+
                     # Log the final diff length and a preview for diagnostics
                     preview = (final_diff_combined[:1000] + "…") if len(final_diff_combined) > 1000 else final_diff_combined
                     logger.debug(f"[ai_edit] Final diff length: {len(final_diff_combined)}; preview:\n{preview}")
@@ -1877,25 +1947,66 @@ async def ai_edit(
         try:
             await _record_session_complete_async(repo_root, effective_session_id, success)
             
-            # If successful and using worktrees, check if we should purge the worktree
-            if success and use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):
+            # If using worktrees, check if we should purge the worktree
+            if use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):
                 try:
                     await _purge_worktree_async(repo_root, workspace_dir)
                     await _record_session_update_async(repo_root, effective_session_id, purged_at=time.time())
-                    # Delete the session record immediately after successful purge
-                    try:
-                        await _delete_session_record_async(repo_root, effective_session_id)
-                    except Exception as e:
-                        logger.debug(f"Failed to delete session record after purge: {e}")
                 except Exception as e:
                     logger.debug(f"Failed to purge worktree: {e}")
         except Exception as e:
             logger.debug(f"Failed to update session metadata: {e}")
         
-        # Add session info to result message
-        ttl_seconds = _get_ttl_seconds()
+        # Calculate duration
+        duration_s = round(time.time() - start_time, 2)
+        
+        # Read full Aider chat history for aggregated token stats
+        try:
+            history_path = Path(directory_path) / ".aider.chat.history.md"
+            if history_path.exists():
+                full_history_text = history_path.read_text(encoding="utf-8", errors="ignore")
+                sent_tokens, received_tokens = _parse_aider_token_stats(full_history_text)
+            else:
+                sent_tokens, received_tokens = 0, 0
+        except Exception as e:
+            logger.warning(f"Failed to parse token stats from chat history: {e}")
+            sent_tokens, received_tokens = 0, 0
+        
+        # For backward compatibility, still calculate tokens for last session
+        thread_text = _read_last_aider_session_text(directory_path)
+        tokens = _approx_token_count(thread_text)
+        
+        # Build summary section
         session_status = "completed/success" if success else "error"
-        result_message += f"\n\nSession: {effective_session_id} (status: {session_status}), TTL={ttl_seconds}s"
+        files_touched_count = len(touched_files)
+        
+        # Format touched files list (first 10 files)
+        if touched_files:
+            sorted_touched_files = sorted(list(touched_files))
+            if len(sorted_touched_files) > 10:
+                files_list = ", ".join(sorted_touched_files[:10]) + f" (+{len(sorted_touched_files) - 10} more)"
+            else:
+                files_list = ", ".join(sorted_touched_files)
+        else:
+            files_list = "None"
+        
+        summary_section = (
+            f"### Summary\n"
+            f"- Status: {session_status}\n"
+            f"- Session: {effective_session_id}\n"
+            f"- Duration: {duration_s}s\n"
+            f"- Files touched: {files_touched_count} ({files_list})\n"
+            f"- Aider tokens: sent={sent_tokens}, received={received_tokens}\n"
+            f"- Thread approx tokens: {tokens}\n"
+        )
+        
+        # Add warnings section if there were any stderr messages
+        warnings_section = ""
+        if aider_stderr.strip():
+            warnings_section = f"\n### Warnings\n{aider_stderr.strip()}\n"
+        
+        # Add summary and warnings to the result message
+        result_message = summary_section + result_message + warnings_section
         
         # Cleanup expired sessions
         try:
