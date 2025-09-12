@@ -1,0 +1,1 @@
+.agent/rules/senior-architect-v0.md

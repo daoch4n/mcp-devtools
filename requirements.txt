@@ -6,3 +6,4 @@ python-dotenv
 
 PyYAML
 pytest-asyncio
+pytest-cov

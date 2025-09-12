@@ -27,15 +27,26 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        python -m pip install --upgrade pip
         python -m pip install mypy build types-PyYAML
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Type check with mypy
       run: |
         mypy .
-    - name: Test with pytest
+    - name: Test with pytest and generate coverage
       run: |
-        pytest
+        pytest --cov=server --cov=mcp_devtools --cov-report=term-missing:skip-covered --cov-report=xml --cov-fail-under=75
+    - name: Generate coverage summaries
+      run: |
+        coverage json -o coverage.json
+        coverage report -m > coverage.txt
+    - name: Upload coverage artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-artifacts
+        path: |
+          coverage.json
+          coverage.xml
+          coverage.txt
     - name: Get package info
       id: get_package_info
       run: |

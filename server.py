@@ -23,8 +23,13 @@ Key Components:
 """
 
 import logging
+import asyncio
+import uuid
+import shutil
+import time
+from datetime import datetime
 from pathlib import Path, PurePath
-from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast
+from typing import Sequence, Optional, TypeAlias, Any, Dict, List, Tuple, Union, cast, Literal
 from mcp.server import Server
 from mcp.server.session import ServerSession
 from mcp.server.sse import SseServerTransport
@@ -40,8 +45,8 @@ from mcp.types import (
 Content: TypeAlias = Union[TextContent, ImageContent, EmbeddedResource]
 
 from enum import Enum
-import git # type: ignore
-from git.exc import GitCommandError # type: ignore
+import git
+from git.exc import GitCommandError
 from pydantic import BaseModel, Field
 import asyncio
 import tempfile
@@ -51,13 +56,26 @@ import difflib
 import shlex
 import json
 import yaml
+import subprocess
 
 # Git constant for the empty tree SHA, used for diffing initial commits.
 EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
+# Session management constants
+MCP_SESSION_TTL_SECONDS = int(os.getenv("MCP_SESSION_TTL_SECONDS", "3600"))
+MCP_EXPERIMENTAL_WORKTREES = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower() in ("1", "true", "yes")
+
 logging.basicConfig(level=logging.DEBUG)
 
 from starlette.applications import Starlette
+from mcp_devtools.snapshot_utils import (
+    ensure_snap_dir,
+    looks_binary_bytes,
+    now_ts,
+    sanitize_binary_markers,
+    save_snapshot,
+    snapshot_worktree,
+)
 from starlette.routing import Route, Mount
 from starlette.responses import Response
 from starlette.requests import Request
@@ -66,6 +84,243 @@ from starlette.types import Scope, Receive, Send
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logging.getLogger().setLevel(logging.DEBUG)
+
+
+# === Session Store Helpers ===
+def _devtools_dir(repo_root: str) -> Path:
+    """Get the .mcp-devtools directory path."""
+    return Path(repo_root) / ".mcp-devtools"
+
+def _sessions_file(repo_root: str) -> Path:
+    """Get the path to the sessions.json file."""
+    return _devtools_dir(repo_root) / "sessions.json"
+
+def _workspaces_dir(repo_root: str) -> Path:
+    """Get the workspaces directory path."""
+    return _devtools_dir(repo_root) / "workspaces"
+
+# Async lock for session file operations
+_sessions_lock = asyncio.Lock()
+
+def _load_sessions(repo_root: str) -> dict[str, Any]:
+    """Load sessions from the JSON file, returning empty dict if file doesn't exist or is invalid."""
+    path = _sessions_file(repo_root)
+    if not path.exists():
+        return {}
+    
+    try:
+        with open(path, 'r') as f:
+            return cast(dict[str, Any], json.load(f))
+    except (json.JSONDecodeError, IOError) as e:
+        logger.debug(f"Failed to load sessions from {path}: {e}")
+        return {}
+
+def _save_sessions(repo_root: str, data: dict[str, Any]) -> None:
+    """Save sessions to the JSON file."""
+    path = _sessions_file(repo_root)
+    try:
+        # Ensure the directory exists
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Write to temporary file first for atomic operation
+        tmp_path = path.with_suffix('.tmp')
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        # Atomically replace the old file
+        try:
+            os.replace(tmp_path, path)
+        except OSError as e:
+            # Best-effort cleanup of tmp file
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            raise
+    except IOError as e:
+        logger.debug(f"Failed to save sessions to {path}: {e}")
+
+def _generate_session_id() -> str:
+    """Generate a new session ID."""
+    return str(uuid.uuid4())
+
+def _record_session_start(repo_root: str, session_id: str, workspace_dir: str, use_worktree: bool) -> None:
+    """Record the start of a session."""
+    session_record = {
+        "session_id": session_id,
+        "repo_root": repo_root,
+        "workspace_dir": workspace_dir,
+        "use_worktree": use_worktree,
+        "status": "running",
+        "created_at": time.time(),
+        "last_updated": time.time(),
+        "completed_at": None,
+        "success": None,
+        "purged_at": None
+    }
+    
+    sessions = _load_sessions(repo_root)
+    sessions[session_id] = session_record
+    _save_sessions(repo_root, sessions)
+
+async def _record_session_start_async(repo_root: str, session_id: str, workspace_dir: str, use_worktree: bool) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_record_session_start, repo_root, session_id, workspace_dir, use_worktree)
+
+async def _load_sessions_async(repo_root: str) -> dict[str, Any]:
+    """Load sessions from the JSON file asynchronously with locking."""
+    async with _sessions_lock:
+        return await asyncio.to_thread(_load_sessions, repo_root)
+
+def _record_session_update(repo_root: str, session_id: str, **fields: Any) -> None:
+    """Update session record with additional fields."""
+    sessions = _load_sessions(repo_root)
+    if session_id in sessions:
+        sessions[session_id].update(fields)
+        sessions[session_id]["last_updated"] = time.time()
+        _save_sessions(repo_root, sessions)
+
+async def _record_session_update_async(repo_root: str, session_id: str, **fields: Any) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_record_session_update, repo_root, session_id, **fields)
+
+def _record_session_complete(repo_root: str, session_id: str, success: bool) -> None:
+    """Record the completion of a session."""
+    _record_session_update(repo_root, session_id, status="completed", completed_at=time.time(), success=success)
+
+async def _record_session_complete_async(repo_root: str, session_id: str, success: bool) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_record_session_complete, repo_root, session_id, success)
+
+def _delete_session_record(repo_root: str, session_id: str) -> None:
+    """Delete a session record from the sessions file."""
+    sessions = _load_sessions(repo_root)
+    if session_id in sessions:
+        del sessions[session_id]
+        _save_sessions(repo_root, sessions)
+
+async def _delete_session_record_async(repo_root: str, session_id: str) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(_delete_session_record, repo_root, session_id)
+
+def _get_ttl_seconds() -> int:
+    """Get the session TTL in seconds."""
+    return MCP_SESSION_TTL_SECONDS
+
+def _is_session_expired(session: dict[str, Any]) -> bool:
+    """Check if a session is expired based on TTL."""
+    ttl = _get_ttl_seconds()
+    last_active = max(
+        session.get("completed_at", 0) or 0,
+        session.get("last_updated", 0) or 0
+    )
+    return (time.time() - last_active) > ttl
+
+def _git_status_clean(path: str) -> bool:
+    """Check if the git repository status is clean (no changes)."""
+    try:
+        repo = git.Repo(path)
+        return not bool(repo.git.status("--porcelain"))
+    except Exception as e:
+        logger.debug(f"Failed to check git status for {path}: {e}")
+        return False
+
+def _purge_worktree(repo_root: str, workspace_dir: str) -> None:
+    """Purge a worktree directory, trying git worktree remove first, then rm -rf."""
+    try:
+        # Try to remove via git worktree command first
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", workspace_dir],
+            cwd=repo_root,
+            check=True,
+            capture_output=True
+        )
+        logger.debug(f"Successfully removed worktree {workspace_dir} via git command")
+    except subprocess.CalledProcessError as e:
+        logger.debug(f"Failed to remove worktree via git command: {e}. Trying rm -rf.")
+        # Fallback to rm -rf
+        try:
+            if os.path.exists(workspace_dir):
+                shutil.rmtree(workspace_dir)
+                logger.debug(f"Successfully removed worktree {workspace_dir} via rm -rf")
+        except Exception as e2:
+            logger.debug(f"Failed to remove worktree {workspace_dir} via rm -rf: {e2}")
+
+async def _purge_worktree_async(repo_root: str, workspace_dir: str) -> None:
+    """Purge a worktree directory asynchronously, trying git worktree remove first, then rm -rf."""
+    try:
+        # If already gone, nothing to do
+        if not os.path.exists(workspace_dir):
+            return
+        # Try to remove via git worktree command first
+        proc = await asyncio.create_subprocess_exec(
+            "git", "worktree", "remove", "--force", workspace_dir,
+            cwd=repo_root,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+        
+        if proc.returncode == 0:
+            logger.debug(f"Successfully removed worktree {workspace_dir} via git command")
+        else:
+            logger.debug(f"Failed to remove worktree via git command: {stderr.decode()}. Trying rm -rf.")
+            # Fallback to rm -rf
+            if os.path.exists(workspace_dir):
+                await asyncio.to_thread(shutil.rmtree, workspace_dir)
+                logger.debug(f"Successfully removed worktree {workspace_dir} via rm -rf")
+    except Exception as e:
+        logger.debug(f"Failed to remove worktree {workspace_dir} via git command: {e}. Trying rm -rf.")
+        # Fallback to rm -rf
+        try:
+            if os.path.exists(workspace_dir):
+                await asyncio.to_thread(shutil.rmtree, workspace_dir)
+                logger.debug(f"Successfully removed worktree {workspace_dir} via rm -rf")
+        except Exception as e2:
+            logger.debug(f"Failed to remove worktree {workspace_dir} via rm -rf: {e2}")
+
+def _apply_workspace_changes_to_root(workspace_dir: str, repo_path: str, files: list[str]) -> None:
+    """Apply changes from workspace to root repository for specified files."""
+    for rel in files:
+        try:
+            src = Path(workspace_dir) / rel
+            dst = Path(repo_path) / rel
+            if src.is_file():
+                # Avoid clobbering root-side edits: only copy if workspace file is newer
+                try:
+                    src_mtime = src.stat().st_mtime
+                    dst_mtime = dst.stat().st_mtime if dst.exists() else 0
+                except Exception:
+                    src_mtime = time.time()
+                    dst_mtime = 0
+                if src_mtime > dst_mtime:
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+        except Exception as e:
+            logger.debug(f"[ai_edit] Failed to apply workspace change for {rel}: {e}")
+
+def cleanup_expired_sessions(repo_root: str) -> None:
+    """Clean up expired sessions and their worktrees."""
+    try:
+        sessions = _load_sessions(repo_root)
+        changed = False
+        
+        for session_id, session in list(sessions.items()):
+            if session.get("status") == "completed" and _is_session_expired(session):
+                # Clean up worktree if it exists and wasn't already purged
+                if session.get("use_worktree") and session.get("workspace_dir") and not session.get("purged_at"):
+                    _purge_worktree(repo_root, session["workspace_dir"])
+                # Delete the session record
+                del sessions[session_id]
+                changed = True
+        
+        if changed:
+            _save_sessions(repo_root, sessions)
+    except Exception as e:
+        logger.debug(f"Error during session cleanup: {e}")
+
+async def cleanup_expired_sessions_async(repo_root: str) -> None:
+    async with _sessions_lock:
+        await asyncio.to_thread(cleanup_expired_sessions, repo_root)
 
 
 def _get_last_aider_reply(directory_path: str) -> Optional[str]:
@@ -402,7 +657,7 @@ def prepare_aider_command(
                     command.append(f"--no-{arg_key}")
             
             elif isinstance(value, list):
-                for item in cast(List[Any], value):
+                for item in value:
                     command.append(f"--{arg_key}")
                     command.append(str(item))
             
@@ -530,6 +785,10 @@ class AiEdit(BaseModel):
         None,
         description="Optional. A list of additional command-line options to pass directly to Aider. Each option should be a string."
     )
+    session_id: str | None = Field(
+        None,
+        description="Optional. A session ID to associate with this edit operation. If not provided, a new UUID will be generated."
+    )
 
 class AiderStatus(BaseModel):
     """
@@ -540,6 +799,29 @@ class AiderStatus(BaseModel):
         True,
         description="If true, the tool will also check Aider's configuration, environment variables, and Git repository details. Defaults to true."
     )
+
+class AiSessionList(BaseModel):
+    """
+    Represents the input schema for the `ai_session_list` tool.
+    """
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+
+class AiSessionStatus(BaseModel):
+    """
+    Represents the input schema for the `ai_session_status` tool.
+    """
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    session_id: str = Field(description="The ID of the session to retrieve.")
+
+class AiSessions(BaseModel):
+    """
+    Represents the input schema for the `ai_sessions` tool.
+    """
+    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
+    action: Literal['list', 'status'] = Field(description="The action to perform: 'list' to list all sessions or 'status' to get details of a specific session.")
+    session_id: Optional[str] = Field(None, description="The ID of the session to retrieve (required for 'status' action).")
+    status: Optional[Literal['running', 'completed']] = Field(None, description="Optional. Filter sessions by status when action='list'.")
+    cleanup: bool = Field(False, description="If true, opportunistically run TTL cleanup before returning.")
 
 class GitTools(str, Enum):
     """
@@ -557,6 +839,7 @@ class GitTools(str, Enum):
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
     AIDER_STATUS = "aider_status"
+    AI_SESSIONS = "ai_sessions"
 
 def git_status(repo: git.Repo) -> str:
     """
@@ -568,7 +851,7 @@ def git_status(repo: git.Repo) -> str:
     Returns:
         A string representing the output of `git status`.
     """
-    return repo.git.status()
+    return str(repo.git.status())
 
 
 def git_diff(repo: git.Repo, target: Optional[str] = None, path: Optional[str] = None) -> str:
@@ -589,7 +872,7 @@ def git_diff(repo: git.Repo, target: Optional[str] = None, path: Optional[str] =
     args = [target] if target else []
     if path:
         args.extend(['--', path])
-    return repo.git.diff(*args)
+    return str(repo.git.diff(*args))
 
 def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]] = None) -> str:
     """
@@ -604,7 +887,7 @@ def git_stage_and_commit(repo: git.Repo, message: str, files: Optional[List[str]
         A string indicating the success of the staging and commit operation.
     """
     if files:
-        repo.index.add(files)  # type: ignore
+        repo.index.add(files)
         staged_message = f"Files {', '.join(files)} staged successfully."
     else:
         repo.git.add(A=True)
@@ -709,7 +992,7 @@ def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_met
         if path:
             args.extend(["--", path])
             
-        return repo.git.show(*args)
+        return str(repo.git.show(*args))
     else:
         # Handle single commit with structured output
         commit = repo.commit(revision)
@@ -982,6 +1265,7 @@ async def ai_edit(
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> str:
     """
     AI pair programming tool for making targeted code changes using Aider.
@@ -1060,14 +1344,135 @@ async def ai_edit(
         if not os.path.isfile(fpath):
             logger.error(f"[ai_edit] Provided file not found in repo: {fname}. Aider may fail.")
 
+    # === Worktree Snapshot helpers (User Story 1) ===
+    # Imports were moved to module top to avoid shadowing and mypy issues.
+
+    # Capture pre-existing untracked files BEFORE aider runs
+    try:
+        repo = git.Repo(repo_path)
+        pre_existing_untracked_files = set(repo.untracked_files)
+    except (git.exc.InvalidGitRepositoryError, git.exc.NoSuchPathError):
+        pre_existing_untracked_files = set()
+
+    # Take pre-execution snapshot from workspace but save under root repo
+    pre_snapshot = ""
+    pre_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_pre.diff"
+    try:
+        pre_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+        pre_ts = now_ts()
+        pre_snapshot_path = save_snapshot(repo_path, pre_ts, "pre", pre_snapshot)
+    except Exception as e:
+        logger.debug(f"[ai_edit] pre-snapshot failed: {e}")
+
+    # ... run aider ...
+
+    # Take post-execution snapshot from workspace but save under root repo
+    post_snapshot = ""
+    post_snapshot_path = Path(ensure_snap_dir(repo_path)) / f"ai_edit_{now_ts()}_post.diff"
+    try:
+        post_snapshot = snapshot_worktree(repo_path, exclude_untracked=pre_existing_untracked_files)
+        post_ts = now_ts()
+        post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+    except Exception as e:
+        logger.debug(f"[ai_edit] post-snapshot failed: {e}")
+    post_ts = now_ts()
+    post_snapshot_path = save_snapshot(repo_path, post_ts, "post", post_snapshot)
+
+    # Compute delta between pre and post snapshots
+    try:
+        # Use difflib to compute unified diff
+        import difflib
+        delta_lines = list(difflib.unified_diff(
+            pre_snapshot.splitlines(keepends=True),
+            post_snapshot.splitlines(keepends=True),
+            fromfile=str(pre_snapshot_path.name),
+            tofile=str(post_snapshot_path.name),
+        ))
+        delta_section = "### Snapshot Delta (this run)\n\n" + "".join(delta_lines)
+        # Ensure this delta is included in the final result
+        snapshot_delta_section = delta_section
+    except Exception as e:
+        delta_section = f"\n\nError generating delta: {str(e)}"
+
+    # === Session Management ===
+    # Determine effective session ID
+    if session_id:
+        effective_session_id = session_id
+    else:
+        # Try to read from .aider.last_session_id file
+        last_session_file = Path(directory_path) / ".aider.last_session_id"
+        try:
+            if last_session_file.exists():
+                last_session_id = last_session_file.read_text().strip()
+                if last_session_id:
+                    effective_session_id = last_session_id
+                else:
+                    effective_session_id = _generate_session_id()
+            else:
+                effective_session_id = _generate_session_id()
+        except Exception:
+            effective_session_id = _generate_session_id()
+    
+    # Write the effective session ID to .aider.last_session_id
+    try:
+        last_session_file = Path(directory_path) / ".aider.last_session_id"
+        last_session_file.write_text(effective_session_id)
+    except Exception as e:
+        logger.debug(f"Failed to write .aider.last_session_id: {e}")
+    
+    # Find the git root or use the directory path
+    repo_root = find_git_root(directory_path) or directory_path
+    
+    # Determine if we should use worktrees
+    use_worktree = os.getenv("MCP_EXPERIMENTAL_WORKTREES", "0").lower() in ("1", "true", "yes")
+    # Set up workspace directory path (but don't create the worktree yet)
+    workspace_dir = str(Path(_workspaces_dir(repo_root)) / effective_session_id) if use_worktree else directory_path
+    # Record session start (async, with lock)
+    await _record_session_start_async(repo_root, effective_session_id, workspace_dir, use_worktree=use_worktree)
+
+    # === Isolated Workspace Setup (US2 Step 3) ===
+    if use_worktree:
+        workspace_root = ensure_snap_dir(repo_path) / "workspaces"
+        workspace_dir_path = workspace_root / effective_session_id
+        
+        try:
+            workspace_root.mkdir(parents=True, exist_ok=True)
+            if not workspace_dir_path.exists():
+                # Attempt to create a worktree for this session using non-blocking subprocess
+                proc = await asyncio.create_subprocess_exec(
+                    "git", "worktree", "add", "--detach", str(workspace_dir_path),
+                    cwd=repo_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout_bytes, stderr_bytes = await proc.communicate()
+                if proc.returncode != 0:
+                    rc = 1 if proc.returncode is None else proc.returncode
+                    raise subprocess.CalledProcessError(rc, ["git", "worktree", "add", "--detach", str(workspace_dir_path)], output=stdout_bytes, stderr=stderr_bytes)
+            directory_path = str(workspace_dir_path)
+            # Ensure recorded workspace_dir matches the final directory_path
+            workspace_dir = directory_path
+            await _record_session_update_async(repo_root, effective_session_id, workspace_dir=workspace_dir)
+            logger.debug(f"[ai_edit] Using workspace directory: {directory_path}")
+        except subprocess.CalledProcessError as e:
+            logger.debug(f"[ai_edit] Failed to create worktree workspace: {e}. Falling back to repo_path.")
+            directory_path = repo_path
+        except Exception as e:
+            logger.debug(f"[ai_edit] Unexpected error setting up workspace: {e}. Falling back to repo_path.")
+            directory_path = repo_path
+    else:
+        directory_path = repo_path
+
+    # ... rest of ai_edit ...
+
     original_dir = os.getcwd()
     structured_report_built = False
     result_message = ""
-    pre_existing_untracked: set[str] = set()
+    success = False
     try:
         repo_pre = git.Repo(directory_path)
-        pre_existing_untracked = set(repo_pre.untracked_files)
-        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked)}")
+        pre_existing_untracked_files_set = set(repo_pre.untracked_files)
+        logger.debug(f"[ai_edit] Pre-existing untracked files: {sorted(pre_existing_untracked_files_set)}")
     except git.InvalidGitRepositoryError:
         logger.debug("[ai_edit] Not a git repository when capturing pre-existing untracked files.")
     except Exception as e:
@@ -1101,19 +1506,44 @@ async def ai_edit(
         stdout = stdout_bytes.decode('utf-8')
         stderr = stderr_bytes.decode('utf-8')
 
+        # Post-snapshot for this ai_edit run (User Story 1)
+        try:
+            # Compute delta between pre and post snapshots directly
+            delta_lines = list(difflib.unified_diff(
+                pre_snapshot.splitlines(keepends=True),
+                post_snapshot.splitlines(keepends=True),
+                fromfile=str(pre_snapshot_path.name),
+                tofile=str(post_snapshot_path.name),
+            ))
+            delta_text = "".join(delta_lines).strip()
+            if delta_text:
+                snapshot_delta_section = f"### Snapshot Delta (this run)\n```diff\n{delta_text}\n```"
+        except Exception as e:
+            logger.debug(f"[ai_edit] Failed to compute snapshot delta: {e}")
+            snapshot_delta_section = "### Snapshot Delta (this run)\n<snapshot delta unavailable due to error>"
 
         return_code = process.returncode
+        success = (return_code == 0)
+        
         if return_code != 0:
             logger.error(f"Aider process exited with code {return_code}")
             result_message = f"Error: Aider process exited with code {return_code}.\nSTDERR:\n{stderr}"
         else:
+            # Apply workspace changes to root repo if using worktrees and feature is enabled
+            apply_to_root = os.getenv("MCP_APPLY_WORKSPACE_TO_ROOT", "1") != "0"
+            if success and use_worktree and directory_path != repo_path and apply_to_root:
+                try:
+                    _apply_workspace_changes_to_root(directory_path, repo_path, files)
+                except Exception as e:
+                    logger.debug(f"[ai_edit] Failed to apply workspace changes to root: {e}")
+            
             if "Applied edit to" in stdout:
                 # Build a structured report with Aider's plan and the diff
                 applied_changes = ""
                 try:
                     # Re-initialize Repo to avoid stale caches after external process (Aider) runs
                     logger.debug("[ai_edit] Re-initializing git.Repo to refresh state after Aider run.")
-                    repo = git.Repo(directory_path)
+                    repo = git.Repo(repo_path)
 
                     # Log git status to understand staged vs unstaged changes
                     status_output = ""
@@ -1158,14 +1588,16 @@ async def ai_edit(
                     except Exception:
                         current_untracked = []
                     # Only include files that became untracked during this Aider run
-                    new_untracked = [f for f in current_untracked if f not in pre_existing_untracked]
+                    new_untracked = [f for f in current_untracked if f not in pre_existing_untracked_files]
+                    # Exclude internal snapshot artifacts from being reported in Applied Changes
+                    new_untracked = [f for f in new_untracked if not f.startswith(".mcp-devtools/")]
                     if new_untracked:
                         logger.debug(f"[ai_edit] New untracked files created by Aider: {new_untracked}")
                         for untracked_file in new_untracked:
                             try:
                                 untracked_file_path = Path(directory_path) / untracked_file
                                 if untracked_file_path.is_file():
-                                    with open(untracked_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    with open(untracked_file_path, 'r') as f:
                                         content = f.read()
                                     diff_header = f"--- /dev/null\n+++ b/{untracked_file}\n"
                                     diff_body = "".join([f"+{line}\n" for line in content.splitlines()])
@@ -1200,12 +1632,15 @@ async def ai_edit(
                 result_message = (
                     f"### Aider's Plan\n"
                     f"{last_reply}\n\n"
+                    f"### Session\n"
+                    f"{effective_session_id}\n\n"
                     f"### Applied Changes (Diff)\n"
                     f"{applied_changes}\n\n"
                     f"### Verification Result\n"
                     f"⏳ Not yet implemented.\n\n"
                     f"### Next Steps\n"
-                    f"Please review the changes above. If they are correct, please stage and commit them."
+                    f"Please review the changes above. If they are correct, please stage and commit them.\n\n"
+                    f"{snapshot_delta_section if snapshot_delta_section else ''}"
                 )
                 structured_report_built = True
             else:
@@ -1215,10 +1650,44 @@ async def ai_edit(
         logger.error(f"An unexpected error occurred during ai_edit: {e}")
         result_message = ai_hint_ai_edit_unexpected(e)
     finally:
-        if os.getcwd() != original_dir:
-            os.chdir(original_dir)
-            logger.debug(f"Restored working directory to: {original_dir}")
+        # Always restore working directory first to avoid purging current CWD
+        try:
+            if os.getcwd() != original_dir:
+                os.chdir(original_dir)
+                logger.debug(f"Restored working directory to: {original_dir}")
+        except Exception as e:
+            logger.debug(f"Failed to restore working directory: {e}")
+
+        # Record session completion
+        try:
+            await _record_session_complete_async(repo_root, effective_session_id, success)
+            
+            # If successful and using worktrees, check if we should purge the worktree
+            if success and use_worktree and workspace_dir != repo_path and _git_status_clean(directory_path):
+                try:
+                    await _purge_worktree_async(repo_root, workspace_dir)
+                    await _record_session_update_async(repo_root, effective_session_id, purged_at=time.time())
+                    # Delete the session record immediately after successful purge
+                    try:
+                        await _delete_session_record_async(repo_root, effective_session_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to delete session record after purge: {e}")
+                except Exception as e:
+                    logger.debug(f"Failed to purge worktree: {e}")
+        except Exception as e:
+            logger.debug(f"Failed to update session metadata: {e}")
         
+        # Add session info to result message
+        ttl_seconds = _get_ttl_seconds()
+        session_status = "completed/success" if success else "error"
+        result_message += f"\n\nSession: {effective_session_id} (status: {session_status}), TTL={ttl_seconds}s"
+        
+        # Cleanup expired sessions
+        try:
+            await cleanup_expired_sessions_async(repo_root)
+        except Exception as e:
+            logger.debug(f"Failed to cleanup expired sessions: {e}")
+
         last_reply = _get_last_aider_reply(directory_path) or ""
         if not structured_report_built and last_reply:
             # Legacy append when structured report isn't built
@@ -1316,9 +1785,10 @@ async def get_aider_status(
         logger.error(f"Error checking Aider status: {e}")
         return ai_hint_aider_status_error(e)
 
-mcp_server: Server[ServerSession] = Server[ServerSession]("mcp-git")  # type: ignore[arg-type]  # Server's generic signature is not compatible with the expected type due to type system limitations.
 
-@mcp_server.list_tools()
+mcp_server: Server[ServerSession] = Server("mcp-git")  # Server's generic signature is not compatible with the expected type due to type system limitations.
+
+@mcp_server.list_tools()  # type: ignore[misc, no-untyped-call]
 async def list_tools() -> list[Tool]:
     """
     Lists all available tools provided by this MCP Git server.
@@ -1385,8 +1855,9 @@ async def list_tools() -> list[Tool]:
                 "This tool applies the requested changes directly to your working directory without committing them. "
                 "After the tool runs, it returns a structured report containing:\n\n"
                 "1.  **Aider's Plan:** The approach Aider decided to take.\n"
-                "2.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
-                "3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n\n"
+                "2.  **Session:** The session ID for this edit operation.\n"
+                "3.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
+                "4.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n\n"
                 "Use this tool to:\n"
                 "- Implement new features or functionality in existing code\n"
                 "- Add tests to an existing codebase\n"
@@ -1404,6 +1875,11 @@ async def list_tools() -> list[Tool]:
                         "3. View the current configuration\n"
                         "4. Diagnose connection or setup issues",
             inputSchema=AiderStatus.model_json_schema(),
+        ),
+        Tool(
+            name=GitTools.AI_SESSIONS,
+            description="Unified tool for managing AI editing sessions. Can list all sessions or get details of a specific session.",
+            inputSchema=AiSessions.model_json_schema(),
         )
     ]
 
@@ -1435,7 +1911,7 @@ async def list_repos() -> Sequence[str]:
 
     return await by_roots()
 
-@mcp_server.call_tool()
+@mcp_server.call_tool()  # type: ignore[misc, no-untyped-call]
 async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
     """
     Executes a requested tool based on its name and arguments.
@@ -1622,6 +2098,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                     message = arguments.get("message", "")
                     files = arguments["files"] # files is now mandatory
                     options = arguments.get("options", [])
+                    session_id = arguments.get("session_id")
                     if "continue_thread" not in arguments:
                         return [TextContent(
                             type="text",
@@ -1639,6 +2116,7 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         files=files,
                         options=options,
                         continue_thread=continue_thread,
+                        session_id=session_id,
                     )
                     return [TextContent(
                         type="text",
@@ -1654,6 +2132,52 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         type="text",
                         text=result
                     )]
+                case GitTools.AI_SESSIONS:
+                    repo_root = find_git_root(str(repo_path)) or str(repo_path)
+                    
+                    # Run cleanup if requested
+                    if arguments.get("cleanup", False):
+                        await cleanup_expired_sessions_async(repo_root)
+                    
+                    action = arguments["action"]
+                    if action == "list":
+                        sessions = await _load_sessions_async(repo_root)
+                        # Filter by status if provided
+                        status_filter = arguments.get("status")
+                        if status_filter:
+                            filtered_sessions = {
+                                k: v for k, v in sessions.items() 
+                                if v.get("status") == status_filter
+                            }
+                            result = json.dumps({"sessions": list(filtered_sessions.values())}, indent=2)
+                        else:
+                            result = json.dumps({"sessions": list(sessions.values())}, indent=2)
+                        return [TextContent(
+                            type="text",
+                            text=result
+                        )]
+                    elif action == "status":
+                        session_id = arguments.get("session_id")
+                        if not session_id:
+                            return [TextContent(
+                                type="text",
+                                text=json.dumps({"error": "session_id is required for 'status' action"}, indent=2)
+                            )]
+                        sessions = await _load_sessions_async(repo_root)
+                        session = sessions.get(session_id)
+                        if session:
+                            result = json.dumps(session, indent=2)
+                        else:
+                            result = json.dumps({"error": "Session not found"}, indent=2)
+                        return [TextContent(
+                            type="text",
+                            text=result
+                        )]
+                    else:
+                        return [TextContent(
+                            type="text",
+                            text=f"INVALID_ACTION: Unknown action '{action}'. Valid actions are 'list' and 'status'."
+                        )]
                 case _:
                     raise ValueError(f"Unknown tool: {name}")
 
@@ -1691,7 +2215,7 @@ POST_MESSAGE_ENDPOINT = "/messages/"
 
 sse_transport = SseServerTransport(POST_MESSAGE_ENDPOINT)
 
-async def handle_sse(request: Request):
+async def handle_sse(request: Request) -> Response:
     """
     Handles Server-Sent Events (SSE) connections from MCP clients.
     Establishes a communication channel for the MCP server to send events.
@@ -1706,12 +2230,12 @@ async def handle_sse(request: Request):
     # intended way to integrate with the SseServerTransport according to the
     # mcp library's design for Starlette integration. Suppressing the warning
     # here is safe and necessary for the SSE transport to function correctly.
-    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream): # type: ignore[protected-access]
+    async with sse_transport.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
         options = mcp_server.create_initialization_options()
         await mcp_server.run(read_stream, write_stream, options, raise_exceptions=True)
     return Response()
 
-async def handle_post_message(scope: Scope, receive: Receive, send: Send):
+async def handle_post_message(scope: Scope, receive: Receive, send: Send) -> None:
     """
     Handles incoming POST messages from MCP clients, typically used for client-to-server communication.
 

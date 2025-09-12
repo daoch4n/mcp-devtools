@@ -33,6 +33,8 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Run the MCP DevTools Server.")
     parser.add_argument('-p', '--port', type=int, help='Port to run the server on.')
+    parser.add_argument('-v', '--version', action='version', 
+                       version=f'mcp-devtools v{get_project_version()}')
     args = parser.parse_args()
 
     # Use port from args, then .env, then default

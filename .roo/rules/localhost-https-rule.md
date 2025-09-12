@@ -1,0 +1,1 @@
+- When accessing a localhost development server, always use the `https://` protocol.
