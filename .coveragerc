@@ -1,0 +1,13 @@
+[run]
+source = server, mcp_devtools
+branch = True
+
+[report]
+show_missing = True
+skip_covered = True
+omit =
+    */tests/*
+    test_server.py
+    */.venv/*
+    */venv/*
+    */site-packages/*
