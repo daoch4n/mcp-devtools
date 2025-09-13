@@ -864,15 +864,6 @@ class GitLog(BaseModel):
     repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
     max_count: int = Field(10, description="The maximum number of commit entries to retrieve. Defaults to 10.")
 
-class GitBranch(BaseModel):
-    """
-    Input schema for the `git_branch` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    action: Literal['create', 'rename', 'list'] = Field(description="The branch operation to perform: 'create', 'rename', or 'list'.")
-    branch_name: Optional[str] = Field(None, description="The name of the branch to create or rename. Required for 'create' and 'rename' actions; optional for 'list'.")
-    base_branch: Optional[str] = Field(None, description="Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD.")
-    new_name: Optional[str] = Field(None, description="Optional. The new name for the branch when action='rename'.")
 
 class GitShow(BaseModel):
     """
@@ -985,7 +976,6 @@ class GitTools(str, Enum):
     DIFF = "git_diff"
     STAGE_AND_COMMIT = "git_stage_and_commit"
     LOG = "git_log"
-    BRANCH = "git_branch"
     SHOW = "git_show"
     READ_FILE = "read_file"
     WRITE_TO_FILE = "write_to_file"
@@ -1071,44 +1061,6 @@ def git_log(repo: git.Repo, max_count: int = 10) -> list[str]:
         )
     return log
 
-def git_branch(repo: git.Repo, action: str, branch_name: str | None = None, base_branch: str | None = None, new_name: str | None = None) -> str:
-    """Create, rename, or list branches on the given repo.
-
-    - action='create': creates branch_name at base_branch (or current HEAD if None)
-    - action='rename': renames branch_name to new_name
-    - action='list': lists all branches with current branch marked
-    """
-    if action == 'create':
-        if not branch_name:
-            raise ValueError("branch_name is required for 'create' action")
-        if base_branch:
-            repo.create_head(branch_name, base_branch)
-            return f"Created branch '{branch_name}' from '{base_branch}'"
-        else:
-            repo.create_head(branch_name)
-            return f"Created branch '{branch_name}'"
-    elif action == 'rename':
-        if not branch_name:
-            raise ValueError("branch_name is required for 'rename' action")
-        if not new_name:
-            raise ValueError("new_name is required for 'rename' action")
-        repo.git.branch('-m', branch_name, new_name)
-        return f"Renamed branch '{branch_name}' to '{new_name}'"
-    elif action == 'list':
-        branches: List[str] = []
-        try:
-            current_branch = repo.active_branch.name
-        except TypeError:  # detached HEAD
-            current_branch = None
-            
-        for head in repo.heads:
-            if head.name == current_branch:
-                branches.append(f"* {head.name}")
-            else:
-                branches.append(f"  {head.name}")
-        return "Branches:\n" + "\n".join(branches)
-    else:
-        raise ValueError("Invalid action. Must be 'create', 'rename', or 'list'.")
 
 def git_show(repo: git.Repo, revision: str, path: Optional[str] = None, show_metadata_only: bool = False, show_diff_only: bool = False) -> str:
     """
@@ -2055,11 +2007,6 @@ async def list_tools() -> list[Tool]:
             inputSchema=GitLog.model_json_schema(),
         ),
         Tool(
-            name=GitTools.BRANCH,
-            description="Create, rename, or list Git branches. Action may be 'create' with optional base_branch, 'rename' with new_name, or 'list' to show all branches with current marked by '*'.",
-            inputSchema=GitBranch.model_json_schema(),
-        ),
-        Tool(
             name=GitTools.SHOW,
             description="Shows the metadata (author, date, message) and the diff of a specific commit. This allows inspection of changes introduced by a particular commit. Supports commit ranges like 'A..B' or 'A...B' as well. Optional path filter and metadata/diff-only options available.",
             inputSchema=GitShow.model_json_schema(),
@@ -2262,19 +2209,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                     return [TextContent(
                         type="text",
                         text="Commit history:\n" + "\n".join(log)
-                    )]
-                case GitTools.BRANCH:
-                    repo = git.Repo(repo_path)
-                    result = git_branch(
-                        repo,
-                        arguments["action"],
-                        arguments.get("branch_name"),
-                        arguments.get("base_branch"),
-                        arguments.get("new_name")
-                    )
-                    return [TextContent(
-                        type="text",
-                        text=result
                     )]
                 case GitTools.SHOW:
                     repo = git.Repo(repo_path)

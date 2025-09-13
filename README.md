@@ -9,7 +9,7 @@
 - 🔧 `mcp-devtools` server offers a comprehensive suite of software development tools:
   -  🤖 Agentic editing (`ai_edit`)
   -  📁 File management (`read_file`, `write_to_file`)
-  -  🎋 Git management (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`, `git_branch`)
+  -  🎋 Git management (`git_diff`, `git_show`, `git_stage_and_commit`, `git_status`, `git_log`)
   -  🖥️ Terminal integration (`execute_command`)
 
 ## 1️⃣ Install
@@ -336,49 +336,6 @@ You must adhere to the following five-step, iterative workflow:
     },
     "required": [
       "repo_path"
-    ]
-  }
-  ```
-
-### `git_branch`
-- **Description:** Create, checkout, rename, or list Git branches. Action may be 'create' with optional base_branch, 'checkout', 'rename' with new_name, or 'list' to show all branches with current marked by '*'.
-- **Input Schema:**
-  ```json
-  {
-    "type": "object",
-    "properties": {
-      "repo_path": {
-        "type": "string",
-        "description": "The absolute path to the Git repository's working directory."
-      },
-      "action": {
-        "type": "string",
-        "description": "The branch operation to perform: 'create', 'checkout', 'rename', or 'list'.",
-        "enum": [
-          "create",
-          "checkout",
-          "rename",
-          "list"
-        ]
-      },
-      "branch_name": {
-        "type": "string",
-        "description": "The name of the branch to create, checkout, or rename. Required for 'create', 'checkout', and 'rename' actions; optional for 'list'."
-      },
-      "base_branch": {
-        "type": "string",
-        "nullable": true,
-        "description": "Optional. The base branch to create from when action='create'. If omitted, creates from the current HEAD."
-      },
-      "new_name": {
-        "type": "string",
-        "nullable": true,
-        "description": "Optional. The new name for the branch when action='rename'."
-      }
-    },
-    "required": [
-      "repo_path",
-      "action"
     ]
   }
   ```

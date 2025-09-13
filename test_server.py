@@ -44,7 +44,7 @@ from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 # Import functions and classes from server.py
 from server import (
     git_status, git_diff, git_stage_and_commit,
-    git_log, git_branch, git_show,
+    git_log, git_show,
     read_file_content,
     _generate_diff_output, _run_tsc_if_applicable,
     write_to_file_content, execute_custom_command,
@@ -173,33 +173,6 @@ def test_git_log(temp_git_repo):
     
     log_all = git_log(repo)
     assert len(log_all) == 2 # Initial commit + Second commit
-
-def test_git_branch_create(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    result = git_branch(repo, 'create', 'new_branch')
-    assert "Created branch 'new_branch'" in result
-    assert 'new_branch' in repo.heads
-    result = git_branch(repo, 'create', 'another_branch', base_branch='new_branch')
-    assert "Created branch 'another_branch' from 'new_branch'" in result
-    assert 'another_branch' in repo.heads
-
-
-def test_git_branch_rename(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    git_branch(repo, 'create', 'old')
-    result = git_branch(repo, 'rename', 'old', new_name='new')
-    assert "Renamed branch 'old' to 'new'" in result
-    assert 'new' in [h.name for h in repo.heads]
-    assert 'old' not in [h.name for h in repo.heads]
-
-def test_git_branch_list(temp_git_repo):
-    repo, repo_path = temp_git_repo
-    git_branch(repo, 'create', 'a')
-    git_branch(repo, 'create', 'b')
-    repo.git.checkout('b')
-    listing = git_branch(repo, 'list')
-    assert 'a' in listing and 'b' in listing
-    assert '* b' in listing or '*  b' in listing or '* b' in listing.replace('  ', ' ')
 
 def test_git_show(temp_git_repo):
     repo, repo_path = temp_git_repo
@@ -440,7 +413,6 @@ async def test_list_tools():
 @patch('server.git_diff')
 @patch('server.git_stage_and_commit')
 @patch('server.git_log')
-@patch('server.git_branch')
 @patch('server.git_show')
 @patch('server.read_file_content')
 @patch('server.write_to_file_content', new_callable=AsyncMock)
@@ -448,7 +420,7 @@ async def test_list_tools():
 async def test_call_tool(
     mock_execute_custom_command, mock_write_to_file_content,
     mock_read_file_content, mock_git_show,
-    mock_git_branch, mock_git_log,
+    mock_git_log,
     mock_git_stage_and_commit, mock_git_diff, mock_git_status, mock_git_repo
 ):
     mock_repo_instance = MagicMock()
@@ -492,21 +464,6 @@ async def test_call_tool(
     mock_git_log.return_value = ["log1", "log2"]
     result = list(await call_tool(GitTools.LOG.value, {"repo_path": "/tmp/repo", "max_count": 1})) # Cast to list
     assert result[0].text == "Commit history:\nlog1\nlog2"
-
-    # Test GitTools.BRANCH create
-    mock_git_branch.return_value = "Branch created"
-    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path": "/tmp/repo", "action": "create", "branch_name": "new_branch"})) # Cast to list
-    assert result[0].text == "Branch created"
-
-    # Test GitTools.BRANCH rename
-    mock_git_branch.return_value = "Renamed"
-    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path":"/tmp/repo","action":"rename","branch_name":"old","new_name":"new"}))
-    assert result[0].text == "Renamed"
-
-    # Test GitTools.BRANCH list
-    mock_git_branch.return_value = "Branches:\n* main\n  dev"
-    result = list(await call_tool(GitTools.BRANCH.value, {"repo_path":"/tmp/repo","action":"list"}))
-    assert result[0].text.startswith("Branches:\n")
 
     # Test GitTools.SHOW
     mock_git_show.return_value = "Show output"
