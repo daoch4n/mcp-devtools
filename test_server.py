@@ -867,7 +867,6 @@ def test_prepare_aider_command_various_cases():
     # Empty base command, no files, no options
     cmd = prepare_aider_command([])
     assert cmd == []
-@pytest.mark.asyncio
 def test_git_read_file_error_cases(monkeypatch):
     from server import read_file_content
     import types
