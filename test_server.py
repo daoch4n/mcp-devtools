@@ -2177,3 +2177,61 @@ def test_parse_aider_token_stats_rounds_up_fractional_values():
     # Assert (2600, 1200) - verifying rounding up behavior
     assert sent_tokens == 2600
     assert received_tokens == 1200
+
+
+# === Server Integration Test Fixtures and Smoke Test ===
+import pytest
+import asyncio
+import httpx
+from multiprocessing import Process, Queue
+import uvicorn
+from server import app
+
+
+def run_server(queue):
+    try:
+        port = 1337
+        config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+        server = uvicorn.Server(config)
+        queue.put(port)
+        server.run()
+    except Exception as e:
+        queue.put(e)
+
+
+@pytest.fixture(scope="module")
+def server():
+    queue = Queue()
+    proc = Process(target=run_server, args=(queue,))
+    proc.start()
+    result = queue.get(timeout=5)
+    if isinstance(result, Exception):
+        proc.terminate()
+        proc.join()
+        raise result
+    port = result
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        proc.terminate()
+        proc.join(timeout=5)
+        if proc.is_alive():
+            proc.kill()
+
+
+@pytest.mark.asyncio
+async def test_smoke_sse_connection(server):
+    """
+    Smoke test to ensure the SSE endpoint is available and establishes a connection.
+    """
+    sse_url = f"{server}/sse"
+    try:
+        async with httpx.AsyncClient() as client:
+            async with client.stream("GET", sse_url, timeout=10) as response:
+                assert response.status_code == 200
+                assert "text/event-stream" in response.headers.get("content-type", "")
+                # Attempt to read the initial bytes from the SSE stream
+                initial_data = await response.aiter_bytes().__anext__()
+                assert initial_data is not None
+    except httpx.ConnectError as e:
+        pytest.fail(f"Connection to the server failed: {e}")
