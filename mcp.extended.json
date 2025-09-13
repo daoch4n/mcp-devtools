@@ -18,7 +18,6 @@
         "ai_edit",
         "execute_command",
         "git_show",
-        "git_branch",
         "git_log",
         "git_diff",
         "git_status",
