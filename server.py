@@ -8,7 +8,7 @@ operations, execute commands, and initiate AI-driven code modifications.
 
 Key Components:
 - Git Operations: Functions for common Git commands like status, diff, commit,
-  reset, log, branch creation, checkout, and applying diffs.
+  reset, log, checkout, and applying diffs.
 - File Operations: Tools for reading, writing, and searching/replacing content
   within files.
 - Command Execution: A general-purpose tool to execute arbitrary shell commands.
