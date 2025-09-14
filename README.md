@@ -215,7 +215,9 @@ You must adhere to the following five-step, iterative workflow:
 <details>
 <summary> <h4> ⚠️ Show Disclaimer </h4> </summary>
 
-- 🛡️ For automated workflows, always run MCP Servers in isolated environments (🐧[Firejail](https://github.com/netblue30/firejail) or 🪟[Sandboxie](https://github.com/sandboxie-plus/Sandboxie))
+- 🛡️ For automated workflows, always run MCP Servers in isolated environments:
+  - Containers: 🐳[Docker](https://github.com/docker/cli) 🐧[systemd-nspawn-wayland](https://github.com/daoch4n/systemd-nspawn-wayland)
+  - Sandboxes: 🐧[Firejail](https://github.com/netblue30/firejail) 🪟[Sandboxie](https://github.com/sandboxie-plus/Sandboxie)
 - 🗃️ Filesystem access boundaries are maintained via passing `repo_path` to every tool call, so AI assistant only has read/write access to files in the current workspace (relative to any path AI decides to pass as `repo_path` , make sure system prompt is solid on cwd use).
 - ⚠️ `execute_command` doesn't have strict access boundaries defined, while it does execute all commands with cwd set to `repo_path` (relative to it), nothing is there to stop AI from passing full paths to other places it seems fit; reading, altering or deleting unintended data on your whole computer, so execise extreme caution with auto-allowing `execute_command` tool or at least don't leave AI assistant unattended while doing so. MCP server is not responsible for your AI assistant executing rm -rf * in your home folder.
 
