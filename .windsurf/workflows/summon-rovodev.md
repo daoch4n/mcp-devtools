@@ -16,6 +16,9 @@ auto_execution_mode: 3
    acli rovodev --yolo --restore "continue"  ```
    ````
 
+### Answering Rovo Dev questions or continuing conversation:
+If you got any questions from Rovo Dev during your interaction or want to continue your conversation with the agent, please *overwrite* the .agent.local.md file with new info. --continue flag transforms agent into stateful pair programmer. Make best use of its abilities to assist you. Use your best judjement to answer its questions clearly.
+
 ### Task Template (.agent.local.md)
 
 ````markdown
