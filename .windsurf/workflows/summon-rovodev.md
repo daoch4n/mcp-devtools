@@ -10,10 +10,10 @@ auto_execution_mode: 3
 
    ````bash
    # First time working with agent
-   acli rovodev --yolo
+   acli rovodev run --yolo "lets do it"
 
    # Continuing existing task
-   acli rovodev --yolo --restore   ```
+   acli rovodev --yolo --restore "continue"  ```
    ````
 
 ### Task Template (.agent.local.md)
