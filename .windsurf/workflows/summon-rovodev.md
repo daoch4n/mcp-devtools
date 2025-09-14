@@ -17,7 +17,7 @@ auto_execution_mode: 3
    ````
 
 ### Answering Rovo Dev questions or continuing conversation:
-If you got any questions from Rovo Dev during your interaction or want to continue your conversation with the agent, please *overwrite* the .agent.local.md file with new info. --continue flag transforms agent into stateful pair programmer. Make best use of its abilities to assist you. Use your best judjement to answer its questions clearly.
+If you got any questions from Rovo Dev during your interaction or want to continue your conversation with the agent, please *overwrite* the .agent.local.md file with new info. --continue flag transforms agent into stateful pair programmer. Make best use of its abilities to assist you. Use your best judjement to answer its questions clearly. Please also ignore all Rovo's suggestions about pull requests, tickets and pages. Focus on the task at hand, but do encourage the agent to make optional changes if you think they fall under scope of current task.
 
 ### Task Template (.agent.local.md)
 
