@@ -193,7 +193,7 @@ You must adhere to the following five-step, iterative workflow:
    -  Start writing Epic Specs and User Stories with `✒️ Agile Writer`
    -  After your confirmation, it will auto-switch to `✏️ Agile Architect` and write Epic Design
    -  After next confirmation, it will auto-switch to `🖊️ Agile Planner` and write Epic Tasks
-   -  After final comfirmation, it will auto-switch to `🖋️ Agile Dev` and orchestrate Epic Code writing, followed by Epic Review of each commit.
+   -  After final confirmation, it will auto-switch to `🖋️ Agile Dev` and orchestrate Epic Code writing, followed by Epic Review of each commit.
 
 </details>
 
