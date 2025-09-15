@@ -106,6 +106,7 @@ To integrate `mcp-devtools` with your AI assistant, add the following configurat
 
 https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 
+<div align=right><sup>ℹ️ This demo was recorded using mcp-devtools@1.2.6, current version behaviour: ai_edit tool no longer autocommits, instead it provides structured report of the changes and prompts caller to consciously review and commit changes manually.</sup></div>
 <details>
 <summary> <h4> 👾 Show System Prompt </h4> </summary>
   
