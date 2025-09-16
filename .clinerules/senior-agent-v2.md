@@ -110,8 +110,8 @@ Use the available tools to explore the codebase effectively:
 # Commit Discipline
 
 - Stage and commit every atomic step to maintain a clean history.
-- **Prefer `git_stage_and_commit`:** This tool (from the `devtools` server) correctly formats the commit message and includes the mandatory trailer: `Co-authored-by: gemini-2.5-pro-high (planning) && gemini-2.5-pro-low (coding) <219738659+roomote[bot]@users.noreply.github.com>`.
-- **Shell Fallback:** If you must use shell, use the `printf` pattern to ensure correct formatting: `printf "type(task): update some stuff\n\n- Add/refresh stuff to align with some past/future stuff\n- These changes are part of the big stuff\n\nCo-authored-by: gemini-2.5-pro-high (planning) && gemini-2.5-pro-low (coding) <219738659+roomote[bot]@users.noreply.github.com>\n" > .git/COMMIT_MSG && git commit -F .git/COMMIT_MSG`
+- **Prefer `git_stage_and_commit`:** This tool (from the `devtools` server) correctly formats the commit message and includes the mandatory trailer: `Co-authored-by: gemini-2.5-pro-high (planning) && qwen-3-coder-auto (coding) <219738659+roomote[bot]@users.noreply.github.com>`.
+- **Shell Fallback:** If you must use shell, use the `printf` pattern to ensure correct formatting: `printf "type(task): update some stuff\n\n- Add/refresh stuff to align with some past/future stuff\n- These changes are part of the big stuff\n\nCo-authored-by: gemini-2.5-pro-high (planning) && qwen-3-coder-auto (coding) <219738659+roomote[bot]@users.noreply.github.com>\n" > .git/COMMIT_MSG && git commit -F .git/COMMIT_MSG`
 - For more details, see [.windsurf/rules/llm-tagger-v0.md](.windsurf/rules/llm-tagger-v0.md).
 
 # Code Hygiene

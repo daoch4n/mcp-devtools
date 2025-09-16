@@ -581,6 +581,142 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         logger.debug(f"Failed to get Aider chat history: {e}")
         return None
 
+
+def _extract_touched_files(diff_text: str) -> set[str]:
+    """Extract touched file paths from a unified git diff text.
+    Handles modified, added, deleted, renamed, and binary blocks."""
+    touched: set[str] = set()
+    
+    def normalize_path(path: str) -> str:
+        """Strip quotes, leading a/ or b/, and handle /dev/null"""
+        # Strip surrounding quotes if present
+        if (path.startswith('"') and path.endswith('"')) or \
+           (path.startswith("'") and path.endswith("'")):
+            path = path[1:-1]
+        
+        # Strip leading a/ or b/ prefix
+        if path.startswith('a/') or path.startswith('b/'):
+            path = path[2:]
+            
+        return path
+    
+    # Handle diff --git lines
+    diff_git_pattern = re.compile(r'^\s*diff --git\s+(?:"?a/(.+?)"?)\s+(?:"?b/(.+?)"?)\s*$', re.MULTILINE)
+    for match in diff_git_pattern.finditer(diff_text):
+        a_path, b_path = match.groups()
+        a_path = normalize_path(a_path)
+        b_path = normalize_path(b_path)
+        
+        if a_path != '/dev/null':
+            touched.add(a_path)
+        if b_path != '/dev/null':
+            touched.add(b_path)
+    
+    # Handle +++ and --- lines
+    hunk_pattern = re.compile(r'^\s*[\+\-]{3}\s+(?:(?:a|b)/)?(.*)$', re.MULTILINE)
+    for match in hunk_pattern.finditer(diff_text):
+        path = normalize_path(match.group(1))
+        if path != '/dev/null':
+            touched.add(path)
+    
+    # Handle rename from/to lines
+    rename_from_pattern = re.compile(r'^\s*rename from\s+(?:(?:a|b)/)?(.*)$', re.MULTILINE)
+    rename_to_pattern = re.compile(r'^\s*rename to\s+(?:(?:a|b)/)?(.*)$', re.MULTILINE)
+    
+    for match in rename_from_pattern.finditer(diff_text):
+        path = normalize_path(match.group(1))
+        if path != '/dev/null':
+            touched.add(path)
+            
+    for match in rename_to_pattern.finditer(diff_text):
+        path = normalize_path(match.group(1))
+        if path != '/dev/null':
+            touched.add(path)
+    
+    # Handle Binary files lines
+    binary_pattern = re.compile(r'^\s*Binary files\s+(?:(?:a|b)/)?(.*?)\s+and\s+(?:(?:a|b)/)?(.*?)\s+differ$', re.MULTILINE)
+    for match in binary_pattern.finditer(diff_text):
+        a_path, b_path = match.groups()
+        a_path = normalize_path(a_path)
+        b_path = normalize_path(b_path)
+        
+        if a_path != '/dev/null':
+            touched.add(a_path)
+        if b_path != '/dev/null':
+            touched.add(b_path)
+    
+    # Exclude internal snapshot artifacts just in case
+    touched = {p for p in touched if not p.startswith('.mcp-devtools/')}
+    return touched
+
+
+def _collect_touched_files(repo: git.Repo, diff_target: str, final_diff_text: str, new_untracked: list[str]) -> set[str]:
+    """
+    Collect touched files using git plumbing commands with fallback to regex parsing.
+    
+    Args:
+        repo: Git repository object
+        diff_target: The target to diff against (e.g., "HEAD")
+        final_diff_text: The diff text for fallback parsing
+        new_untracked: List of new untracked files to include
+        
+    Returns:
+        Set of touched file paths
+    """
+    touched_files: set[str] = set()
+    
+    try:
+        # Try to use git plumbing command for reliable parsing
+        diff_output = repo.git.diff('--name-status', '-z', diff_target)
+        
+        # Parse NUL-separated records
+        records = diff_output.split('\x00')
+        i = 0
+        while i < len(records) - 1:  # -1 because last element is usually empty
+            if not records[i]:  # Skip empty records
+                i += 1
+                continue
+                
+            rec = records[i]
+            # Split at the first TAB to separate status and path
+            if '\t' in rec:
+                status_code, first_path = rec.split('\t', 1)
+            else:
+                status_code = rec
+                first_path = ''
+                
+            # Handle rename/copy operations (status starts with R or C)
+            if status_code.startswith(('R', 'C')):
+                # For renames/copies, the next record is the new path
+                if i + 1 < len(records):
+                    old_path = first_path
+                    new_path = records[i + 1]
+                    # Add both paths, filtering out /dev/null and .mcp-devtools/
+                    for path in [old_path, new_path]:
+                        if path and path != '/dev/null' and not path.startswith('.mcp-devtools/'):
+                            touched_files.add(path)
+                    i += 2
+                else:
+                    # Malformed record, skip
+                    i += 1
+            else:
+                # Regular operations (M, A, D, etc.)
+                path = first_path
+                if path and path != '/dev/null' and not path.startswith('.mcp-devtools/'):
+                    touched_files.add(path)
+                i += 1
+    except Exception as e:
+        # Fallback to regex parsing if git command fails
+        logger.debug(f"Git plumbing command failed, falling back to regex parsing: {e}")
+        touched_files = _extract_touched_files(final_diff_text)
+    
+    # Always add new untracked files
+    for untracked_file in new_untracked:
+        if not untracked_file.startswith('.mcp-devtools/'):
+            touched_files.add(untracked_file)
+            
+    return touched_files
+
 # === AI_HINT helper builders (keep terse, agent-friendly) ===
 
 def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception) -> str:
@@ -1748,15 +1884,8 @@ async def ai_edit(
                     final_diff_combined = "\n".join(all_diff_parts).strip()
 
                     # Extract touched files from the diff
-                    for line in final_diff_combined.split('\n'):
-                        if line.startswith('+++ b/'):
-                            touched_file = line[6:]  # Remove '+++ b/' prefix
-                            touched_files.add(touched_file)
+                    touched_files = _collect_touched_files(repo, diff_target, final_diff_combined, new_untracked)
                     
-                    # Add untracked files to touched files
-                    for untracked_file in new_untracked:
-                        touched_files.add(untracked_file)
-
                     # Log the final diff length and a preview for diagnostics
                     preview = (final_diff_combined[:1000] + "…") if len(final_diff_combined) > 1000 else final_diff_combined
                     logger.debug(f"[ai_edit] Final diff length: {len(final_diff_combined)}; preview:\n{preview}")
@@ -1829,9 +1958,14 @@ async def ai_edit(
             logger.warning(f"Failed to parse token stats from chat history: {e}")
             sent_tokens, received_tokens = 0, 0
         
+        total_thread_tokens = sent_tokens + received_tokens
+        
         # For backward compatibility, still calculate tokens for last session
         thread_text = _read_last_aider_session_text(directory_path)
-        tokens = _approx_token_count(thread_text)
+        s, r = _parse_aider_token_stats(thread_text)
+        tokens = s + r
+        if tokens == 0:
+            tokens = _approx_token_count(thread_text)
         
         # Build summary section
         session_status = "completed/success" if success else "error"
@@ -1847,14 +1981,19 @@ async def ai_edit(
         else:
             files_list = "None"
         
+        files_touched_line = (
+            f"- Files touched: {files_touched_count} ({files_list})\n" if files_touched_count > 0 else ""
+        )
+        
         summary_section = (
             f"### Summary\n"
             f"- Status: {session_status}\n"
             f"- Session: {effective_session_id}\n"
             f"- Duration: {duration_s}s\n"
-            f"- Files touched: {files_touched_count} ({files_list})\n"
+            + files_touched_line +
             f"- Aider tokens: sent={sent_tokens}, received={received_tokens}\n"
-            f"- Thread approx tokens: {tokens}\n"
+            f"- Total thread tokens: {total_thread_tokens}\n"
+            f"- Last session tokens: {tokens}\n"
         )
         
         # Add warnings section if there were any stderr messages
@@ -1877,9 +2016,12 @@ async def ai_edit(
             result_message += f"\n\nAider's last reply:\n{last_reply}"
         
         # Add thread context usage information
-        thread_text = _read_last_aider_session_text(directory_path)
-        tokens = _approx_token_count(thread_text)
-        result_message += f"\n\n### Thread Context Usage\nApproximate tokens: {tokens}\nGuidance: Keep overall thread context under ~200k tokens. If you're approaching the limit, consider pruning older messages or calling ai_edit with continue_thread=false to truncate history."
+        result_message += (
+            f"\n\n### Thread Context Usage\n"
+            f"Last session tokens: {tokens}\n"
+            f"Total thread tokens: {total_thread_tokens}\n"
+            f"Guidance: Long threads increase context cost and latency. Consider pruning or summarizing older context, or starting a fresh session when appropriate. Aim for a balanced approach between context richness and efficiency."
+        )
         
         return result_message
 

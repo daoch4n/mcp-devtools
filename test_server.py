@@ -597,33 +597,10 @@ async def test_handle_post_message(mock_sse_transport):
 import yaml
 from unittest import mock
 
-def test_load_aider_config_various_cases(tmp_path, monkeypatch):
+def test_load_aider_config_various_cases(tmp_path, monkeypatch, fs_guard):
     from server import load_aider_config
 
-    # Patch os.path.exists and open to prevent reading real home config files
-    import builtins
-    real_exists = os.path.exists
-    real_open = builtins.open
-
-    def safe_exists(path):
-        # Only allow files under the temporary workspace; block everything else for isolation
-        try:
-            return os.path.abspath(path).startswith(str(tmp_path))
-        except Exception:
-            return False
-
-    def safe_open(path, *args, **kwargs):
-        if str(tmp_path) in os.path.abspath(path):
-            return real_open(path, *args, **kwargs)
-        raise FileNotFoundError(f"Blocked open for {path}")
-
-    monkeypatch.setattr(os.path, "exists", safe_exists)
-    monkeypatch.setattr(builtins, "open", safe_open)
-
-    # Helper to write a config file
-    def write_yaml(path, data):
-        with real_open(path, "w") as f:
-            yaml.dump(data, f)
+    write_yaml = fs_guard["write_yaml"]
 
     # Case 1: Config in working directory
     workdir = tmp_path / "workdir"
@@ -1721,7 +1698,7 @@ async def test_ai_edit_options_override_and_unsupported_removed(temp_git_repo, m
     assert "--base_url" not in command
 
 @pytest.mark.asyncio
-async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch):
+async def test_ai_edit_includes_thread_context_usage(temp_git_repo, patch_create_subprocess_shell):
     """Test that ai_edit output includes thread context usage information"""
     repo, repo_path = temp_git_repo
     
@@ -1737,10 +1714,8 @@ async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch)
         async def communicate(self):
             return (b"Applied edit to file.txt", b"")
     
-    async def mock_create_subprocess_shell(command, *args, **kwargs):
-        return SuccessProc()
-    
-    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    # Use the fixture to patch subprocess creation
+    patch_create_subprocess_shell(lambda cmd: SuccessProc())
     
     # Run ai_edit
     result = await ai_edit(
@@ -1754,8 +1729,9 @@ async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch)
     
     # Assert that the output contains thread context usage information
     assert "### Thread Context Usage" in result
-    assert "Approximate tokens:" in result
-    assert "Guidance: Keep overall thread context under ~200k tokens" in result
+    assert "Last session tokens:" in result
+    assert "Total thread tokens:" in result
+    assert "Guidance: Long threads increase context cost and latency" in result
 
 
 def test_server_imports_when_snapshot_utils_missing(tmp_path, monkeypatch):
@@ -2133,6 +2109,115 @@ def test_parse_aider_token_stats_rounds_up_fractional_values():
     # Assert (2600, 1200) - verifying rounding up behavior
     assert sent_tokens == 2600
     assert received_tokens == 1200
+
+
+def test_extract_touched_files_empty():
+    from server import _extract_touched_files
+    assert _extract_touched_files("") == set()
+
+
+def test_extract_touched_files_various_cases():
+    from server import _extract_touched_files
+    diff_text = """
+    diff --git a/file1.txt b/file1.txt
+    index e69de29..4b825dc 100644
+    --- a/file1.txt
+    +++ b/file1.txt
+    @@ -1 +1 @@
+    -old
+    +new
+
+    diff --git a/new.txt b/new.txt
+    new file mode 100644
+    index 0000000..e69de29
+    --- /dev/null
+    +++ b/new.txt
+    @@ -0,0 +1 @@
+    +hello
+
+    diff --git a/old.txt b/old.txt
+    deleted file mode 100644
+    index e69de29..0000000
+    --- a/old.txt
+    +++ /dev/null
+
+    diff --git a/oldname.md b/newname.md
+    similarity index 100%
+    rename from oldname.md
+    rename to newname.md
+    --- a/oldname.md
+    +++ b/newname.md
+
+    diff --git a/bin1.png b/bin1.png
+    index 89abcd1..12ef345 100644
+    Binary files a/bin1.png and b/bin1.png differ
+    """.strip()
+    touched = _extract_touched_files(diff_text)
+    expected = {"file1.txt", "new.txt", "old.txt", "oldname.md", "newname.md", "bin1.png"}
+    assert touched == expected
+
+
+def test_parse_aider_token_stats_k_and_m_suffixes():
+    from server import _parse_aider_token_stats
+    text = "\n".join([
+        "> Tokens: 1.5k sent, 2K received.",
+        "> Tokens: 0.75m sent, 0.25M received.",
+    ])
+    sent, received = _parse_aider_token_stats(text)
+    assert sent == 1500 + 750000
+    assert received == 2000 + 250000
+
+
+def test_parse_aider_token_stats_commas_and_plain():
+    from server import _parse_aider_token_stats
+    text = "\n".join([
+        "> Tokens: 1,234 sent, 567 received.",
+        "> Tokens: 42 sent, 8 received.",
+    ])
+    sent, received = _parse_aider_token_stats(text)
+    assert sent == 1234 + 42
+    assert received == 567 + 8
+
+
+def test_parse_aider_token_stats_no_matches_returns_zero():
+    from server import _parse_aider_token_stats
+    text = "No token stats here."
+    sent, received = _parse_aider_token_stats(text)
+    assert sent == 0 and received == 0
+
+
+def test_extract_touched_files_handles_spaces():
+    from server import _extract_touched_files
+    diff_text = """
+    diff --git a/file with spaces.txt b/file with spaces.txt
+    index e69de29..4b825dc 100644
+    --- a/file with spaces.txt
+    +++ b/file with spaces.txt
+    @@ -1 +1 @@
+    -old
+    +new
+
+    diff --git a/old name.txt b/new name.txt
+    similarity index 100%
+    rename from old name.txt
+    rename to new name.txt
+    --- a/old name.txt
+    +++ b/new name.txt
+
+    diff --git "a/quoted name.txt" "b/quoted name.txt"
+    new file mode 100644
+    --- /dev/null
+    +++ "b/quoted name.txt"
+    @@ -0,0 +1 @@
+    +content
+
+    diff --git a/bin file.png b/bin file.png
+    index 89abcd1..12ef345 100644
+    Binary files a/bin file.png and b/bin file.png differ
+    """.strip()
+    touched = _extract_touched_files(diff_text)
+    expected = {"file with spaces.txt", "old name.txt", "new name.txt", "quoted name.txt", "bin file.png"}
+    assert touched == expected
 
 
 # === Server Integration Test Fixtures and Smoke Test ===
