@@ -938,14 +938,16 @@ async def test_ai_sessions_tool_list_status_last_session_id(monkeypatch, fake_ai
         sessions_list = session_payload.get("sessions", [])
         assert len(sessions_list) >= 1
         
-        # Get session_id from first session
-        session_id = sessions_list[0].get('id') or sessions_list[0].get('session_id')
-        assert session_id is not None
+        # Get session_id from first session (standardized to 'session_id')
+        assert 'session_id' in sessions_list[0]
+        session_id = sessions_list[0]['session_id']
 
         # Test ai_sessions status
         status_result = list(await call_tool("ai_sessions", {"repo_path": str(repo_path), "action": "status", "session_id": session_id}))
         status_data = json.loads(status_result[0].text)
         assert 'status' in status_data or 'session_id' in status_data
+        if 'session_id' in status_data:
+            assert status_data['session_id'] == session_id
 
         # Test .aider.last_session_id file exists and contains the session id
         last_session_file = repo_path / ".aider.last_session_id"
@@ -1808,6 +1810,31 @@ def test_extract_touched_files_various_cases():
     """.strip()
     touched = _extract_touched_files(diff_text)
     expected = {"file1.txt", "new.txt", "old.txt", "oldname.md", "newname.md", "bin1.png"}
+    assert touched == expected
+
+
+def test_extract_touched_files_handles_quotes_and_spaces():
+    from server import _extract_touched_files
+    diff_text = """
+    diff --git "a/space file.txt" "b/space file.txt"
+    --- "a/space file.txt"
+    +++ "b/space file.txt"
+    @@ -1 +1 @@
+    -old
+    +new
+
+    diff --git "a/old name.md" "b/new name.md"
+    similarity index 100%
+    rename from "old name.md"
+    rename to "new name.md"
+    --- "a/old name.md"
+    +++ "b/new name.md"
+
+    diff --git "a/bin file.png" "b/bin file.png"
+    Binary files "a/bin file.png" and "b/bin file.png" differ
+    """.strip()
+    touched = _extract_touched_files(diff_text)
+    expected = {"space file.txt", "old name.md", "new name.md", "bin file.png"}
     assert touched == expected
 
 
