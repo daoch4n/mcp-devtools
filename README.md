@@ -563,3 +563,5 @@ You must adhere to the following five-step, iterative workflow:
 💬 *But I'm too lazy to even read this all!*
 
 https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
+
+<div align=right><sup>ℹ️ This audio overview was generated using mcp-devtools@1.2.6, README, current version migh have some differences or slightly altered functionality.</sup></div>
