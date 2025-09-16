@@ -1389,6 +1389,7 @@ async def test_ai_edit_aider_failure_path(temp_git_repo, monkeypatch):
     assert "Aider process exited with code 1" in result
 
 
+@pytest.mark.skip(reason="Deprecated: server no longer clears chat history; relies on Aider's built-in --no-restore-chat-history when continue_thread=False")
 @pytest.mark.asyncio
 async def test_ai_edit_prunes_history_when_continue_false(temp_git_repo, monkeypatch):
     """Create .aider.chat.history.md with content; run ai_edit with continue_thread=False; assert it was cleared."""
@@ -1426,6 +1427,7 @@ async def test_ai_edit_prunes_history_when_continue_false(temp_git_repo, monkeyp
     content = history_file.read_text()
     assert content == "" or content.strip() == "# Chat History"
 
+@pytest.mark.skip(reason="Deprecated: server no longer prunes/summarizes chat history; prune/prune_mode are ignored")
 @pytest.mark.asyncio
 async def test_ai_edit_prune_truncate_updates_history(temp_git_repo, monkeypatch):
     """Create .aider.chat.history.md with multiple sessions; run ai_edit with prune=True and prune_mode='truncate'; assert older sessions are removed."""
@@ -1481,6 +1483,7 @@ Assistant: Third response
     assert "# aider chat started at 2023-01-01 12:00:00" in content  # Last session kept
     assert "# aider chat started at 2023-01-01 11:00:00" not in content  # Previous sessions removed
 
+@pytest.mark.skip(reason="Deprecated: server no longer prunes/summarizes chat history; prune/prune_mode are ignored")
 @pytest.mark.asyncio
 async def test_ai_edit_prune_summarize_updates_history(temp_git_repo, monkeypatch):
     """Create .aider.chat.history.md with multiple sessions; run ai_edit with prune=True; mock summarizer to create summary; assert history is rebuilt with summary."""
@@ -1764,6 +1767,7 @@ def test_server_imports_when_snapshot_utils_missing(tmp_path, monkeypatch):
     assert p.exists()
 
 
+@pytest.mark.skip(reason="Deprecated: server no longer prunes/summarizes chat history; no summarizer fallback")
 @pytest.mark.asyncio
 async def test_ai_edit_prune_summarize_fallback_on_failure(temp_git_repo, monkeypatch):
     """Setup .aider.chat.history.md with 3 sessions; Set MCP_PRUNE_KEEP_SESSIONS=1, prune=True, prune_mode=None (summarize default);
@@ -1837,6 +1841,7 @@ Assistant: Third response
     assert "# aider chat started at 2023-01-01 10:00:00" not in content  # Previous sessions removed
 
 
+@pytest.mark.skip(reason="Deprecated: server no longer prunes/summarizes chat history; prune/prune_mode are ignored")
 @pytest.mark.asyncio
 async def test_ai_edit_prune_keep_two_sessions(temp_git_repo, monkeypatch):
     """Setup .aider.chat.history.md with 4 sessions; Set MCP_PRUNE_KEEP_SESSIONS=2, prune=True, prune_mode='truncate';
@@ -1900,6 +1905,7 @@ Assistant: Fourth response
     assert "# aider chat started at 2023-01-01 09:00:00" not in content  # Earlier sessions removed
 
 
+@pytest.mark.skip(reason="Deprecated: server no longer prunes/summarizes or clears chat history; continue_thread only sets Aider flag")
 @pytest.mark.asyncio
 async def test_ai_edit_prune_with_continue_false_does_not_clear(temp_git_repo, monkeypatch):
     """Setup .aider.chat.history.md with 2 sessions; Run ai_edit with prune=True (truncate) and continue_thread=False;
