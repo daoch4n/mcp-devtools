@@ -2438,6 +2438,5 @@ routes: List[Union[Route, Mount]] = [
 app = Starlette(routes=cast(Any, routes))
 
 if __name__ == "__main__":
-    # To run the server, you would typically use uvicorn:
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
