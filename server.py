@@ -777,6 +777,48 @@ def find_git_root(path: str) -> Optional[str]:
         current = os.path.dirname(current)
     return None
 
+
+def _ensure_gitignore_has_devtools(repo_root: str) -> None:
+    """
+    Ensure .gitignore contains an entry for .mcp-devtools/ directory.
+    
+    Args:
+        repo_root: The Git repository root path
+    """
+    try:
+        gitignore_path = Path(repo_root) / ".gitignore"
+        
+        # Pattern to match .mcp-devtools entries (with or without trailing slash)
+        pattern = re.compile(r"^\s*\.mcp-devtools\/?\s*$")
+        
+        # If .gitignore doesn't exist, create it with the entry
+        if not gitignore_path.exists():
+            gitignore_path.write_text(".mcp-devtools/\n", encoding="utf-8")
+            logger.debug(f"Created .gitignore with .mcp-devtools/ entry at {gitignore_path}")
+            return
+        
+        # Read existing content
+        content = gitignore_path.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        
+        # Check if entry already exists
+        for line in lines:
+            if pattern.match(line):
+                logger.debug(f".mcp-devtools/ already in .gitignore at {gitignore_path}")
+                return
+        
+        # Append the entry
+        # Add newline if file doesn't end with one
+        if content and not content.endswith("\n"):
+            content += "\n"
+        content += ".mcp-devtools/\n"
+        
+        gitignore_path.write_text(content, encoding="utf-8")
+        logger.debug(f"Added .mcp-devtools/ to .gitignore at {gitignore_path}")
+        
+    except Exception as e:
+        logger.debug(f"Failed to ensure .mcp-devtools/ in .gitignore: {e}")
+
 def load_aider_config(repo_path: Optional[str] = None, config_file: Optional[str] = None) -> Dict[str, Any]:
     """
     Loads Aider configuration from various possible locations, merging them
@@ -1478,6 +1520,14 @@ async def ai_edit(
     # We rely solely on Aider's built-in chat history handling; the server does not
     # prune or clear `.aider.chat.history.md` files anymore.
     aider_options["restore_chat_history"] = continue_thread
+
+    # Ensure .mcp-devtools is in .gitignore before capturing untracked files
+    try:
+        repo_root_ig = find_git_root(directory_path)
+        if repo_root_ig:
+            _ensure_gitignore_has_devtools(repo_root_ig)
+    except Exception as e:
+        logger.debug(f"Failed to ensure .mcp-devtools in .gitignore: {e}")
 
     for fname in files:
         fpath = os.path.join(directory_path, fname)
