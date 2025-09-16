@@ -1799,8 +1799,6 @@ async def ai_edit(
                 result_message = (
                     f"### Aider's Plan\n"
                     f"{last_reply}\n\n"
-                    f"### Session\n"
-                    f"{effective_session_id}\n\n"
                     f"### Applied Changes (Diff)\n"
                     f"{applied_changes}\n\n"
                     f"### Verification Result\n"
