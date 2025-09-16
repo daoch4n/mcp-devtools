@@ -1844,7 +1844,6 @@ async def ai_edit(
                     f"### Next Steps\n"
                     f"- Please review the changes above. If they are correct, please stage and commit them.\n"
                     f"- Consider summarizing what was done and starting a fresh thread with continue_thread=false; pass the summary in the next ai_edit message to give the agent a fresh perspective.\n"
-                    f"- Remember the server will not prune Aider history; to shorten context, start a new thread and feed summarized content via input.\n"
                     f"- Whether continuing or restarting, include key decisions, constraints, relevant files, and acceptance criteria to maintain context continuity.\n\n"
                     f"{snapshot_delta_section if snapshot_delta_section else ''}"
                 )
