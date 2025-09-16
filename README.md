@@ -50,6 +50,7 @@
         *   **Aider's Plan:** The approach the AI will take.
         *   **Applied Changes (Diff):** The exact changes made to your files.
         *   **Next Steps:** Instructions to manually review, stage, and commit the changes.
+        *   **Thread Context Usage:** Information about the approximate token count of the conversation history and guidance on keeping it under ~200k tokens.
     3.  **Review and Commit:** You are in full control. Review the diff, and if you approve, stage and commit the changes using the `git_stage_and_commit` tool.
     
     Aider reads .aider.conf.yml itself. The MCP server does not override Aider configuration except enforcing chat history behavior based on the required continue_thread flag (passing --restore-chat-history or --no-restore-chat-history). Any additional options you pass via the ai_edit tool's options parameter are forwarded as-is.
@@ -61,8 +62,6 @@
       - Diffs and snapshot artifacts are still computed from and stored under the root repository (e.g., `.mcp-devtools/`), so user-facing behavior remains unchanged when disabled.
 
     </details>
-
----
 
 ## 2️⃣ Run
 
@@ -510,19 +509,6 @@ You must adhere to the following five-step, iterative workflow:
         "default": "diff",
         "description": "Optional. The format Aider should use for edits. Defaults to 'diff'. Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
       },
-      "prune": {
-        "type": "boolean",
-        "default": false,
-        "description": "Deprecated. Ignored by server. Rely on Aider’s built-in chat history handling; use continue_thread to control --restore-chat-history."
-      },
-      "prune_mode": {
-        "type": "string",
-        "enum": [
-          "summarize",
-          "truncate"
-        ],
-        "description": "Deprecated. Ignored by server. Formerly controlled summarize/truncate behavior, now unused."
-      }
     },
     "required": [
       "repo_path",
@@ -545,8 +531,6 @@ You must adhere to the following five-step, iterative workflow:
 > Note: The server no longer modifies or prunes `.aider.chat.history.md`. Chat history usage is controlled solely by Aider via `--restore-chat-history` (when `continue_thread` is true) or `--no-restore-chat-history` (when false).
 
 > Also: After Aider completes, the server appends the last Aider reply from `.aider.chat.history.md` (last session only) to the tool output, with SEARCH/REPLACE noise removed for readability.
-
-> Pruning: The `prune` and `prune_mode` inputs are deprecated and ignored by the server.
 
 ### `aider_status`
 - **Description:** Check the status of Aider and its environment. Use this to:

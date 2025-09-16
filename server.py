@@ -1062,14 +1062,6 @@ class AiEdit(BaseModel):
         None,
         description="Optional. A session ID to associate with this edit operation. If not provided, a new UUID will be generated."
     )
-    prune: bool = Field(
-        default=False,
-        description="Deprecated. Ignored by server. Rely on Aider’s built-in chat history handling; use continue_thread to control --restore-chat-history."
-    )
-    prune_mode: Literal['summarize', 'truncate'] | None = Field(
-        None,
-        description="Deprecated. Ignored by server. Formerly controlled summarize/truncate behavior, now unused."
-    )
 
 class AiderStatus(BaseModel):
     """
@@ -1431,8 +1423,6 @@ async def ai_edit(
     files: List[str],
     options: list[str] | None,
     continue_thread: bool,
-    prune: bool = False,
-    prune_mode: Optional[Literal['summarize', 'truncate']] = None,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -1443,12 +1433,10 @@ async def ai_edit(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
 
     Note:
-    - The server no longer modifies or prunes `.aider.chat.history.md` directly.
+    - The server does not modify chat history directly.
       Chat history usage is controlled solely by Aider via the
       `--restore-chat-history` or `--no-restore-chat-history` flags, which we set
       based on `continue_thread`.
-    - The `prune` and `prune_mode` parameters are retained for backward compatibility
-      but are deprecated and ignored by the server.
     """
     start_time = time.time()
     touched_files: Set[str] = set()
@@ -1478,7 +1466,6 @@ async def ai_edit(
         "yes_always": True,
         "auto_commit": False,
     }
-    # Deprecated: server-side pruning and clearing of Aider chat history are no-ops now.
 
     # Pass the message directly as a command-line option
     aider_options["message"] = message
@@ -1812,14 +1799,15 @@ async def ai_edit(
                 result_message = (
                     f"### Aider's Plan\n"
                     f"{last_reply}\n\n"
-                    f"### Session\n"
-                    f"{effective_session_id}\n\n"
                     f"### Applied Changes (Diff)\n"
                     f"{applied_changes}\n\n"
                     f"### Verification Result\n"
                     f"⏳ Not yet implemented.\n\n"
                     f"### Next Steps\n"
-                    f"Please review the changes above. If they are correct, please stage and commit them.\n\n"
+                    f"- Please review the changes above. If they are correct, please stage and commit them.\n"
+                    f"- Consider summarizing what was done and starting a fresh thread with continue_thread=false; pass the summary in the next ai_edit message to give the agent a fresh perspective.\n"
+                    f"- Remember the server will not prune Aider history; to shorten context, start a new thread and feed summarized content via input.\n"
+                    f"- Whether continuing or restarting, include key decisions, constraints, relevant files, and acceptance criteria to maintain context continuity.\n\n"
                     f"{snapshot_delta_section if snapshot_delta_section else ''}"
                 )
                 structured_report_built = True
@@ -1929,7 +1917,7 @@ async def ai_edit(
             f"\n\n### Thread Context Usage\n"
             f"Last session tokens: {tokens}\n"
             f"Total thread tokens: {total_thread_tokens}\n"
-            f"Guidance: Long threads increase context cost and latency. Consider pruning or summarizing older context, or starting a fresh session when appropriate. Aim for a balanced approach between context richness and efficiency."
+            f"Guidance: Long threads increase context cost and latency. To shorten context, start a fresh session with continue_thread=false and include a concise summary of previous work. Remember to carry forward important details like key decisions, constraints, and relevant files to maintain continuity."
         )
         
         return result_message
@@ -2084,9 +2072,9 @@ async def list_tools() -> list[Tool]:
                 "This tool applies the requested changes directly to your working directory without committing them. "
                 "After the tool runs, it returns a structured report containing:\n\n"
                 "1.  **Aider's Plan:** The approach Aider decided to take.\n"
-                "2.  **Session:** The session ID for this edit operation.\n"
-                "3.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
-                "4.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n\n"
+                "2.  **Applied Changes (Diff):** A diff of the modifications made to your files.\n"
+                "3.  **Next Steps:** Guidance on how to manually review, stage, and commit the changes.\n"
+                "4.  **Thread Context Usage:** Information about the approximate token count of the conversation history and guidance on keeping it under ~200k tokens.\n\n"
                 "Use this tool to:\n"
                 "- Implement new features or functionality in existing code\n"
                 "- Add tests to an existing codebase\n"
