@@ -1829,6 +1829,8 @@ async def ai_edit(
             logger.warning(f"Failed to parse token stats from chat history: {e}")
             sent_tokens, received_tokens = 0, 0
         
+        total_thread_tokens = sent_tokens + received_tokens
+        
         # For backward compatibility, still calculate tokens for last session
         thread_text = _read_last_aider_session_text(directory_path)
         s, r = _parse_aider_token_stats(thread_text)
@@ -1857,7 +1859,8 @@ async def ai_edit(
             f"- Duration: {duration_s}s\n"
             f"- Files touched: {files_touched_count} ({files_list})\n"
             f"- Aider tokens: sent={sent_tokens}, received={received_tokens}\n"
-            f"- Thread approx tokens: {tokens}\n"
+            f"- Total thread tokens: {total_thread_tokens}\n"
+            f"- Last session tokens: {tokens}\n"
         )
         
         # Add warnings section if there were any stderr messages
@@ -1885,7 +1888,12 @@ async def ai_edit(
         tokens = s + r
         if tokens == 0:
             tokens = _approx_token_count(thread_text)
-        result_message += f"\n\n### Thread Context Usage\nApproximate tokens: {tokens}\nGuidance: Keep overall thread context under ~200k tokens. If you're approaching the limit, consider pruning older messages or calling ai_edit with continue_thread=false to truncate history."
+        result_message += (
+            f"\n\n### Thread Context Usage\n"
+            f"Last session tokens: {tokens}\n"
+            f"Total thread tokens: {total_thread_tokens}\n"
+            f"Guidance: Long threads increase context cost and latency. Consider pruning or summarizing older context, or starting a fresh session when appropriate. Aim for a balanced approach between context richness and efficiency."
+        )
         
         return result_message
 
