@@ -1852,12 +1852,16 @@ async def ai_edit(
         else:
             files_list = "None"
         
+        files_touched_line = (
+            f"- Files touched: {files_touched_count} ({files_list})\n" if files_touched_count > 0 else ""
+        )
+        
         summary_section = (
             f"### Summary\n"
             f"- Status: {session_status}\n"
             f"- Session: {effective_session_id}\n"
             f"- Duration: {duration_s}s\n"
-            f"- Files touched: {files_touched_count} ({files_list})\n"
+            + files_touched_line +
             f"- Aider tokens: sent={sent_tokens}, received={received_tokens}\n"
             f"- Total thread tokens: {total_thread_tokens}\n"
             f"- Last session tokens: {tokens}\n"
