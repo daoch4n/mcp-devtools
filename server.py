@@ -1831,7 +1831,10 @@ async def ai_edit(
         
         # For backward compatibility, still calculate tokens for last session
         thread_text = _read_last_aider_session_text(directory_path)
-        tokens = _approx_token_count(thread_text)
+        s, r = _parse_aider_token_stats(thread_text)
+        tokens = s + r
+        if tokens == 0:
+            tokens = _approx_token_count(thread_text)
         
         # Build summary section
         session_status = "completed/success" if success else "error"
@@ -1878,7 +1881,10 @@ async def ai_edit(
         
         # Add thread context usage information
         thread_text = _read_last_aider_session_text(directory_path)
-        tokens = _approx_token_count(thread_text)
+        s, r = _parse_aider_token_stats(thread_text)
+        tokens = s + r
+        if tokens == 0:
+            tokens = _approx_token_count(thread_text)
         result_message += f"\n\n### Thread Context Usage\nApproximate tokens: {tokens}\nGuidance: Keep overall thread context under ~200k tokens. If you're approaching the limit, consider pruning older messages or calling ai_edit with continue_thread=false to truncate history."
         
         return result_message
