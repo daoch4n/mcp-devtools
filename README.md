@@ -513,7 +513,7 @@ You must adhere to the following five-step, iterative workflow:
       "prune": {
         "type": "boolean",
         "default": false,
-        "description": "Optional. Whether to prune older chat history sessions before running. Defaults to false."
+        "description": "Deprecated. Ignored by server. Rely on Aider’s built-in chat history handling; use continue_thread to control --restore-chat-history."
       },
       "prune_mode": {
         "type": "string",
@@ -521,7 +521,7 @@ You must adhere to the following five-step, iterative workflow:
           "summarize",
           "truncate"
         ],
-        "description": "Optional. The pruning mode to use when prune=true. 'summarize' creates a summary of older sessions, 'truncate' removes them. Defaults to 'summarize' if prune=true and prune_mode is not specified."
+        "description": "Deprecated. Ignored by server. Formerly controlled summarize/truncate behavior, now unused."
       }
     },
     "required": [
@@ -542,11 +542,11 @@ You must adhere to the following five-step, iterative workflow:
   - Still include critical context; do not rely solely on chat history.
   - Use this to refine a change made in the immediately previous run.
 
-> Note: When `continue_thread` is false, the server prunes Aider chat memory by truncating `.aider.chat.history.md` in the repository root before invoking Aider.
+> Note: The server no longer modifies or prunes `.aider.chat.history.md`. Chat history usage is controlled solely by Aider via `--restore-chat-history` (when `continue_thread` is true) or `--no-restore-chat-history` (when false).
 
 > Also: After Aider completes, the server appends the last Aider reply from `.aider.chat.history.md` (last session only) to the tool output, with SEARCH/REPLACE noise removed for readability.
 
-> Pruning: When `prune` is true, older chat sessions are either summarized or truncated based on `prune_mode`. By default, only the most recent session is kept (configurable via `MCP_PRUNE_KEEP_SESSIONS` environment variable).
+> Pruning: The `prune` and `prune_mode` inputs are deprecated and ignored by the server.
 
 ### `aider_status`
 - **Description:** Check the status of Aider and its environment. Use this to:
