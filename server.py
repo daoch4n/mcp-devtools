@@ -581,6 +581,54 @@ def _get_last_aider_reply(directory_path: str) -> Optional[str]:
         logger.debug(f"Failed to get Aider chat history: {e}")
         return None
 
+
+def _extract_touched_files(diff_text: str) -> set[str]:
+    """Extract touched file paths from a unified git diff text.
+    Handles modified, added, deleted, renamed, and binary blocks."""
+    touched: set[str] = set()
+    lines = diff_text.splitlines()
+    def norm(p: str) -> str:
+        p = p.strip()
+        if p.startswith('a/') or p.startswith('b/'):
+            p = p[2:]
+        return p
+    for line in lines:
+        if line.startswith('diff --git '):
+            parts = line.strip().split()
+            if len(parts) >= 4:
+                a_path = norm(parts[2])
+                b_path = norm(parts[3])
+                if a_path and a_path != '/dev/null':
+                    touched.add(a_path)
+                if b_path and b_path != '/dev/null':
+                    touched.add(b_path)
+        elif line.startswith('rename from '):
+            p = norm(line[len('rename from '):])
+            if p and p != '/dev/null':
+                touched.add(p)
+        elif line.startswith('rename to '):
+            p = norm(line[len('rename to '):])
+            if p and p != '/dev/null':
+                touched.add(p)
+        elif line.startswith('+++ '):
+            p = norm(line[4:])
+            if p and p != '/dev/null':
+                touched.add(p)
+        elif line.startswith('--- '):
+            p = norm(line[4:])
+            if p and p != '/dev/null':
+                touched.add(p)
+        elif line.startswith('Binary files '):
+            m = re.match(r"Binary files\s+(.+?)\s+and\s+(.+?)\s+differ", line)
+            if m:
+                for grp in (1, 2):
+                    p = norm(m.group(grp))
+                    if p and p != '/dev/null':
+                        touched.add(p)
+    # Exclude internal snapshot artifacts just in case
+    touched = {p for p in touched if not p.startswith('.mcp-devtools/')}
+    return touched
+
 # === AI_HINT helper builders (keep terse, agent-friendly) ===
 
 def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception) -> str:
@@ -1748,10 +1796,8 @@ async def ai_edit(
                     final_diff_combined = "\n".join(all_diff_parts).strip()
 
                     # Extract touched files from the diff
-                    for line in final_diff_combined.split('\n'):
-                        if line.startswith('+++ b/'):
-                            touched_file = line[6:]  # Remove '+++ b/' prefix
-                            touched_files.add(touched_file)
+                    touched_from_diff = _extract_touched_files(final_diff_combined)
+                    touched_files.update(touched_from_diff)
                     
                     # Add untracked files to touched files
                     for untracked_file in new_untracked:

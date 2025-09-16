@@ -2135,6 +2135,103 @@ def test_parse_aider_token_stats_rounds_up_fractional_values():
     assert received_tokens == 1200
 
 
+def test_extract_touched_files_empty():
+    from server import _extract_touched_files
+    assert _extract_touched_files("") == set()
+
+
+def test_extract_touched_files_various_cases():
+    from server import _extract_touched_files
+    diff_text = """
+    diff --git a/file1.txt b/file1.txt
+    index e69de29..4b825dc 100644
+    --- a/file1.txt
+    +++ b/file1.txt
+    @@ -1 +1 @@
+    -old
+    +new
+
+    diff --git a/new.txt b/new.txt
+    new file mode 100644
+    index 0000000..e69de29
+    --- /dev/null
+    +++ b/new.txt
+    @@ -0,0 +1 @@
+    +hello
+
+    diff --git a/old.txt b/old.txt
+    deleted file mode 100644
+    index e69de29..0000000
+    --- a/old.txt
+    +++ /dev/null
+
+    diff --git a/oldname.md b/newname.md
+    similarity index 100%
+    rename from oldname.md
+    rename to newname.md
+    --- a/oldname.md
+    +++ b/newname.md
+
+    diff --git a/bin1.png b/bin1.png
+    index 89abcd1..12ef345 100644
+    Binary files a/bin1.png and b/bin1.png differ
+    """.strip()
+    touched = _extract_touched_files(diff_text)
+    expected = {"file1.txt", "new.txt", "old.txt", "oldname.md", "newname.md", "bin1.png"}
+    for p in expected:
+        assert p in touched
+
+
+def test_parse_aider_token_stats_k_and_m_suffixes():
+    from server import _parse_aider_token_stats
+    text = "\n".join([
+        "> Tokens: 1.5k sent, 2K received.",
+        "> Tokens: 0.75m sent, 0.25M received.",
+    ])
+    sent, received = _parse_aider_token_stats(text)
+    assert sent == 1500 + 750000
+    assert received == 2000 + 250000
+
+
+def test_parse_aider_token_stats_commas_and_plain():
+    from server import _parse_aider_token_stats
+    text = "\n".join([
+        "> Tokens: 1,234 sent, 567 received.",
+        "> Tokens: 42 sent, 8 received.",
+    ])
+    sent, received = _parse_aider_token_stats(text)
+    assert sent == 1234 + 42
+    assert received == 567 + 8
+
+
+def test_parse_aider_token_stats_no_matches_returns_zero():
+    from server import _parse_aider_token_stats
+    text = "No token stats here."
+    sent, received = _parse_aider_token_stats(text)
+    assert sent == 0 and received == 0
+
+
+def test_extract_touched_files_ignores_internal_paths():
+    from server import _extract_touched_files
+    diff_text = "\n".join([
+        "diff --git a/.mcp-devtools/ctx/older_history.md b/.mcp-devtools/ctx/older_history.md",
+        "index 0000000..1111111 100644",
+        "--- a/.mcp-devtools/ctx/older_history.md",
+        "+++ b/.mcp-devtools/ctx/older_history.md",
+        "@@ -0,0 +1 @@",
+        "+internal",
+        "diff --git a/src/app.ts b/src/app.ts",
+        "index 0000000..1111111 100644",
+        "--- a/src/app.ts",
+        "+++ b/src/app.ts",
+        "@@ -0,0 +1 @@",
+        "+export {};",
+    ])
+    touched = _extract_touched_files(diff_text)
+    assert "src/app.ts" in touched
+    assert all(not p.startswith('.mcp-devtools/') for p in touched)
+
+
 # === Server Integration Test Fixtures and Smoke Test ===
 import pytest
 import asyncio
