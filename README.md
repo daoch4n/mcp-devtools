@@ -159,7 +159,7 @@ You must adhere to the following five-step, iterative workflow:
 
 **Primary Constraint:**
 * You are **strictly prohibited** from writing or modifying application code directly. All code implementation must be delegated.
-* **Forbidden Tools for Coding:** `apply_diff`, `write_to_file`, and `{your_native_tool_slug}` must NOT be used to modify code.
+* **Forbidden Tools for Coding:** `write_to_file`, and `{your_native_tool_slug}` must NOT be used to modify code.
 
 **Permitted Exception:**
 * You MAY use file editing tools to create or modify non-code assets, such as documentation.
