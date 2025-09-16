@@ -649,6 +649,74 @@ def _extract_touched_files(diff_text: str) -> set[str]:
     touched = {p for p in touched if not p.startswith('.mcp-devtools/')}
     return touched
 
+
+def _collect_touched_files(repo: git.Repo, diff_target: str, final_diff_text: str, new_untracked: list[str]) -> set[str]:
+    """
+    Collect touched files using git plumbing commands with fallback to regex parsing.
+    
+    Args:
+        repo: Git repository object
+        diff_target: The target to diff against (e.g., "HEAD")
+        final_diff_text: The diff text for fallback parsing
+        new_untracked: List of new untracked files to include
+        
+    Returns:
+        Set of touched file paths
+    """
+    touched_files: set[str] = set()
+    
+    try:
+        # Try to use git plumbing command for reliable parsing
+        diff_output = repo.git.diff('--name-status', '-z', diff_target)
+        
+        # Parse NUL-separated records
+        records = diff_output.split('\x00')
+        i = 0
+        while i < len(records) - 1:  # -1 because last element is usually empty
+            if not records[i]:  # Skip empty records
+                i += 1
+                continue
+                
+            rec = records[i]
+            # Split at the first TAB to separate status and path
+            if '\t' in rec:
+                status_code, first_path = rec.split('\t', 1)
+            else:
+                status_code = rec
+                first_path = ''
+                
+            # Handle rename/copy operations (status starts with R or C)
+            if status_code.startswith(('R', 'C')):
+                # For renames/copies, the next record is the new path
+                if i + 1 < len(records):
+                    old_path = first_path
+                    new_path = records[i + 1]
+                    # Add both paths, filtering out /dev/null and .mcp-devtools/
+                    for path in [old_path, new_path]:
+                        if path and path != '/dev/null' and not path.startswith('.mcp-devtools/'):
+                            touched_files.add(path)
+                    i += 2
+                else:
+                    # Malformed record, skip
+                    i += 1
+            else:
+                # Regular operations (M, A, D, etc.)
+                path = first_path
+                if path and path != '/dev/null' and not path.startswith('.mcp-devtools/'):
+                    touched_files.add(path)
+                i += 1
+    except Exception as e:
+        # Fallback to regex parsing if git command fails
+        logger.debug(f"Git plumbing command failed, falling back to regex parsing: {e}")
+        touched_files = _extract_touched_files(final_diff_text)
+    
+    # Always add new untracked files
+    for untracked_file in new_untracked:
+        if not untracked_file.startswith('.mcp-devtools/'):
+            touched_files.add(untracked_file)
+            
+    return touched_files
+
 # === AI_HINT helper builders (keep terse, agent-friendly) ===
 
 def ai_hint_read_file_error(file_path: str, repo_working_dir: str, e: Exception) -> str:
@@ -1816,13 +1884,8 @@ async def ai_edit(
                     final_diff_combined = "\n".join(all_diff_parts).strip()
 
                     # Extract touched files from the diff
-                    touched_from_diff = _extract_touched_files(final_diff_combined)
-                    touched_files.update(touched_from_diff)
+                    touched_files = _collect_touched_files(repo, diff_target, final_diff_combined, new_untracked)
                     
-                    # Add untracked files to touched files
-                    for untracked_file in new_untracked:
-                        touched_files.add(untracked_file)
-
                     # Log the final diff length and a preview for diagnostics
                     preview = (final_diff_combined[:1000] + "…") if len(final_diff_combined) > 1000 else final_diff_combined
                     logger.debug(f"[ai_edit] Final diff length: {len(final_diff_combined)}; preview:\n{preview}")

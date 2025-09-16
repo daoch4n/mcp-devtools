@@ -597,33 +597,10 @@ async def test_handle_post_message(mock_sse_transport):
 import yaml
 from unittest import mock
 
-def test_load_aider_config_various_cases(tmp_path, monkeypatch):
+def test_load_aider_config_various_cases(tmp_path, monkeypatch, fs_guard):
     from server import load_aider_config
 
-    # Patch os.path.exists and open to prevent reading real home config files
-    import builtins
-    real_exists = os.path.exists
-    real_open = builtins.open
-
-    def safe_exists(path):
-        # Only allow files under the temporary workspace; block everything else for isolation
-        try:
-            return os.path.abspath(path).startswith(str(tmp_path))
-        except Exception:
-            return False
-
-    def safe_open(path, *args, **kwargs):
-        if str(tmp_path) in os.path.abspath(path):
-            return real_open(path, *args, **kwargs)
-        raise FileNotFoundError(f"Blocked open for {path}")
-
-    monkeypatch.setattr(os.path, "exists", safe_exists)
-    monkeypatch.setattr(builtins, "open", safe_open)
-
-    # Helper to write a config file
-    def write_yaml(path, data):
-        with real_open(path, "w") as f:
-            yaml.dump(data, f)
+    write_yaml = fs_guard["write_yaml"]
 
     # Case 1: Config in working directory
     workdir = tmp_path / "workdir"
@@ -1721,7 +1698,7 @@ async def test_ai_edit_options_override_and_unsupported_removed(temp_git_repo, m
     assert "--base_url" not in command
 
 @pytest.mark.asyncio
-async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch):
+async def test_ai_edit_includes_thread_context_usage(temp_git_repo, patch_create_subprocess_shell):
     """Test that ai_edit output includes thread context usage information"""
     repo, repo_path = temp_git_repo
     
@@ -1737,10 +1714,8 @@ async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch)
         async def communicate(self):
             return (b"Applied edit to file.txt", b"")
     
-    async def mock_create_subprocess_shell(command, *args, **kwargs):
-        return SuccessProc()
-    
-    monkeypatch.setattr(asyncio, "create_subprocess_shell", mock_create_subprocess_shell)
+    # Use the fixture to patch subprocess creation
+    patch_create_subprocess_shell(lambda cmd: SuccessProc())
     
     # Run ai_edit
     result = await ai_edit(
