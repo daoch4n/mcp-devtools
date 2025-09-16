@@ -1073,28 +1073,6 @@ class AiderStatus(BaseModel):
         description="If true, the tool will also check Aider's configuration, environment variables, and Git repository details. Defaults to true."
     )
 
-class AiSessionList(BaseModel):
-    """
-    Represents the input schema for the `ai_session_list` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-
-class AiSessionStatus(BaseModel):
-    """
-    Represents the input schema for the `ai_session_status` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    session_id: str = Field(description="The ID of the session to retrieve.")
-
-class AiSessions(BaseModel):
-    """
-    Represents the input schema for the `ai_sessions` tool.
-    """
-    repo_path: str = Field(description="The absolute path to the Git repository's working directory.")
-    action: Literal['list', 'status'] = Field(description="The action to perform: 'list' to list all sessions or 'status' to get details of a specific session.")
-    session_id: Optional[str] = Field(None, description="The ID of the session to retrieve (required for 'status' action).")
-    status: Optional[Literal['running', 'completed']] = Field(None, description="Optional. Filter sessions by status when action='list'.")
-    cleanup: bool = Field(False, description="If true, opportunistically run TTL cleanup before returning.")
 
 class GitTools(str, Enum):
     """
@@ -1110,7 +1088,6 @@ class GitTools(str, Enum):
     EXECUTE_COMMAND = "execute_command"
     AI_EDIT = "ai_edit"
     AIDER_STATUS = "aider_status"
-    AI_SESSIONS = "ai_sessions"
 
 def git_status(repo: git.Repo) -> str:
     """
@@ -2093,11 +2070,6 @@ async def list_tools() -> list[Tool]:
                         "4. Diagnose connection or setup issues",
             inputSchema=AiderStatus.model_json_schema(),
         ),
-        Tool(
-            name=GitTools.AI_SESSIONS,
-            description="Unified tool for managing AI editing sessions. Can list all sessions or get details of a specific session.",
-            inputSchema=AiSessions.model_json_schema(),
-        )
     ]
 
 async def list_repos() -> Sequence[str]:
@@ -2329,52 +2301,6 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> list[Content]:
                         type="text",
                         text=result
                     )]
-                case GitTools.AI_SESSIONS:
-                    repo_root = find_git_root(str(repo_path)) or str(repo_path)
-                    
-                    # Run cleanup if requested
-                    if arguments.get("cleanup", False):
-                        await cleanup_expired_sessions_async(repo_root)
-                    
-                    action = arguments["action"]
-                    if action == "list":
-                        sessions = await _load_sessions_async(repo_root)
-                        # Filter by status if provided
-                        status_filter = arguments.get("status")
-                        if status_filter:
-                            filtered_sessions = {
-                                k: v for k, v in sessions.items() 
-                                if v.get("status") == status_filter
-                            }
-                            result = json.dumps({"sessions": list(filtered_sessions.values())}, indent=2)
-                        else:
-                            result = json.dumps({"sessions": list(sessions.values())}, indent=2)
-                        return [TextContent(
-                            type="text",
-                            text=result
-                        )]
-                    elif action == "status":
-                        session_id = arguments.get("session_id")
-                        if not session_id:
-                            return [TextContent(
-                                type="text",
-                                text=json.dumps({"error": "session_id is required for 'status' action"}, indent=2)
-                            )]
-                        sessions = await _load_sessions_async(repo_root)
-                        session = sessions.get(session_id)
-                        if session:
-                            result = json.dumps(session, indent=2)
-                        else:
-                            result = json.dumps({"error": "Session not found"}, indent=2)
-                        return [TextContent(
-                            type="text",
-                            text=result
-                        )]
-                    else:
-                        return [TextContent(
-                            type="text",
-                            text=f"INVALID_ACTION: Unknown action '{action}'. Valid actions are 'list' and 'status'."
-                        )]
                 case _:
                     raise ValueError(f"Unknown tool: {name}")
 
