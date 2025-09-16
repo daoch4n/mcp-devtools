@@ -807,13 +807,24 @@ def _ensure_gitignore_has_devtools(repo_root: str) -> None:
                 logger.debug(f".mcp-devtools/ already in .gitignore at {gitignore_path}")
                 return
         
-        # Append the entry
-        # Add newline if file doesn't end with one
-        if content and not content.endswith("\n"):
-            content += "\n"
-        content += ".mcp-devtools/\n"
+        # Re-read and append to reduce race window
+        try:
+            current = gitignore_path.read_text(encoding="utf-8")
+        except Exception:
+            current = content
+            
+        # Check again if entry already exists to avoid duplicates
+        for line in current.splitlines():
+            if pattern.match(line):
+                logger.debug(f".mcp-devtools/ already in .gitignore at {gitignore_path} (confirmed after re-read)")
+                return
+            
+        with open(gitignore_path, "a", encoding="utf-8") as f:
+            # Add newline if file doesn't end with one
+            if current and not current.endswith("\n"):
+                f.write("\n")
+            f.write(".mcp-devtools/\n")
         
-        gitignore_path.write_text(content, encoding="utf-8")
         logger.debug(f"Added .mcp-devtools/ to .gitignore at {gitignore_path}")
         
     except Exception as e:
