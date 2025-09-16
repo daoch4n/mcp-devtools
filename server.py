@@ -601,8 +601,8 @@ def _extract_touched_files(diff_text: str) -> set[str]:
         return path
     
     # Handle diff --git lines
-    diff_git_pattern = re.compile(r'^diff --git (?:a/|b/)?("?.+?"?) (?:a/|b/)?("?.+?"?)$')
-    for match in re.finditer(diff_git_pattern, diff_text, re.MULTILINE):
+    diff_git_pattern = re.compile(r'^\s*diff --git\s+(?:"?a/(.+?)"?)\s+(?:"?b/(.+?)"?)\s*$', re.MULTILINE)
+    for match in diff_git_pattern.finditer(diff_text):
         a_path, b_path = match.groups()
         a_path = normalize_path(a_path)
         b_path = normalize_path(b_path)
@@ -613,29 +613,29 @@ def _extract_touched_files(diff_text: str) -> set[str]:
             touched.add(b_path)
     
     # Handle +++ and --- lines
-    hunk_pattern = re.compile(r'^[\+\-]{3} (?:a/|b/)?("?.+?"?)(?:\s|$)')
-    for match in re.finditer(hunk_pattern, diff_text, re.MULTILINE):
+    hunk_pattern = re.compile(r'^\s*[\+\-]{3}\s+(?:(?:a|b)/)?(.*)$', re.MULTILINE)
+    for match in hunk_pattern.finditer(diff_text):
         path = normalize_path(match.group(1))
         if path != '/dev/null':
             touched.add(path)
     
     # Handle rename from/to lines
-    rename_from_pattern = re.compile(r'^rename from (?:a/|b/)?("?.+?"?)$')
-    rename_to_pattern = re.compile(r'^rename to (?:a/|b/)?("?.+?"?)$')
+    rename_from_pattern = re.compile(r'^\s*rename from\s+(?:(?:a|b)/)?(.*)$', re.MULTILINE)
+    rename_to_pattern = re.compile(r'^\s*rename to\s+(?:(?:a|b)/)?(.*)$', re.MULTILINE)
     
-    for match in re.finditer(rename_from_pattern, diff_text, re.MULTILINE):
+    for match in rename_from_pattern.finditer(diff_text):
         path = normalize_path(match.group(1))
         if path != '/dev/null':
             touched.add(path)
             
-    for match in re.finditer(rename_to_pattern, diff_text, re.MULTILINE):
+    for match in rename_to_pattern.finditer(diff_text):
         path = normalize_path(match.group(1))
         if path != '/dev/null':
             touched.add(path)
     
     # Handle Binary files lines
-    binary_pattern = re.compile(r'^Binary files (?:a/|b/)?("?.+?"?) and (?:a/|b/)?("?.+?"?) differ$')
-    for match in re.finditer(binary_pattern, diff_text, re.MULTILINE):
+    binary_pattern = re.compile(r'^\s*Binary files\s+(?:(?:a|b)/)?(.*?)\s+and\s+(?:(?:a|b)/)?(.*?)\s+differ$', re.MULTILINE)
+    for match in binary_pattern.finditer(diff_text):
         a_path, b_path = match.groups()
         a_path = normalize_path(a_path)
         b_path = normalize_path(b_path)
