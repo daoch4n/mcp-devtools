@@ -1062,14 +1062,6 @@ class AiEdit(BaseModel):
         None,
         description="Optional. A session ID to associate with this edit operation. If not provided, a new UUID will be generated."
     )
-    prune: bool = Field(
-        default=False,
-        description="Deprecated. Ignored by server. Rely on Aider’s built-in chat history handling; use continue_thread to control --restore-chat-history."
-    )
-    prune_mode: Literal['summarize', 'truncate'] | None = Field(
-        None,
-        description="Deprecated. Ignored by server. Formerly controlled summarize/truncate behavior, now unused."
-    )
 
 class AiderStatus(BaseModel):
     """
@@ -1431,8 +1423,6 @@ async def ai_edit(
     files: List[str],
     options: list[str] | None,
     continue_thread: bool,
-    prune: bool = False,
-    prune_mode: Optional[Literal['summarize', 'truncate']] = None,
     aider_path: Optional[str] = None,
     config_file: Optional[str] = None,
     env_file: Optional[str] = None,
@@ -1443,12 +1433,10 @@ async def ai_edit(
     This function encapsulates the logic from aider_mcp/server.py's edit_files tool.
 
     Note:
-    - The server no longer modifies or prunes `.aider.chat.history.md` directly.
+    - The server does not modify chat history directly.
       Chat history usage is controlled solely by Aider via the
       `--restore-chat-history` or `--no-restore-chat-history` flags, which we set
       based on `continue_thread`.
-    - The `prune` and `prune_mode` parameters are retained for backward compatibility
-      but are deprecated and ignored by the server.
     """
     start_time = time.time()
     touched_files: Set[str] = set()
@@ -1478,7 +1466,6 @@ async def ai_edit(
         "yes_always": True,
         "auto_commit": False,
     }
-    # Deprecated: server-side pruning and clearing of Aider chat history are no-ops now.
 
     # Pass the message directly as a command-line option
     aider_options["message"] = message

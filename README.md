@@ -64,6 +64,8 @@
 
 ---
 
+---
+
 ## 2️⃣ Run
 
 ### 🐍 PyPi:
@@ -510,19 +512,6 @@ You must adhere to the following five-step, iterative workflow:
         "default": "diff",
         "description": "Optional. The format Aider should use for edits. Defaults to 'diff'. Options: 'diff', 'diff-fenced', 'udiff', 'whole'."
       },
-      "prune": {
-        "type": "boolean",
-        "default": false,
-        "description": "Deprecated. Ignored by server. Rely on Aider’s built-in chat history handling; use continue_thread to control --restore-chat-history."
-      },
-      "prune_mode": {
-        "type": "string",
-        "enum": [
-          "summarize",
-          "truncate"
-        ],
-        "description": "Deprecated. Ignored by server. Formerly controlled summarize/truncate behavior, now unused."
-      }
     },
     "required": [
       "repo_path",
@@ -545,8 +534,6 @@ You must adhere to the following five-step, iterative workflow:
 > Note: The server no longer modifies or prunes `.aider.chat.history.md`. Chat history usage is controlled solely by Aider via `--restore-chat-history` (when `continue_thread` is true) or `--no-restore-chat-history` (when false).
 
 > Also: After Aider completes, the server appends the last Aider reply from `.aider.chat.history.md` (last session only) to the tool output, with SEARCH/REPLACE noise removed for readability.
-
-> Pruning: The `prune` and `prune_mode` inputs are deprecated and ignored by the server.
 
 ### `aider_status`
 - **Description:** Check the status of Aider and its environment. Use this to:
