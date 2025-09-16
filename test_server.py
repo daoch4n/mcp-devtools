@@ -1780,6 +1780,62 @@ def test_extract_touched_files_handles_spaces():
     assert touched == expected
 
 
+def test_ensure_gitignore_creates_and_appends(tmp_path):
+    """Test _ensure_gitignore_has_devtools creates file when missing and appends properly"""
+    from server import _ensure_gitignore_has_devtools
+    
+    # Test creating .gitignore when it doesn't exist
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    gitignore_path = repo_root / ".gitignore"
+    
+    _ensure_gitignore_has_devtools(str(repo_root))
+    
+    assert gitignore_path.exists()
+    content = gitignore_path.read_text()
+    assert content == ".mcp-devtools/\n"
+    
+    # Test appending to existing file without trailing newline
+    gitignore_path.write_text("existing-content", encoding="utf-8")
+    _ensure_gitignore_has_devtools(str(repo_root))
+    
+    content = gitignore_path.read_text()
+    assert content == "existing-content\n.mcp-devtools/\n"
+    
+    # Test idempotency - run again should not add duplicate
+    _ensure_gitignore_has_devtools(str(repo_root))
+    
+    content = gitignore_path.read_text()
+    assert content == "existing-content\n.mcp-devtools/\n"
+
+
+def test_ensure_gitignore_does_not_duplicate(tmp_path):
+    """Test _ensure_gitignore_has_devtools doesn't duplicate entries"""
+    from server import _ensure_gitignore_has_devtools
+    
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    gitignore_path = repo_root / ".gitignore"
+    
+    # Test with .mcp-devtools/ already present
+    gitignore_path.write_text("some-content\n.mcp-devtools/\nmore-content", encoding="utf-8")
+    
+    _ensure_gitignore_has_devtools(str(repo_root))
+    
+    content = gitignore_path.read_text()
+    # Should be unchanged
+    assert content == "some-content\n.mcp-devtools/\nmore-content"
+    
+    # Test with .mcp-devtools (no trailing slash) already present
+    gitignore_path.write_text("some-content\n.mcp-devtools\nmore-content", encoding="utf-8")
+    
+    _ensure_gitignore_has_devtools(str(repo_root))
+    
+    content = gitignore_path.read_text()
+    # Should be unchanged
+    assert content == "some-content\n.mcp-devtools\nmore-content"
+
+
 # === Server Integration Test Fixtures and Smoke Test ===
 import pytest
 import asyncio
