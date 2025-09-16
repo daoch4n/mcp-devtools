@@ -215,7 +215,7 @@ You must adhere to the following five-step, iterative workflow:
 <details>
 <summary> <h4> ⚠️ Show Disclaimer </h4> </summary>
 
-- 🛡️ For automated workflows, always run MCP Servers in isolated environments:
+- 🛡️ For automated workflows, always run AI agents in isolated environments:
   - Containers: 🐧 [daoch4n/systemd-nspawn-wayland](https://github.com/daoch4n/systemd-nspawn-wayland) 🍎 🪟 [Docker](https://github.com/docker/cli)
   - Sandboxes: 🐧 [Firejail](https://github.com/netblue30/firejail) 🪟 [Sandboxie](https://github.com/sandboxie-plus/Sandboxie)
 - 🗃️ Filesystem access boundaries are maintained via passing `repo_path` to every tool call, so AI agent only has read/write access to files in the current workspace (relative to any path AI decides to pass as `repo_path` , make sure system prompt is solid on cwd use).
