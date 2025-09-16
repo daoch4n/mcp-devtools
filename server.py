@@ -586,45 +586,65 @@ def _extract_touched_files(diff_text: str) -> set[str]:
     """Extract touched file paths from a unified git diff text.
     Handles modified, added, deleted, renamed, and binary blocks."""
     touched: set[str] = set()
-    lines = diff_text.splitlines()
-    def norm(p: str) -> str:
-        p = p.strip()
-        if p.startswith('a/') or p.startswith('b/'):
-            p = p[2:]
-        return p
-    for line in lines:
-        if line.startswith('diff --git '):
-            parts = line.strip().split()
-            if len(parts) >= 4:
-                a_path = norm(parts[2])
-                b_path = norm(parts[3])
-                if a_path and a_path != '/dev/null':
-                    touched.add(a_path)
-                if b_path and b_path != '/dev/null':
-                    touched.add(b_path)
-        elif line.startswith('rename from '):
-            p = norm(line[len('rename from '):])
-            if p and p != '/dev/null':
-                touched.add(p)
-        elif line.startswith('rename to '):
-            p = norm(line[len('rename to '):])
-            if p and p != '/dev/null':
-                touched.add(p)
-        elif line.startswith('+++ '):
-            p = norm(line[4:])
-            if p and p != '/dev/null':
-                touched.add(p)
-        elif line.startswith('--- '):
-            p = norm(line[4:])
-            if p and p != '/dev/null':
-                touched.add(p)
-        elif line.startswith('Binary files '):
-            m = re.match(r"Binary files\s+(.+?)\s+and\s+(.+?)\s+differ", line)
-            if m:
-                for grp in (1, 2):
-                    p = norm(m.group(grp))
-                    if p and p != '/dev/null':
-                        touched.add(p)
+    
+    def normalize_path(path: str) -> str:
+        """Strip quotes, leading a/ or b/, and handle /dev/null"""
+        # Strip surrounding quotes if present
+        if (path.startswith('"') and path.endswith('"')) or \
+           (path.startswith("'") and path.endswith("'")):
+            path = path[1:-1]
+        
+        # Strip leading a/ or b/ prefix
+        if path.startswith('a/') or path.startswith('b/'):
+            path = path[2:]
+            
+        return path
+    
+    # Handle diff --git lines
+    diff_git_pattern = re.compile(r'^diff --git (?:a/|b/)?("?.+?"?) (?:a/|b/)?("?.+?"?)$')
+    for match in re.finditer(diff_git_pattern, diff_text, re.MULTILINE):
+        a_path, b_path = match.groups()
+        a_path = normalize_path(a_path)
+        b_path = normalize_path(b_path)
+        
+        if a_path != '/dev/null':
+            touched.add(a_path)
+        if b_path != '/dev/null':
+            touched.add(b_path)
+    
+    # Handle +++ and --- lines
+    hunk_pattern = re.compile(r'^[\+\-]{3} (?:a/|b/)?("?.+?"?)(?:\s|$)')
+    for match in re.finditer(hunk_pattern, diff_text, re.MULTILINE):
+        path = normalize_path(match.group(1))
+        if path != '/dev/null':
+            touched.add(path)
+    
+    # Handle rename from/to lines
+    rename_from_pattern = re.compile(r'^rename from (?:a/|b/)?("?.+?"?)$')
+    rename_to_pattern = re.compile(r'^rename to (?:a/|b/)?("?.+?"?)$')
+    
+    for match in re.finditer(rename_from_pattern, diff_text, re.MULTILINE):
+        path = normalize_path(match.group(1))
+        if path != '/dev/null':
+            touched.add(path)
+            
+    for match in re.finditer(rename_to_pattern, diff_text, re.MULTILINE):
+        path = normalize_path(match.group(1))
+        if path != '/dev/null':
+            touched.add(path)
+    
+    # Handle Binary files lines
+    binary_pattern = re.compile(r'^Binary files (?:a/|b/)?("?.+?"?) and (?:a/|b/)?("?.+?"?) differ$')
+    for match in re.finditer(binary_pattern, diff_text, re.MULTILINE):
+        a_path, b_path = match.groups()
+        a_path = normalize_path(a_path)
+        b_path = normalize_path(b_path)
+        
+        if a_path != '/dev/null':
+            touched.add(a_path)
+        if b_path != '/dev/null':
+            touched.add(b_path)
+    
     # Exclude internal snapshot artifacts just in case
     touched = {p for p in touched if not p.startswith('.mcp-devtools/')}
     return touched
@@ -1933,11 +1953,6 @@ async def ai_edit(
             result_message += f"\n\nAider's last reply:\n{last_reply}"
         
         # Add thread context usage information
-        thread_text = _read_last_aider_session_text(directory_path)
-        s, r = _parse_aider_token_stats(thread_text)
-        tokens = s + r
-        if tokens == 0:
-            tokens = _approx_token_count(thread_text)
         result_message += (
             f"\n\n### Thread Context Usage\n"
             f"Last session tokens: {tokens}\n"

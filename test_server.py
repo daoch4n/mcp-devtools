@@ -1754,8 +1754,9 @@ async def test_ai_edit_includes_thread_context_usage(temp_git_repo, monkeypatch)
     
     # Assert that the output contains thread context usage information
     assert "### Thread Context Usage" in result
-    assert "Approximate tokens:" in result
-    assert "Guidance: Keep overall thread context under ~200k tokens" in result
+    assert "Last session tokens:" in result
+    assert "Total thread tokens:" in result
+    assert "Guidance: Long threads increase context cost and latency" in result
 
 
 def test_server_imports_when_snapshot_utils_missing(tmp_path, monkeypatch):
@@ -2178,8 +2179,7 @@ def test_extract_touched_files_various_cases():
     """.strip()
     touched = _extract_touched_files(diff_text)
     expected = {"file1.txt", "new.txt", "old.txt", "oldname.md", "newname.md", "bin1.png"}
-    for p in expected:
-        assert p in touched
+    assert touched == expected
 
 
 def test_parse_aider_token_stats_k_and_m_suffixes():
@@ -2211,25 +2211,38 @@ def test_parse_aider_token_stats_no_matches_returns_zero():
     assert sent == 0 and received == 0
 
 
-def test_extract_touched_files_ignores_internal_paths():
+def test_extract_touched_files_handles_spaces():
     from server import _extract_touched_files
-    diff_text = "\n".join([
-        "diff --git a/.mcp-devtools/ctx/older_history.md b/.mcp-devtools/ctx/older_history.md",
-        "index 0000000..1111111 100644",
-        "--- a/.mcp-devtools/ctx/older_history.md",
-        "+++ b/.mcp-devtools/ctx/older_history.md",
-        "@@ -0,0 +1 @@",
-        "+internal",
-        "diff --git a/src/app.ts b/src/app.ts",
-        "index 0000000..1111111 100644",
-        "--- a/src/app.ts",
-        "+++ b/src/app.ts",
-        "@@ -0,0 +1 @@",
-        "+export {};",
-    ])
+    diff_text = """
+    diff --git a/file with spaces.txt b/file with spaces.txt
+    index e69de29..4b825dc 100644
+    --- a/file with spaces.txt
+    +++ b/file with spaces.txt
+    @@ -1 +1 @@
+    -old
+    +new
+
+    diff --git a/old name.txt b/new name.txt
+    similarity index 100%
+    rename from old name.txt
+    rename to new name.txt
+    --- a/old name.txt
+    +++ b/new name.txt
+
+    diff --git "a/quoted name.txt" "b/quoted name.txt"
+    new file mode 100644
+    --- /dev/null
+    +++ "b/quoted name.txt"
+    @@ -0,0 +1 @@
+    +content
+
+    diff --git a/bin file.png b/bin file.png
+    index 89abcd1..12ef345 100644
+    Binary files a/bin file.png and b/bin file.png differ
+    """.strip()
     touched = _extract_touched_files(diff_text)
-    assert "src/app.ts" in touched
-    assert all(not p.startswith('.mcp-devtools/') for p in touched)
+    expected = {"file with spaces.txt", "old name.txt", "new name.txt", "quoted name.txt", "bin file.png"}
+    assert touched == expected
 
 
 # === Server Integration Test Fixtures and Smoke Test ===
