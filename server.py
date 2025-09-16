@@ -1806,7 +1806,10 @@ async def ai_edit(
                     f"### Verification Result\n"
                     f"⏳ Not yet implemented.\n\n"
                     f"### Next Steps\n"
-                    f"Please review the changes above. If they are correct, please stage and commit them.\n\n"
+                    f"- Please review the changes above. If they are correct, please stage and commit them.\n"
+                    f"- Consider summarizing what was done and starting a fresh thread with continue_thread=false; pass the summary in the next ai_edit message to give the agent a fresh perspective.\n"
+                    f"- Remember the server will not prune Aider history; to shorten context, start a new thread and feed summarized content via input.\n"
+                    f"- Whether continuing or restarting, include key decisions, constraints, relevant files, and acceptance criteria to maintain context continuity.\n\n"
                     f"{snapshot_delta_section if snapshot_delta_section else ''}"
                 )
                 structured_report_built = True
@@ -1916,7 +1919,7 @@ async def ai_edit(
             f"\n\n### Thread Context Usage\n"
             f"Last session tokens: {tokens}\n"
             f"Total thread tokens: {total_thread_tokens}\n"
-            f"Guidance: Long threads increase context cost and latency. Consider pruning or summarizing older context, or starting a fresh session when appropriate. Aim for a balanced approach between context richness and efficiency."
+            f"Guidance: Long threads increase context cost and latency. To shorten context, start a fresh session with continue_thread=false and include a concise summary of previous work. Remember to carry forward important details like key decisions, constraints, and relevant files to maintain continuity."
         )
         
         return result_message
