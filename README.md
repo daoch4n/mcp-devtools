@@ -26,7 +26,7 @@
 - **[Aider](https://github.com/Aider-AI/aider)** (only needed for the `ai_edit` tool)
   - **Installation:**
     ```bash
-    python -m pip install aider-install --break-system-packages && aider-install
+    uvx aider-install
     ```
     
     <details>
