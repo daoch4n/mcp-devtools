@@ -12,7 +12,7 @@ Key Components:
 - File Operations: Tools for reading, writing, and searching/replacing content
   within files.
 - Command Execution: A general-purpose tool to execute arbitrary shell commands.
-- AI-Powered Editing (Aider): Integration with the Aider tool for advanced
+- AI-Powered Editing: Integration with the Aider tool for advanced
   code modifications based on natural language instructions.
 - Configuration Loading: Utilities to load Aider-specific configurations and
   environment variables from various locations (.aider.conf.yml, .env).
