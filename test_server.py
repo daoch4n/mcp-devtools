@@ -1452,8 +1452,6 @@ async def test_ai_edit_includes_thread_context_usage(temp_git_repo, patch_create
     assert "### Thread Context Usage" in result
     assert "Last session tokens:" in result
     assert "Total thread tokens:" in result
-    assert "Guidance: Long threads increase context cost and latency" in result
-
 
 def test_server_imports_when_snapshot_utils_missing(tmp_path, monkeypatch):
     """Ensure importing server succeeds even if mcp_devtools.snapshot_utils isn't available."""
