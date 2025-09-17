@@ -1954,7 +1954,6 @@ async def ai_edit(
             f"\n\n### Thread Context Usage\n"
             f"Last session tokens: {tokens}\n"
             f"Total thread tokens: {total_thread_tokens}\n"
-            f"Guidance: Long threads increase context cost and latency. To shorten context, start a fresh session with continue_thread=false and include a concise summary of previous work. Remember to carry forward important details like key decisions, constraints, and relevant files to maintain continuity."
         )
         
         return result_message
