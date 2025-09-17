@@ -105,7 +105,7 @@ To integrate `mcp-devtools` with your AI agent, add the following configuration 
 
 https://github.com/user-attachments/assets/d0b7b41b-c420-4b84-8807-d8a00300bd3e
 
-<div align=right><sup>ℹ️ This demo was recorded using mcp-devtools@1.2.6, current version behaviour: ai_edit tool no longer autocommits, instead it provides structured report of the changes and prompts caller to consciously review and commit changes manually.</sup></div>
+<div align=right><sup>ℹ️ This demo was recorded using mcp-devtools@1.2.6 , current version has completely different behaviour: ai_edit tool no longer autocommits, instead it provides structured report of the changes and prompts caller to consciously review and commit changes manually.</sup></div>
 <details>
 <summary> <h4> 👾 Show System Prompt </h4> </summary>
   
@@ -564,4 +564,4 @@ You must adhere to the following five-step, iterative workflow:
 
 https://github.com/user-attachments/assets/05670a7a-72c5-4276-925c-dbd1ed617d99
 
-<div align=right><sup>ℹ️ This audio overview was generated using mcp-devtools@1.2.6 README, current version migh have some differences or slightly altered functionality.</sup></div>
+<div align=right><sup>ℹ️ This audio overview was generated using README from mcp-devtools@1.2.6 , current version may have slightly altered functionality.</sup></div>
